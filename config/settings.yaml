@@ -1,0 +1,32 @@
+# Niche configuration
+niches:
+  - name: mythology
+    keywords: ["mythology", "legends", "gods", "ancient", "mythical creatures", "epic battles"]
+    hashtag_seeds: ["#mythology", "#legends", "#ancientgods", "#mythical"]
+    active: true
+
+  - name: surreal_what_if
+    active: true
+
+  - name: cosmic_scifi
+    keywords: ["space", "alien", "future", "sci-fi", "cosmic", "civilization", "deep space"]
+    hashtag_seeds: ["#space", "#scifi", "#cosmic", "#alienworlds", "#futuristic"]
+    active: true
+
+  - name: dark_folklore
+    keywords: ["folklore", "dark fairy tale", "cryptid", "liminal space", "horror", "eerie"]
+    hashtag_seeds: ["#darkfolklore", "#creepy", "#cryptid", "#liminalspace", "#eerietales"]
+    active: true
+
+
+
+# Scraping schedule
+scraping:
+  interval_hours: 6
+  items_per_scrape: 50
+
+# Content generation defaults
+generation:
+  default_duration_seconds: 30
+  default_aspect_ratio: "9:16"
+  content_style: "faceless"  # faceless, narrated, mixed

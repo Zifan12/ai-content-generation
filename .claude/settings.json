@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/zifan/.claude/session-data/**)",
+      "Read(//c/Users/zifan/.claude/**)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\zifan\\Documents\\Projects\\AI Content Generation\\docs\\superpowers",
+      "C:\\Users\\zifan\\.claude\\session-data"
+    ]
+  }
+}

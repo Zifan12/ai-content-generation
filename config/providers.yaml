@@ -1,0 +1,18 @@
+# Provider registry
+# Change "active" to switch providers without code changes
+
+video:
+  active: null  # Set when you implement your first video provider
+  providers: {}
+
+tts:
+  active: null
+  providers: {}
+
+llm:
+  active: null
+  providers: {}
+
+image:
+  active: null
+  providers: {}
