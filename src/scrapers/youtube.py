@@ -7,7 +7,7 @@ import httpx
 
 from src.models.trend import RawContentItem
 from src.scrapers.base import BaseScraper
-
+from src.observability import traced
 
 class YoutubeScraper(BaseScraper):
     """Scrapes YouTube Shorts via the YouTube Data API v3.
@@ -26,7 +26,7 @@ class YoutubeScraper(BaseScraper):
         self.api_key = os.getenv("YOUTUBE_API_KEY")
         self.region_code = region_code  
      
-
+    @traced(name="youtube.fetch_trending")
     async def fetch_trending(self, max_results = 20, niche_id = None, query = None) -> list[RawContentItem]:
         search_query = (query or "shorts").strip()
 

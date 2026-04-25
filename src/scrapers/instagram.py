@@ -19,7 +19,7 @@ class InstagramScraper(BaseScraper):
     _hashtag_re = re.compile(r"(?<!\w)#(\w+)")
   
 
-    def __init__(self, db, actor_id: str = "apify/instagram-reel-scraper", poll_interval_seconds: float=5.0, poll_attempts: int=24, max_duration_seconds: int=90):
+    def __init__(self, db, actor_id: str = "apify~instagram-reel-scraper", poll_interval_seconds: float=5.0, poll_attempts: int=24, max_duration_seconds: int=90):
         """
         poll_interval_seconds: How often you check
         poll_attempts: How many times you check
@@ -37,10 +37,11 @@ class InstagramScraper(BaseScraper):
         if not self.api_token:
             raise RuntimeError("APIFY_API_TOKEN is not set")
         
-        search_query = (query or "viral reels").strip()
+        # Actor requires a username or profile URL — default to a high-volume public account
+        target = query if query else "instagram"
 
         run_input = {
-            "search": [search_query],
+            "username": [target],
             "resultsLimit": max(1, min(max_results, 50)),
         }
         
@@ -167,6 +168,16 @@ class InstagramScraper(BaseScraper):
             content_format="reel",
             published_at=published_at,
         )
+
+    def _extract_hashtags(self, caption, api_hashtags) -> list[str]:
+        out: set[str] = set()
+        if caption:
+            out.update(h.lower() for h in self._hashtag_re.findall(caption))
+        if isinstance(api_hashtags, list):
+            for tag in api_hashtags:
+                if isinstance(tag, str) and tag.strip():
+                    out.add(tag.strip().lower().lstrip("#"))
+        return sorted(out)
 
     def _pick_first(self, item: dict, keys):
         for key in keys:
