@@ -142,5 +142,93 @@ class TikTokScraper(BaseScraper):
     def _normalize_item(
         self, item: dict[str, Any], niche_id: int | None
     ) -> RawContentItem | None:
-        # User writes this — see Task 2
-        raise NotImplementedError
+        # Validate required id
+        item_id = item.get("id")
+        if not item_id:
+            return None
+
+        # Extract URL (webVideoUrl preferred, fallback to videoUrl)
+        url = item.get("webVideoUrl") or item.get("videoUrl")
+
+        # Extract engagement metrics
+        try:
+            views = int(item.get("playCount") or 0)
+        except (ValueError, TypeError):
+            views = 0
+
+        try:
+            likes = int(item.get("diggCount") or 0)
+        except (ValueError, TypeError):
+            likes = 0
+
+        try:
+            comments = int(item.get("commentCount") or 0)
+        except (ValueError, TypeError):
+            comments = 0
+
+        try:
+            shares = int(item.get("shareCount") or 0)
+        except (ValueError, TypeError):
+            shares = 0
+
+        # Extract audio ID from nested musicMeta
+        audio_id = None
+        music_meta = item.get("musicMeta")
+        if music_meta and isinstance(music_meta, dict):
+            music_id = music_meta.get("musicId")
+            if music_id:
+                audio_id = str(music_id)
+
+        # Extract duration from nested videoMeta
+        duration_in_seconds = None
+        video_meta = item.get("videoMeta")
+        if video_meta and isinstance(video_meta, dict):
+            try:
+                duration = video_meta.get("duration")
+                if duration is not None:
+                    duration_in_seconds = int(duration)
+            except (ValueError, TypeError):
+                pass
+
+        # Extract and normalize hashtags
+        hashtags_list: list[str] = []
+        hashtags_raw = item.get("hashtags")
+        if hashtags_raw and isinstance(hashtags_raw, list):
+            seen = set()
+            for hashtag_obj in hashtags_raw:
+                if isinstance(hashtag_obj, dict):
+                    name = hashtag_obj.get("name")
+                    if name:
+                        # Lowercase, strip leading #, and deduplicate
+                        normalized = name.lower().lstrip("#")
+                        if normalized and normalized not in seen:
+                            hashtags_list.append(normalized)
+                            seen.add(normalized)
+            # Sort the hashtags
+            hashtags_list.sort()
+
+        # Extract published_at from createTime
+        published_at = None
+        create_time = item.get("createTime")
+        if create_time is not None:
+            try:
+                published_at = datetime.fromtimestamp(int(create_time), tz=timezone.utc)
+            except (ValueError, TypeError, OSError):
+                pass
+
+        return RawContentItem(
+            niche_id=niche_id,
+            platform=self.platform,
+            platform_content_id=str(item_id),
+            url=url,
+            views=views,
+            likes=likes,
+            comments=comments,
+            shares=shares,
+            audio_id=audio_id,
+            hashtags=hashtags_list,
+            duration_in_seconds=duration_in_seconds,
+            content_format="video",
+            published_at=published_at,
+        )
+
