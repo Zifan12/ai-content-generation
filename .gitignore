@@ -27,6 +27,7 @@ data/
 .claude/
 CLAUDE.md
 PLAN.md
+docs/superpowers/
 
 # OS
 .DS_Store
