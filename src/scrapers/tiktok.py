@@ -20,7 +20,6 @@ class TikTokScraper(BaseScraper):
         self,
         db: Session,
         actor_id: str = "clockworks~tiktok-hashtag-scraper",
-        days_back: int = 30,
         poll_interval_seconds: float = 5.0,
         poll_attempts: int = 24,
         max_duration_seconds: int = 120,
@@ -28,7 +27,6 @@ class TikTokScraper(BaseScraper):
         super().__init__(db)
         self.api_token = os.getenv("APIFY_API_TOKEN")
         self.actor_id = actor_id
-        self.days_back = days_back
         self.poll_interval_seconds = poll_interval_seconds
         self.poll_attempts = poll_attempts
         self.max_duration_seconds = max_duration_seconds
@@ -46,9 +44,7 @@ class TikTokScraper(BaseScraper):
 
         run_input = {
             "hashtags": [hashtag],
-            "resultsPerPage": max(1, min(max_results, 500)),
-            "profileSorting": "popular",
-            "oldestPostDateUnified": str(self.days_back),
+            "resultsPerPage": max(1, min(max_results, 800)),
         }
 
         headers = {
@@ -116,7 +112,10 @@ class TikTokScraper(BaseScraper):
             if status == "SUCCEEDED":
                 return data
             if status in {"FAILED", "ABORTED", "TIMED-OUT"}:
-                raise RuntimeError(f"TikTok Apify run ended with status {status}")
+                raise RuntimeError(
+                    f"TikTok Apify run ended with status {status}. "
+                    f"exitCode={data.get('exitCode')} stats={data.get('stats')}"
+                )
 
             await asyncio.sleep(self.poll_interval_seconds)
 
