@@ -23,6 +23,11 @@ data/
 .vscode/
 .idea/
 
+# Claude Code
+.claude/
+CLAUDE.md
+PLAN.md
+
 # OS
 .DS_Store
 Thumbs.db
