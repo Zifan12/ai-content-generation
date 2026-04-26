@@ -2,46 +2,59 @@
 One-shot script: seed initial niches into the DB.
 Run: uv run python scripts/seed_niches.py
 Safe to re-run — skips niches that already exist (unique constraint on name).
+
+Prerequisites: Run Alembic migrations before using this script:
+  uv run alembic upgrade head
 """
 import sys
 from pathlib import Path
+from dotenv import load_dotenv
 
-# Allow imports from project root
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from dotenv import load_dotenv
 load_dotenv("config/.env")
 
-from src.database import SessionLocal
-from src.models.niche import Niche
+from src.database import SessionLocal  # noqa: E402
+from src.models.niche import Niche  # noqa: E402
 
 NICHES = [
     {
-        "name": "fitness",
-        "keywords": ["workout", "gym", "fitness", "exercise", "training"],
-        "hashtag_seeds": ["gymtok", "fitness", "workout", "fittok", "gym"],
+        "name": "brainrot",
+        "keywords": ["absurd", "surreal", "mashup", "weird", "brainrot"],
+        "hashtag_seeds": ["italianbrainrot", "brainrot", "aigenerated", "weirdai", "aianimation"],
         "is_active": True,
     },
     {
-        "name": "cooking",
-        "keywords": ["recipe", "food", "cooking", "meal", "kitchen"],
-        "hashtag_seeds": ["foodtok", "cooking", "recipe", "easyrecipes", "mealprep"],
+        "name": "anime_ai",
+        "keywords": ["anime", "ghibli", "manga", "animation", "art"],
+        "hashtag_seeds": ["aianimation", "ghibliart", "animestyle", "aiart", "mangafilter"],
         "is_active": True,
     },
     {
-        "name": "tech",
-        "keywords": ["technology", "ai", "coding", "software", "gadget"],
-        "hashtag_seeds": ["techtok", "ai", "coding", "programming", "tech"],
+        "name": "horror_ai",
+        "keywords": ["horror", "dark", "scary", "truecrime", "creepy"],
+        "hashtag_seeds": ["horrortok", "aihorror", "darkstories", "scarystories", "truecrime"],
         "is_active": True,
     },
 ]
+
+REMOVE_NICHES = ["fitness", "cooking", "tech"]
 
 
 def seed():
     db = SessionLocal()
     added = 0
     skipped = 0
+    removed = 0
     try:
+        for name in REMOVE_NICHES:
+            existing = db.query(Niche).filter(Niche.name == name).first()
+            if existing:
+                db.delete(existing)
+                db.commit()
+                print(f"  removed: {name}")
+                removed += 1
+
         for data in NICHES:
             existing = db.query(Niche).filter(Niche.name == data["name"]).first()
             if existing:
@@ -55,7 +68,7 @@ def seed():
             added += 1
     finally:
         db.close()
-    print(f"\nDone. Added: {added}, Skipped: {skipped}")
+    print(f"\nDone. Removed: {removed}, Added: {added}, Skipped: {skipped}")
 
 
 if __name__ == "__main__":
