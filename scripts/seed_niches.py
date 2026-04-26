@@ -42,16 +42,7 @@ def seed():
     db = SessionLocal()
     added = 0
     skipped = 0
-    removed = 0
     try:
-        for name in ["fitness", "cooking", "tech"]:
-            existing = db.query(Niche).filter(Niche.name == name).first()
-            if existing:
-                db.delete(existing)
-                db.commit()
-                print(f"  removed: {name}")
-                removed += 1
-
         for data in NICHES:
             existing = db.query(Niche).filter(Niche.name == data["name"]).first()
             if existing:
@@ -65,7 +56,7 @@ def seed():
             added += 1
     finally:
         db.close()
-    print(f"\nDone. Removed: {removed}, Added: {added}, Skipped: {skipped}")
+    print(f"\nDone. Added: {added}, Skipped: {skipped}")
 
 
 if __name__ == "__main__":
