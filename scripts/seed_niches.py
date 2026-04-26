@@ -36,6 +36,30 @@ NICHES = [
         "hashtag_seeds": ["horrortok", "aihorror", "darkstories", "scarystories", "truecrime"],
         "is_active": True,
     },
+    # {
+    #     "name": "animal_fusion",
+    #     "keywords": ["animal", "fusion", "hybrid", "mashup", "creature"],
+    #     "hashtag_seeds": ["animalfusion", "hybrid", "animalmashup", "aifusion", "weirdanimals"],
+    #     "is_active": True,
+    # },
+    # {
+    #     "name": "ai_3d_skeleton",
+    #     "keywords": ["skeleton", "3d", "animation", "bones", "xray"],
+    #     "hashtag_seeds": ["skeleton", "3danimation", "skeletondance", "aianimation", "xrayart"],
+    #     "is_active": True,
+    # },
+    # {
+    #     "name": "historical_pov",
+    #     "keywords": ["history", "pov", "historical", "timelapse", "past"],
+    #     "hashtag_seeds": ["historicalpov", "historytok", "povhistory", "ancienthistory", "historyai"],
+    #     "is_active": True,
+    # },
+    # {
+    #     "name": "satisfying_ai",
+    #     "keywords": ["satisfying", "asmr", "transformation", "texture", "relaxing"],
+    #     "hashtag_seeds": ["satisfying", "asmr", "satisfyingvideo", "oddlysatisfying", "transformation"],
+    #     "is_active": True,
+    # },
 ]
 
 def seed():
