@@ -38,16 +38,13 @@ NICHES = [
     },
 ]
 
-REMOVE_NICHES = ["fitness", "cooking", "tech"]
-
-
 def seed():
     db = SessionLocal()
     added = 0
     skipped = 0
     removed = 0
     try:
-        for name in REMOVE_NICHES:
+        for name in ["fitness", "cooking", "tech"]:
             existing = db.query(Niche).filter(Niche.name == name).first()
             if existing:
                 db.delete(existing)
