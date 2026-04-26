@@ -62,6 +62,10 @@ dependencies = [
     "asyncpg>=0.30.0",
 ]
 
+[tool.pytest.ini_options]
+pythonpath = ["."]
+asyncio_mode = "auto"
+
 [dependency-groups]
 dev = [
     "pytest>=8.3.0",
