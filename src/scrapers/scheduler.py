@@ -11,7 +11,7 @@ async def scrape_tiktok(hashtags: list[str], niche_id: int):
     db = SessionLocal()
     try:
         scraper = TikTokScraper(db)
-        await scraper.fetch_trending(max_results=50, niche_id=niche_id, query=hashtags)
+        await scraper.fetch_trending(max_results=30, niche_id=niche_id, query=hashtags)
     except Exception as e:
         print(f"[scheduler] tiktok scrape failed ({hashtags}): {e}")
     finally:
@@ -23,7 +23,7 @@ def start():
         niches = db.query(Niche).filter(Niche.is_active == True).all()
         for niche in niches:
             if niche.hashtag_seeds:
-                scheduler.add_job(scrape_tiktok, "interval", hours=6, args=[niche.hashtag_seeds, niche.id], next_run_time=datetime.now(timezone.utc))
+                scheduler.add_job(scrape_tiktok, "interval", hours=24, args=[niche.hashtag_seeds, niche.id], next_run_time=datetime.now(timezone.utc))
     finally:
         db.close()
     scheduler.start()
