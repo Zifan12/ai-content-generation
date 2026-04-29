@@ -8,6 +8,7 @@ from alembic import context
 from src.database import Base, DATABASE_URL
 import src.models.niche
 import src.models.trend
+import src.models.eval
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

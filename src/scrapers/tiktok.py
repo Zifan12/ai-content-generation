@@ -35,15 +35,20 @@ class TikTokScraper(BaseScraper):
         self,
         max_results: int = 50,
         niche_id: int | None = None,
-        query: str | None = None,
+        query: list[str] | None = None,
     ) -> list[RawContentItem]:
         if not self.api_token:
             raise RuntimeError("APIFY_API_TOKEN is not set")
 
-        hashtag = query if query else "viral"
+        if isinstance(query, list):
+            hashtags = query if query else ["viral"]
+        elif query:
+            hashtags = [query]
+        else:
+            hashtags = ["viral"]
 
         run_input = {
-            "hashtags": [hashtag],
+            "hashtags": hashtags,
             "resultsPerPage": max(1, min(max_results, 800)),
         }
 
