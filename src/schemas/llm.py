@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field
 from typing import Literal
 
 class VideoHookVariant(BaseModel):
-    hook_text: str # the opening line/hook
+    hook_text: str
     hook_type: Literal[
         "hot_take",
         "flip_the_script",
@@ -27,11 +27,11 @@ class VideoHookVariant(BaseModel):
 
 class TrendAnalysis(BaseModel):
     virality_score: float # 0.0–1.0
-    confidence: float     # how sure the model is
+    confidence: float
     trend_stage: Literal["emerging", "peak", "declining", "dead"] # emerging = act fast, peak = compete now, declining = skip
-    reasoning: str # why it's viral
+    reasoning: str
     signals:list[str] # specific evidence: ["hashtag +340% in 24h", "3 top creators posted same format"]
-    recommended_hooks: list[str]  # which hook_types fit this trend best
+    recommended_hooks: list[str]
 
 class SafetyCheck(BaseModel):
     is_safe: bool

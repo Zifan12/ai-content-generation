@@ -16,11 +16,13 @@ VALID_CLASSES = {"v": "viral", "m": "mid", "f": "flop", "s": "suspicious"}
 
 def compute_weighted_er(views: int, likes: int, comments: int, shares: int) -> float:
     if views == 0:
-        return 0.0 
+        return 0.0
+    # Weight comments 2x, shares 3x: harder-earned engagement than likes.
     return (likes * 1 + comments * 2 + shares * 3) / views * 100
 
 
 def auto_suggest_class(views: int, weighted_er: float) -> tuple[str, str]:
+    # High views + low engagement = likely bot-boosted; flag for manual review.
     if views >= 500_000 and weighted_er < 1.0:
         return "suspicious", f"views≥500K but wER={weighted_er:.2f}%<1%"
     if views >= 500_000 and weighted_er >= 4.0:
@@ -100,7 +102,6 @@ def main():
             er = compute_weighted_er(item.views, item.likes, item.comments, item.shares)
             suggestion, reason = auto_suggest_class(item.views, er)
             show_video(item, er, suggestion, reason, i, db)
-            # prompt loop
             while True:
                 raw = input("Label [v/m/f/s/skip/q]: ").strip().lower()
                 if raw == "q":

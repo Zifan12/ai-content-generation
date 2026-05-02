@@ -15,6 +15,8 @@ class ScriptPackage(BaseModel):
     hashtags: list[str] = Field(description="platform tags")
     thumbnail_prompt: str = Field(description="image generation prompt")
 
+    # Examples flow into the JSON schema served to the LLM via instructor —
+    # acts as few-shot conditioning for shape and tone of generated output.
     model_config = {
         "json_schema_extra": {
             "examples": [

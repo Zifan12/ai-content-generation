@@ -146,15 +146,14 @@ class TikTokScraper(BaseScraper):
     def _normalize_item(
         self, item: dict[str, Any], niche_id: int | None
     ) -> RawContentItem | None:
-        # Validate required id
+        # Apify scraper returns metric/timestamp fields with inconsistent types
+        # (str | int | None) across runs — coerce defensively rather than trust schema.
         item_id = item.get("id")
         if not item_id:
             return None
 
-        # Extract URL (webVideoUrl preferred, fallback to videoUrl)
         url = item.get("webVideoUrl") or item.get("videoUrl")
 
-        # Extract engagement metrics
         try:
             views = int(item.get("playCount") or 0)
         except (ValueError, TypeError):

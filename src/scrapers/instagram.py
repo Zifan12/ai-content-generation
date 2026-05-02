@@ -20,11 +20,7 @@ class InstagramScraper(BaseScraper):
   
 
     def __init__(self, db, actor_id: str = "apify~instagram-reel-scraper", poll_interval_seconds: float=5.0, poll_attempts: int=24, max_duration_seconds: int=90):
-        """
-        poll_interval_seconds: How often you check
-        poll_attempts: How many times you check
-        max_duration_seconds: Absolute total runtime limit
-        """
+        """Poll budget = poll_interval_seconds * poll_attempts, capped by max_duration_seconds."""
         super().__init__(db)
         self.api_token = os.getenv("APIFY_API_TOKEN")
         self.actor_id = actor_id
@@ -126,6 +122,8 @@ class InstagramScraper(BaseScraper):
     
     
     def _normalize_item(self, item, niche_id):
+        # Apify Instagram actors return the post identifier under different keys
+        # depending on actor version and post type (reel vs. post). Try in priority order.
         content_id = self._pick_first_str(item, ["id", "shortCode", "code", "postId"])
         if not content_id:
             return None
@@ -200,22 +198,8 @@ class InstagramScraper(BaseScraper):
             return 0
 
     def _parse_datetime(self, value):
-        if isinstance(value, (int, float)):
-            try:
-                return datetime.fromtimestamp(value)
-            except (TypeError, ValueError, OSError):
-                return None
-
-        if isinstance(value, str):
-            try:
-                return datetime.fromisoformat(value.replace("Z", "+00:00"))
-            except ValueError:
-                return None
-
-        return None
-
-
-    def _parse_datetime(self, value):
+        # Actor returns either Unix epoch (int|float) or ISO 8601 string.
+        # Coerce both into UTC-aware datetime; storage column is timezone-aware.
         if isinstance(value, (int, float)):
             try:
                 return datetime.fromtimestamp(value, tz=timezone.utc)

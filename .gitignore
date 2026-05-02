@@ -35,3 +35,7 @@ Thumbs.db
 
 # uv
 .python-version
+
+# Coverage
+.coverage
+htmlcov/

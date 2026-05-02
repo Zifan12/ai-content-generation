@@ -8,7 +8,7 @@ Score the script on a 1-5 scale based on: hook strength, clarity, engagement pot
 Be concise and critical. Low scores are valid."""
 
 class JudgeVerdict(BaseModel): 
-    score: int = Field(ge=5, le=1, description="Overall quality score 1-5")
+    score: int = Field(ge=1, le=5, description="Overall quality score 1-5")
     hook_strength: Literal["weak", "moderate", "strong"]
     reasoning: str = Field(max_length=300, description="Brief justification for the score")
     preferred: Literal["baseline", "rag", "tie"] | None = Field(
@@ -17,6 +17,8 @@ class JudgeVerdict(BaseModel):
     )
 
 class ScriptQualityJudge:
+    """LLM-as-judge scoring TikTok scripts on a 1-5 quality scale."""
+
     def __init__(self, model: str = "claude-sonnet-4-6"):
         self.llm = AnthropicLLM(model=model)
 

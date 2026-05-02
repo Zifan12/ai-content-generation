@@ -18,11 +18,14 @@ async def scrape_tiktok(hashtags: list[str], niche_id: int):
         db.close()
 
 def start():
+    """Register one 24h job per active niche with seeds, then start the scheduler loop."""
     db = SessionLocal()
     try:
         niches = db.query(Niche).filter(Niche.is_active == True).all()
         for niche in niches:
             if niche.hashtag_seeds:
+                # next_run_time=now forces immediate first run; without it APScheduler
+                # waits a full 24h before firing.
                 scheduler.add_job(scrape_tiktok, "interval", hours=24, args=[niche.hashtag_seeds, niche.id], next_run_time=datetime.now(timezone.utc))
     finally:
         db.close()

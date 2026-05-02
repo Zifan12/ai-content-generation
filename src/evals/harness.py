@@ -9,12 +9,16 @@ from src.models.eval import EvalRun
 
 @dataclass
 class EvalReport:
-    component: str # which scorer ran
-    metrics: dict[str, float] # {"auc": 0.82, "precision_at_10": 0.6}
-    git_sha: str # which commit produced this result
-    dataset_version: str # which golden set version, e.g. "v1"
+    """Result of one EvalHarness.run — metrics + reproducibility tags."""
+
+    component: str
+    metrics: dict[str, float]
+    git_sha: str
+    dataset_version: str
 
 class EvalHarness:
+    """Register scorers, run against golden set, persist EvalRun rows."""
+
     def __init__(self, golden_path: Path = Path("data/golden/labels.jsonl"), db=None, dataset_version: str = "v1"):
         self.golden_path = golden_path
         self.db = db
@@ -22,9 +26,11 @@ class EvalHarness:
         self._scorers: dict[str, Callable[[dict], float]] = {}
 
     def register(self, name: str, scorer: Callable[[dict], float]) -> None:
+        """Bind a scorer callable to a component name for later run() calls."""
         self._scorers[name] = scorer
 
     def run(self, component: str) -> EvalReport:
+        """Score golden set with registered scorer; persist to DB if db set."""
         if component not in self._scorers:
             raise KeyError(f"No scorer registered for '{component}'. Call register() first.")
 
@@ -35,13 +41,15 @@ class EvalHarness:
         y_true, y_score = [], []
 
         for item in items:
+            # Binary AUC: only "viral" = positive; mid/flop/suspicious all negative.
             y_true.append(1 if item["virality_class"] == "viral" else 0)
-            y_score.append(scorer(item)) # NOTE: scorer is a function 
+            y_score.append(scorer(item))
 
         metrics = {}
         try:
             metrics["auc"] = auc(y_true, y_score)
         except ValueError:
+            # AUC undefined when golden set has only one class; report NaN rather than crash.
             metrics["auc"] = float("nan")
         metrics["precision_at_10"] = precision_at_k(y_true, y_score, 10)
 
@@ -57,10 +65,13 @@ class EvalHarness:
      
 
     def _load_golden(self) -> list[dict]:
+        """Read golden JSONL; skip blank lines."""
         with open(self.golden_path, encoding="utf-8") as f:
             return [json.loads(line) for line in f if line.strip()]
         
     def _git_sha(self) -> str:
+        """Return short HEAD SHA; falls back to 'unknown' outside git repos."""
+        # subprocess fails outside a git repo (CI containers, bare checkouts); fall back
         try:
             return subprocess.check_output(
                 ["git", "rev-parse", "--short", "HEAD"], text=True
@@ -69,6 +80,7 @@ class EvalHarness:
             return "unknown"
         
     def _persist(self, component: str, git_sha: str, metrics: dict[str, float]) -> None:
+        """Write one EvalRun row per metric and commit."""
         for metric_name, metric_value in metrics.items():
             self.db.add(EvalRun(
                 component=component,
@@ -78,3 +90,51 @@ class EvalHarness:
                 dataset_version=self.dataset_version,
             ))
         self.db.commit()
+
+
+if __name__ == "__main__":
+    import argparse
+    from src.database import SessionLocal
+    from src.analysis.scorer import RuleBasedScorer
+    
+
+    parser = argparse.ArgumentParser(description="Run eval harness against golden set.")
+    parser.add_argument("--component", required=True, help="Scorer name to evaluate")
+    parser.add_argument("--dataset-version", default="v1")
+    args = parser.parse_args()
+
+    db = SessionLocal()
+
+    try:
+        harness = EvalHarness(dataset_version=args.dataset_version, db=db)
+
+        if args.component == "rule-based-scorer":
+            rule_scorer = RuleBasedScorer()
+            harness.register(
+                "rule-based-scorer",
+                lambda item: rule_scorer.score(
+                    views=item["views"],
+                    likes=item["likes"],
+                    comments=item["comments"],
+                    shares=item["shares"],
+                ).score,
+                
+            )
+        else:
+            raise SystemExit(f"Unknown component: {args.component}. Supported: rule-based-scorer")
+        
+        report = harness.run(component=args.component)
+        print(
+            json.dumps({
+                "component": report.component,
+                "metrics": report.metrics,
+                "git_sha": report.git_sha,
+                "dataset_version": report.dataset_version,
+                }, indent=2
+            )
+        )
+
+    finally:
+        db.close()
+
+

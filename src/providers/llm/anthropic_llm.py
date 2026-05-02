@@ -6,6 +6,8 @@ from src.observability.tracing import traced
 T = TypeVar("T", bound=BaseModel)
 
 class AnthropicLLM:
+    """Thin wrapper over Anthropic SDK exposing structured-output `parse`."""
+
     def __init__(self, model: str = "claude-haiku-4-5-20251001"):
         self.model = model
         self.client = Anthropic()
@@ -22,6 +24,7 @@ class AnthropicLLM:
             messages=[{"role": "user", "content": prompt}],
             max_tokens=max_tokens,
             output_format=response_model,
+            # Anthropic API rejects system=None on the wire; omit kwarg when unset.
             **({"system": system} if system is not None else {}),
         )
         return response.parsed_output
