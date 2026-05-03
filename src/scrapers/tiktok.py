@@ -176,11 +176,15 @@ class TikTokScraper(BaseScraper):
 
         # Extract audio ID from nested musicMeta
         audio_id = None
+        video_url = None # This is just the audio url of the video
         music_meta = item.get("musicMeta")
         if music_meta and isinstance(music_meta, dict):
             music_id = music_meta.get("musicId")
             if music_id:
                 audio_id = str(music_id)
+            play_url = music_meta.get("playUrl")
+            if play_url:
+                video_url = str(play_url) 
 
         # Extract duration from nested videoMeta
         duration_in_seconds = None
@@ -219,6 +223,22 @@ class TikTokScraper(BaseScraper):
             except (ValueError, TypeError, OSError):
                 pass
 
+        # Extract description 
+        description = item.get("text")
+
+        thumbnail_url = None
+        if video_meta and isinstance(video_meta, dict):
+            cover = video_meta.get("coverUrl")
+            if cover:
+                thumbnail_url = str(cover)
+
+        author_username = None
+        author_meta = item.get("authorMeta")
+        if author_meta and isinstance(author_meta, dict):
+            name = author_meta.get("name")
+            if name:
+                author_username = str(name)
+
         return RawContentItem(
             niche_id=niche_id,
             platform=self.platform,
@@ -233,5 +253,10 @@ class TikTokScraper(BaseScraper):
             duration_in_seconds=duration_in_seconds,
             content_format="video",
             published_at=published_at,
+            title=None, # Tiktok does not have titles
+            description=description,
+            thumbnail_url=thumbnail_url,
+            video_url=video_url,
+            author_username=author_username,
         )
 

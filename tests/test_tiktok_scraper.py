@@ -112,3 +112,44 @@ def test_normalize_tolerates_non_numeric_counts(scraper):
     assert row.likes == 0
     assert row.comments == 0
     assert row.shares == 0
+
+def test_normalize_extracts_description(scraper):
+    item = _item(text="Caption text with #hashtag")
+    row = scraper._normalize_item(item, niche_id=None)
+    assert row.description == "Caption text with #hashtag"
+
+def test_normalize_description_none_when_missing(scraper):
+    item = _item()
+    item.pop("text", None)
+    row = scraper._normalize_item(item, niche_id=None)
+    assert row.description is None
+
+def test_normalize_extracts_thumbnail_url(scraper):
+    item = _item(videoMeta={"duration": 30, "coverUrl": "https://cdn/thumb.jpg"})
+    row = scraper._normalize_item(item, niche_id=None)
+    assert row.thumbnail_url == "https://cdn/thumb.jpg"
+
+def test_normalize_extracts_video_url(scraper):
+    item = _item(musicMeta={"musicId": "music999", "playUrl": "https://cdn/audio.mp4"})
+    row = scraper._normalize_item(item, niche_id=None)
+    assert row.video_url == "https://cdn/audio.mp4"
+
+
+def test_normalize_extracts_author_username(scraper):
+    item = _item(authorMeta={"name": "creator_handle"})
+    row = scraper._normalize_item(item, niche_id=None)
+    assert row.author_username == "creator_handle"
+
+def test_normalize_thumbnail_video_url_none_when_videoMeta_missing(scraper):
+    item = _item()
+    item.pop("videoMeta", None)
+    row = scraper._normalize_item(item, niche_id=None)
+    assert row.thumbnail_url is None
+    assert row.video_url is None
+
+
+def test_normalize_author_username_none_when_authorMeta_missing(scraper):
+    item = _item()
+    item.pop("authorMeta", None)
+    row = scraper._normalize_item(item, niche_id=None)
+    assert row.author_username is None
