@@ -28,6 +28,12 @@ class RawContentItem(Base):
     duration_in_seconds: Mapped[int | None] = mapped_column()
     content_format: Mapped[str | None] = mapped_column(String(50), index=True)
 
+    title: Mapped[str | None] = mapped_column(Text)
+    description: Mapped[str | None] = mapped_column(Text)
+    thumbnail_url: Mapped[str | None] = mapped_column(Text)
+    video_url: Mapped[str | None] = mapped_column(Text)
+    author_username: Mapped[str | None] = mapped_column(String(100), index=True)
+
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 
