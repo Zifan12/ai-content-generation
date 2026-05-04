@@ -32,6 +32,7 @@ class RawContentItem(Base):
     description: Mapped[str | None] = mapped_column(Text)
     thumbnail_url: Mapped[str | None] = mapped_column(Text)
     video_url: Mapped[str | None] = mapped_column(Text)
+    subtitle_url: Mapped[str | None] = mapped_column(Text)
     author_username: Mapped[str | None] = mapped_column(String(100), index=True)
 
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)

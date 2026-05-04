@@ -12,7 +12,7 @@ from src.scrapers.base import BaseScraper
 
 
 class TikTokScraper(BaseScraper):
-
+    
     platform = "tiktok"
     base_url = "https://api.apify.com/v2"
 
@@ -232,6 +232,13 @@ class TikTokScraper(BaseScraper):
             if cover:
                 thumbnail_url = str(cover)
 
+        subtitle_url = None
+        subtitle_links = (video_meta or {}).get("subtitleLinks") or [] # guarantee list to avoid None during iteration
+        for link in subtitle_links:
+            if isinstance(link, dict) and str(link.get("language", "")).startswith("eng"):
+                subtitle_url = link.get("downloadLink")
+                break
+      
         author_username = None
         author_meta = item.get("authorMeta")
         if author_meta and isinstance(author_meta, dict):
@@ -257,6 +264,7 @@ class TikTokScraper(BaseScraper):
             description=description,
             thumbnail_url=thumbnail_url,
             video_url=video_url,
+            subtitle_url=subtitle_url,
             author_username=author_username,
         )
 
