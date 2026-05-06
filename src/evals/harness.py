@@ -1,11 +1,17 @@
+import argparse
 import json
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from src.analysis.scorer import RuleBasedScorer
+from src.database import SessionLocal
 from src.evals.metrics import auc, precision_at_k
 from src.models.eval import EvalRun
+from src.models.blueprint import BlueprintRecord
+from src.evals.blueprint_eval import schema_valid_rate as _schema_valid_rate
+
 
 @dataclass
 class EvalReport:
@@ -91,13 +97,7 @@ class EvalHarness:
             ))
         self.db.commit()
 
-
-if __name__ == "__main__":
-    import argparse
-    from src.database import SessionLocal
-    from src.analysis.scorer import RuleBasedScorer
-    
-
+def main():
     parser = argparse.ArgumentParser(description="Run eval harness against golden set.")
     parser.add_argument("--component", required=True, help="Scorer name to evaluate")
     parser.add_argument("--dataset-version", default="v1")
@@ -120,6 +120,27 @@ if __name__ == "__main__":
                 ).score,
                 
             )
+        elif args.component == "blueprint-extractor-v1":
+            records = db.query(BlueprintRecord).filter(BlueprintRecord.extractor_version == "v0").all()
+            rate = _schema_valid_rate(records)
+            git_sha = harness._git_sha()
+            db.add(EvalRun(component=args.component, git_sha=git_sha, metric_name="schema_valid_rate", metric_value=rate, dataset_version=args.dataset_version))
+            db.add(EvalRun(component=args.component, git_sha=git_sha, metric_name="record_count", metric_value=float(len(records)), dataset_version=args.dataset_version))
+            db.commit()
+            print(
+                    json.dumps({
+                        "component": args.component,
+                        "metrics": {
+                            "schema_valid_rate": rate,
+                            "record_count": len(records),
+                        },
+                        "git_sha": git_sha,
+                        "dataset_version": args.dataset_version,
+                        }, indent=2
+                    )
+                )
+            return
+
         else:
             raise SystemExit(f"Unknown component: {args.component}. Supported: rule-based-scorer")
         
@@ -137,4 +158,8 @@ if __name__ == "__main__":
     finally:
         db.close()
 
+
+
+if __name__ == "__main__":
+    main()
 
