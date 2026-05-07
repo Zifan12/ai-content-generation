@@ -1,3 +1,11 @@
+"""
+LLM-as-judge for generated TikTok scripts.
+
+Single-script scoring and pairwise (RAG vs baseline) preference, both
+returned as typed Pydantic verdicts via Anthropic structured-output —
+free-text judges can't be aggregated reproducibly across eval runs.
+"""
+
 from pydantic import BaseModel, Field
 from typing import Literal
 from src.providers.llm.anthropic_llm import AnthropicLLM
@@ -17,13 +25,17 @@ class JudgeVerdict(BaseModel):
     )
 
 class ScriptQualityJudge:
-    """LLM-as-judge scoring TikTok scripts on a 1-5 quality scale."""
+    """
+    LLM-as-judge scoring TikTok scripts on a 1-5 quality scale.
+    """
 
     def __init__(self, model: str = "claude-sonnet-4-6"):
         self.llm = AnthropicLLM(model=model)
 
     def judge(self, video_stats: dict, script: str) -> JudgeVerdict:
-        """Score a single script against the video it was generated for."""
+        """
+        Score a single script against the video it was generated for.
+        """
         prompt = (
             f"Video stats:\n"
             f" Views: {video_stats.get('views', 0):,}\n"
@@ -41,7 +53,9 @@ class ScriptQualityJudge:
         )
 
     def judge_pairwise(self, video_stats: dict, rag_script: str, baseline_script: str) -> JudgeVerdict:
-        """Compare two scripts. Returns verdict with preferred set."""
+        """
+        Compare two scripts. Returns verdict with preferred set.
+        """
         prompt = (
                 f"Video stats:\n"
                 f"  Views: {video_stats.get('views', 0):,}\n"

@@ -1,4 +1,10 @@
-# src/observability/tracing.py
+"""
+Langfuse tracing decorator and helpers.
+
+`traced` is the project's single tracing primitive — every LLM call and
+non-trivial pipeline step wraps in it so cost, latency, and output show up in
+one place. Without consistent use, observability gaps appear silently.
+"""
 
 from functools import wraps
 from typing import Callable, Any
@@ -26,9 +32,13 @@ def traced(
     return decorator
 
 def get_current_span():
-    """Return active span from contextvar, or None."""
+    """
+    Return active span from contextvar, or None.
+    """
     return get_client().get_current_observation()
 
 def flush():
-    """Force send queued events. Call on shutdown."""
+    """
+    Force send queued events. Call on shutdown.
+    """
     get_client().flush()

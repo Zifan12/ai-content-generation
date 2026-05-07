@@ -1,3 +1,11 @@
+"""
+Blueprint-extractor eval primitives.
+
+Self-agreement (Cohen's kappa on enums, MAE on mechanic floats) and schema-
+validity rate. Without these the LLM extractor drifts silently — every prompt
+edit needs a measurable signal.
+"""
+
 from typing import Iterable
 
 from pydantic import ValidationError
@@ -38,14 +46,19 @@ def schema_valid_rate(records: Iterable[BlueprintRecord]) -> float:
     return counter/len(records)
 
 def cohen_kappa_pairs(a: list[str], b: list[str]) -> float:
-    """Cohen's kappa between two label lists (paired). NaN on empty."""
+    """
+    Cohen's kappa between two label lists (paired). NaN on empty.
+    """
     if not a or not b or len(a) != len(b):
         return float("nan")
     return float(cohen_kappa_score(a, b))
     
 
 def mae_pairs(a: list[float], b: list[float]) -> float:
-    """Mean absolute error between paired float lists. NaN on empty/length-mismatch."""
+    """
+    Mean absolute error between paired float lists. NaN on empty/length-mismatch.
+    """
     if not a or not b or len(a) != len(b):
         return float("nan")
     return float(np.mean(np.abs(np.array(a)-np.array(b))))
+

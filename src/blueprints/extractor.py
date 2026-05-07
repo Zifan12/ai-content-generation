@@ -1,3 +1,11 @@
+"""
+LLM-backed Blueprint extraction.
+
+Wraps a single Sonnet call that turns a scraped video (caption + transcript +
+stats) into a validated 18-field Blueprint. Pure compute — persistence lives
+in the batch CLI script that drives this class.
+"""
+
 from src.blueprints.schema import Blueprint
 from src.models.trend import RawContentItem
 from src.observability.tracing import traced

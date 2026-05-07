@@ -1,3 +1,10 @@
+"""
+APScheduler glue that runs one TikTok scrape per active niche on a 24h cycle.
+
+Lives outside the scrapers themselves so the schedule can change without
+touching scraper code, and so FastAPI's lifespan can start/stop it cleanly.
+"""
+
 from datetime import datetime, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -8,6 +15,10 @@ from src.models.niche import Niche
 scheduler = AsyncIOScheduler()
 
 async def scrape_tiktok(hashtags: list[str], niche_id: int):
+    """
+    Run one TikTok scrape job for the given niche, swallowing exceptions so a
+    single failure does not abort the scheduler loop.
+    """
     db = SessionLocal()
     try:
         scraper = TikTokScraper(db)

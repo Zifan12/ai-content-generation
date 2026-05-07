@@ -7,7 +7,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 from src.database import Base
 
 class BlueprintRecord(Base):
-    """Versioned Blueprint storage — JSON payload per (content_item, extractor_version)."""
+    """
+    Versioned Blueprint storage — JSON payload per (content_item, extractor_version).
+    """
 
     __tablename__ = "blueprints"
     __table_args__ = (

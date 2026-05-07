@@ -1,3 +1,14 @@
+"""
+Measure Blueprint extractor self-agreement.
+
+The extractor is LLM-backed and non-deterministic, so two calls on the same
+item can disagree. This script quantifies that disagreement: Cohen's kappa
+on enum fields and MAE on mechanic floats, persisted to eval_runs tagged by
+git SHA. Used to detect regressions when the extractor prompt or model
+changes — without it, prompt edits can silently degrade every downstream
+consumer (RAG conditioning, ML features, generation).
+"""
+
 import argparse
 import logging
 import subprocess
@@ -25,6 +36,9 @@ def get_transcript_text(db: Session, content_item_id: int) -> str | None:
     return db.scalar(stmt)
 
 def git_sha() -> str:
+    """
+    Return short git SHA of HEAD, or "unknown" if git unavailable or call fails.
+    """
     try:
         return subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"], text=True
@@ -32,7 +46,14 @@ def git_sha() -> str:
     except Exception:
         return "unknown"
 
-def main(): 
+def main():
+    """
+    CLI entrypoint for blueprint extractor self-agreement eval.
+
+    Extracts each sampled item twice, computes Cohen's kappa per enum field
+    and MAE per mechanic field across the two runs, and persists one EvalRun
+    row per metric tagged with the current git SHA and dataset version.
+    """
     parser = argparse.ArgumentParser(description="Run blueprint self-agreement eval.")
     parser.add_argument("--limit", type=int, default=20)
     parser.add_argument("--dataset-version", default="v1")
@@ -56,6 +77,7 @@ def main():
         for item in items:
             try:
                 text = get_transcript_text(db, item.id)
+                # Two independent extractions per item; non-determinism between runs is the self-agreement signal.
                 run_a.append(extractor.extract(item=item, transcript_text=text))
                 run_b.append(extractor.extract(item=item, transcript_text=text))
 

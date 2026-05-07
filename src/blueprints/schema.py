@@ -1,3 +1,11 @@
+"""
+Blueprint Pydantic schema and locked taxonomies.
+
+`EXTRACTOR_VERSION` is the cache key for stored extractions in the
+`blueprints` table — bump it whenever the schema or prompt changes so old and
+new extractions remain distinguishable.
+"""
+
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -22,7 +30,9 @@ DurationBand = Literal[
 
 
 class Blueprint(BaseModel):
-    """18-field viral-mechanics summary of a single video."""
+    """
+    18-field viral-mechanics summary of a single video.
+    """
     
     # Open-string in v0; closed Literal[...] in v1 after taxonomy bootstrap.
     format: str

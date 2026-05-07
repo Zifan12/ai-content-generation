@@ -30,11 +30,12 @@ async def main() -> None:
             f"/acts/{ACTOR_ID}/runs",
             headers=headers,
             json=run_input,
-            params={"token": token},
+            params={"token": token},  # Apify requires token in query param despite Authorization header; header alone returns 401
         )
         run.raise_for_status()
         run_id = run.json()["data"]["id"]
 
+        # 24 × 5s = 120s max wait; Apify typical run time is 30–60s for small hashtag scrapes
         for _ in range(24):
             await asyncio.sleep(5)
             status_resp = await client.get(
@@ -64,6 +65,16 @@ async def main() -> None:
         raise SystemExit("No items returned")
 
     print(json.dumps(items[0], indent=2, default=str))
+
+    subtitle_links = items[0].get("videoMeta", {}).get("subtitleLinks", [])
+    if subtitle_links:
+        url = subtitle_links[0].get("downloadLink")
+        print("\n--- SUBTITLE FILE ---")
+        async with httpx.AsyncClient(timeout=10.0) as sub_client:
+            sub_resp = await sub_client.get(url)
+            print(sub_resp.text[:800])
+    else:
+        print("\n--- NO subtitleLinks found ---")
 
 
 if __name__ == "__main__":

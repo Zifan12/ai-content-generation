@@ -1,3 +1,10 @@
+"""
+Fetch and persist TikTok transcripts from Apify-sourced WebVTT subtitles.
+
+TikTok's CDN-hosted subtitle files repeat caption segments and ship with cue
+timestamps; this module strips both so downstream consumers (Blueprint
+extractor, RAG indexer) get clean plain text.
+"""
 
 import logging
 

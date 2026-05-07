@@ -1,3 +1,11 @@
+"""
+YouTube Shorts scraper using YouTube Data API v3.
+
+Two-call flow (search → videos) is forced by the API: /search returns only
+IDs, and the duration filter for "short" maxes out at 4 minutes, so the ≤60s
+Shorts cut happens client-side in `_normalize_video`.
+"""
+
 import os
 import re
 from datetime import datetime

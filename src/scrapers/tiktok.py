@@ -1,3 +1,11 @@
+"""
+TikTok scraper backed by the Clockworks Apify actor.
+
+Apify returns metric and timestamp fields with inconsistent types across
+runs; this module's normalizer is the project's single trust boundary for
+that data, so downstream code can treat RawContentItem as clean.
+"""
+
 import asyncio
 import os
 import time
@@ -12,7 +20,13 @@ from src.scrapers.base import BaseScraper
 
 
 class TikTokScraper(BaseScraper):
-    
+    """
+    Apify-backed TikTok hashtag scraper.
+
+    Polling cap = poll_interval_seconds * poll_attempts, hard-capped by
+    max_duration_seconds.
+    """
+
     platform = "tiktok"
     base_url = "https://api.apify.com/v2"
 
@@ -211,7 +225,6 @@ class TikTokScraper(BaseScraper):
                         if normalized and normalized not in seen:
                             hashtags_list.append(normalized)
                             seen.add(normalized)
-            # Sort the hashtags
             hashtags_list.sort()
 
         # Extract published_at from createTime

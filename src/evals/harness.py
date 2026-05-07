@@ -1,3 +1,11 @@
+"""
+Eval harness CLI and registry.
+
+Single entry point for scoring registered components against the golden set.
+Persists every metric to `eval_runs` keyed by git SHA so regressions across
+commits are auditable; without this loop, prompt/code changes ship blind.
+"""
+
 import argparse
 import json
 import subprocess
@@ -15,7 +23,9 @@ from src.evals.blueprint_eval import schema_valid_rate as _schema_valid_rate
 
 @dataclass
 class EvalReport:
-    """Result of one EvalHarness.run — metrics + reproducibility tags."""
+    """
+    Result of one EvalHarness.run — metrics + reproducibility tags.
+    """
 
     component: str
     metrics: dict[str, float]
@@ -23,7 +33,9 @@ class EvalReport:
     dataset_version: str
 
 class EvalHarness:
-    """Register scorers, run against golden set, persist EvalRun rows."""
+    """
+    Register scorers, run against golden set, persist EvalRun rows.
+    """
 
     def __init__(self, golden_path: Path = Path("data/golden/labels.jsonl"), db=None, dataset_version: str = "v1"):
         self.golden_path = golden_path
@@ -32,11 +44,18 @@ class EvalHarness:
         self._scorers: dict[str, Callable[[dict], float]] = {}
 
     def register(self, name: str, scorer: Callable[[dict], float]) -> None:
-        """Bind a scorer callable to a component name for later run() calls."""
+        """
+        Bind a scorer callable to a component name for later run() calls.
+        """
         self._scorers[name] = scorer
 
     def run(self, component: str) -> EvalReport:
-        """Score golden set with registered scorer; persist to DB if db set."""
+        """
+        Score golden set with registered scorer; persist to DB if db is set.
+
+        Returns EvalReport with AUC and precision@10.
+        Raises KeyError if component has no registered scorer.
+        """
         if component not in self._scorers:
             raise KeyError(f"No scorer registered for '{component}'. Call register() first.")
 
@@ -71,12 +90,16 @@ class EvalHarness:
      
 
     def _load_golden(self) -> list[dict]:
-        """Read golden JSONL; skip blank lines."""
+        """
+        Read golden JSONL; skip blank lines.
+        """
         with open(self.golden_path, encoding="utf-8") as f:
             return [json.loads(line) for line in f if line.strip()]
         
     def _git_sha(self) -> str:
-        """Return short HEAD SHA; falls back to 'unknown' outside git repos."""
+        """
+        Return short HEAD SHA; falls back to 'unknown' outside git repos.
+        """
         # subprocess fails outside a git repo (CI containers, bare checkouts); fall back
         try:
             return subprocess.check_output(
@@ -86,7 +109,9 @@ class EvalHarness:
             return "unknown"
         
     def _persist(self, component: str, git_sha: str, metrics: dict[str, float]) -> None:
-        """Write one EvalRun row per metric and commit."""
+        """
+        Write one EvalRun row per metric and commit.
+        """
         for metric_name, metric_value in metrics.items():
             self.db.add(EvalRun(
                 component=component,
@@ -98,6 +123,10 @@ class EvalHarness:
         self.db.commit()
 
 def main():
+    """
+    CLI entrypoint. Supported --component values: rule-based-scorer, blueprint-extractor-v1.
+    blueprint-extractor-v1 bypasses the scorer registry and queries BlueprintRecord directly.
+    """
     parser = argparse.ArgumentParser(description="Run eval harness against golden set.")
     parser.add_argument("--component", required=True, help="Scorer name to evaluate")
     parser.add_argument("--dataset-version", default="v1")
@@ -121,6 +150,7 @@ def main():
                 
             )
         elif args.component == "blueprint-extractor-v1":
+            # v0 is the only deployed extractor version; update when v1 schema is promoted
             records = db.query(BlueprintRecord).filter(BlueprintRecord.extractor_version == "v0").all()
             rate = _schema_valid_rate(records)
             git_sha = harness._git_sha()

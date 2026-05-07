@@ -1,3 +1,12 @@
+"""
+Rule-based virality classifier matching the labeling rubric.
+
+Single source of truth for converting raw video stats (views, likes, comments,
+shares) into a virality_class label. Used by both the eval harness as the
+baseline scorer and any downstream code that needs a deterministic class
+without an LLM call.
+"""
+
 from dataclasses import dataclass
 
 @dataclass
@@ -8,7 +17,9 @@ class ScorerResult:
     reasoning: str
 
 class RuleBasedScorer:
-    """Weighted ER + view threshold classifier. Matches labeling rubric exactly."""
+    """
+    Weighted ER + view threshold classifier. Matches labeling rubric exactly.
+    """
 
     def score(self, views: int, likes: int, comments: int, shares: int) -> ScorerResult:
         weighted_er = self._weighted_er(views, likes, comments, shares)

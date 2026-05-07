@@ -1,3 +1,11 @@
+"""
+Instagram Reels scraper backed by an Apify actor.
+
+Apify exposes IG data through async actor runs; this module starts a run,
+polls for completion within a hard time budget, and normalizes the
+inconsistent field names the actor returns across versions.
+"""
+
 import asyncio
 import os
 import re
@@ -13,7 +21,13 @@ from src.scrapers.base import BaseScraper
 
 
 class InstagramScraper(BaseScraper):
-    
+    """
+    Apify-backed Instagram Reels scraper.
+
+    Polling cap = poll_interval_seconds * poll_attempts, additionally
+    hard-capped by max_duration_seconds.
+    """
+
     platform = "instagram"
     base_url = "https://api.apify.com/v2"  
     _hashtag_re = re.compile(r"(?<!\w)#(\w+)")

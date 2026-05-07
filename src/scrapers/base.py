@@ -1,3 +1,11 @@
+"""
+Abstract base for platform scrapers.
+
+Defines the `fetch_trending` contract every scraper must implement and
+provides `save_items` so per-platform code never deals with SQLAlchemy
+unique-constraint handling.
+"""
+
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
@@ -7,7 +15,9 @@ from sqlalchemy.orm import Session
 from src.models.trend import RawContentItem
 
 class BaseScraper(ABC):
-    """Common interface for all platform scrapers."""
+    """
+    Common interface for all platform scrapers.
+    """
 
     platform: str
 
@@ -20,6 +30,11 @@ class BaseScraper(ABC):
         pass
 
     def save_items(self, items: Sequence[RawContentItem]) -> list[RawContentItem]:
+        """
+        Persist items individually, swallowing per-row IntegrityError on the
+        (platform, platform_content_id) unique constraint so duplicate scrapes
+        skip rather than abort the batch. Returns only successfully saved rows.
+        """
         saved: list[RawContentItem] = []
         
         for item in items:

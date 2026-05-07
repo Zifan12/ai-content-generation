@@ -1,3 +1,10 @@
+"""
+SQLAlchemy engine, session factory, and Base for the project.
+
+SQLite for local dev (single-file under data/app.db); the URL is the only
+thing that needs to change to swap in RDS Postgres in prod.
+"""
+
 from pathlib import Path
 from typing import Generator
 
@@ -5,8 +12,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 
-# Resolve project root (parent of src/) and build path to SQLite database
-BASE_DIR = Path(__file__).resolve().parent.parent 
+BASE_DIR = Path(__file__).resolve().parent.parent
 DB_PATH = BASE_DIR / "data" / "app.db"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
@@ -27,12 +33,13 @@ SessionLocal = sessionmaker(
     expire_on_commit=False,  # Keep objects usable after commit without re-querying
 )
 
-# Base class all ORM models inherit from — registers them with SQLAlchemy's metadata
 class Base(DeclarativeBase):
     pass
 
 def get_db() -> Generator[Session, None, None]:
-    """FastAPI dependency that provides a database session and ensures it's closed after use."""
+    """
+    FastAPI dependency that provides a database session and ensures it's closed after use.
+    """
     db = SessionLocal()
     try: 
         yield db 
