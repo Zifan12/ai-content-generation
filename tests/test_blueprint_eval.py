@@ -1,8 +1,9 @@
 import math
-
+import pytest
 from src.blueprints.schema import EXTRACTOR_VERSION
 from src.evals.blueprint_eval import schema_valid_rate
 from src.models.blueprint import BlueprintRecord
+from src.evals.blueprint_eval import cohen_kappa_pairs, mae_pairs
 
 
 def _good_payload() -> dict:
@@ -40,7 +41,6 @@ def _record(payload: dict) -> BlueprintRecord:
         blueprint_data=payload
     )
 
-
 def test_schema_valid_rate_all_valid():
     records = [_record(_good_payload()) for _ in range(3)]
     assert schema_valid_rate(records) == 1.0
@@ -56,3 +56,33 @@ def test_schema_valid_rate_partial():
 def test_schema_valid_rate_empty_returns_nan():
     records = []
     assert math.isnan(schema_valid_rate(records))
+
+def test_cohen_kappa_perfect_agreement():
+    a = ["talking_head", "stitch", "demo"]
+    b = ["talking_head", "stitch", "demo"]
+    assert cohen_kappa_pairs(a, b) == 1.0
+
+def test_cohen_kappa_total_disagreement():
+    a = ["talking_head", "stitch", "demo"]
+    b = ["stitch", "demo", "talking_head"]
+    # All paired differently → kappa near 0 or negative
+    assert cohen_kappa_pairs(a, b) <= 0.0
+
+def test_cohen_kappa_empty_returns_nan():
+    assert math.isnan(cohen_kappa_pairs([], []))
+
+def test_mae_pairs_zero_when_identical():
+    a = [0.5, 0.7, 0.3]
+    b = [0.5, 0.7, 0.3]
+    assert mae_pairs(a, b) == 0.0
+
+
+def test_mae_pairs_nonzero():
+    a = [0.5, 0.7, 0.3]
+    b = [0.4, 0.9, 0.5]
+    # |0.1| + |0.2| + |0.2| = 0.5 / 3 ≈ 0.1667
+    assert mae_pairs(a, b) == pytest.approx(0.5 / 3)
+
+
+def test_mae_pairs_empty_returns_nan():
+    assert math.isnan(mae_pairs([], []))
