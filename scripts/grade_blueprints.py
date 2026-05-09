@@ -15,6 +15,7 @@ from src.models.blueprint import BlueprintRecord
 from src.models.eval import EvalRun
 from src.models.transcript import Transcript
 from src.models.trend import RawContentItem
+from src.blueprints.schema import EXTRACTOR_VERSION
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -47,7 +48,7 @@ def get_transcript_text(db: Session, content_item_id: int) -> str | None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Human-grade Blueprint extractions.")
     parser.add_argument("--sample", type=int, default=20)
-    parser.add_argument("--extractor-version", default="v0")
+    parser.add_argument("--extractor-version", default=EXTRACTOR_VERSION)
     parser.add_argument("--dataset-version", default="v1")
     args = parser.parse_args()
 
