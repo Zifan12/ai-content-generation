@@ -1,25 +1,33 @@
 import asyncio
-import os
 from pathlib import Path
-from typing import Any
 
-import yaml
-from alembic import command
 from alembic.config import Config
-from sqlalchemy import func, select
+from dotenv import load_dotenv
 
-from src.database import DB_PATH, SessionLocal
+from alembic import command
+from src.database import SessionLocal
 from src.models.niche import Niche
-from src.models.trend import RawContentItem
-from src.scrapers.youtube import YoutubeScraperSessionLocal, engine, Base
-from src.models.niche import Niche
-from src.scrapers.youtube import YoutubeScraper
+from src.scrapers.tiktok import TikTokScraper
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-SETTINGS_PATH = PROJECT_ROOT / "config" / "settings.yaml"
 ALEMBIC_INI_PATH = PROJECT_ROOT / "alembic.ini"
-DATA_DIR = PROJECT_ROOT / "data"
 
+load_dotenv(PROJECT_ROOT / "config" / ".env")
 
 def run_migrations():
-    
+    cfg = Config(ALEMBIC_INI_PATH)
+    command.upgrade(cfg, "head")
+
+
+async def main():
+    run_migrations()
+    with SessionLocal() as db:
+        niches = db.query(Niche).filter(Niche.is_active == True).all()
+        scraper = TikTokScraper(db=db)
+
+        for niche in niches:
+            items = await scraper.fetch_trending(max_results=10, niche_id=niche.id, query=niche.hashtag_seeds)
+            print(f"{niche.name}: {len(items)} saved")
+
+if __name__ == "__main__":
+    asyncio.run(main())
