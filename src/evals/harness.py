@@ -19,7 +19,7 @@ from src.evals.metrics import auc, precision_at_k
 from src.models.eval import EvalRun
 from src.models.blueprint import BlueprintRecord
 from src.evals.blueprint_eval import schema_valid_rate as _schema_valid_rate
-
+from src.blueprints.schema import EXTRACTOR_VERSION
 
 @dataclass
 class EvalReport:
@@ -150,8 +150,7 @@ def main():
                 
             )
         elif args.component == "blueprint-extractor-v1":
-            # v0 is the only deployed extractor version; update when v1 schema is promoted
-            records = db.query(BlueprintRecord).filter(BlueprintRecord.extractor_version == "v0").all()
+            records = db.query(BlueprintRecord).filter(BlueprintRecord.extractor_version == EXTRACTOR_VERSION).all()
             rate = _schema_valid_rate(records)
             git_sha = harness._git_sha()
             db.add(EvalRun(component=args.component, git_sha=git_sha, metric_name="schema_valid_rate", metric_value=rate, dataset_version=args.dataset_version))
