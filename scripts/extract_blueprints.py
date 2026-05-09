@@ -1,16 +1,20 @@
 import argparse
 import logging
+from pathlib import Path
 from statistics import mean
 
+from dotenv import load_dotenv
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.blueprints.extractor import BlueprintExtractor
-from src.blueprints.schema import EXTRACTOR_VERSION, Blueprint
-from src.database import SessionLocal
-from src.models.blueprint import BlueprintRecord
-from src.models.transcript import Transcript
-from src.models.trend import RawContentItem
+load_dotenv(Path(__file__).resolve().parent.parent / "config" / ".env")
+
+from src.blueprints.extractor import BlueprintExtractor  # noqa: E402
+from src.blueprints.schema import EXTRACTOR_VERSION, Blueprint  # noqa: E402
+from src.database import SessionLocal  # noqa: E402
+from src.models.blueprint import BlueprintRecord  # noqa: E402
+from src.models.transcript import Transcript  # noqa: E402
+from src.models.trend import RawContentItem  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -89,6 +93,7 @@ def main() -> None:
         items = find_unprocessed(db, args.extractor_version, args.niche_id, args.limit)
         extractor = BlueprintExtractor()
         successes: list[float] = []
+        failures = 0
 
         for item in items:
             try:
@@ -100,8 +105,9 @@ def main() -> None:
             except Exception as e:
                 log.error(f"item {item.id} failed {e}")
                 db.rollback()
+                failures += 1
                 continue
-        log.info("Done. Processed %d items", len(items))
+        log.info("Done. Succeeded: %d, Failed: %d", len(successes), failures)
         if successes:
             log.info("Mean confidence: %.3f", mean(successes))
     
