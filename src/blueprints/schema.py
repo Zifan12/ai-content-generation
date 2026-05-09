@@ -10,7 +10,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-EXTRACTOR_VERSION = "v0"
+EXTRACTOR_VERSION = "v1"
 
 
 # Locked taxonomies (theory-grounded; not affected by bootstrap)
@@ -28,20 +28,37 @@ DurationBand = Literal[
     "under_10s", "10_20s", "20_40s", "40_60s", "over_60s",
 ]
 
+# v1 taxonomies (bootstrapped 2026-05-09 from 120 v0 BlueprintRecord rows)
+# Source of truth: docs/taxonomy/v1_enums.md
+FormatType = Literal[
+    "ai_generated", "tutorial", "talking_head", "storytime_narration",
+    "horror_story", "meme_remix", "compilation", "aesthetic_showcase",
+    "animation", "reaction", "transformation",
+]
+
+HookType = Literal[
+    "shocking_claim", "curiosity_gap", "visual_pattern_break", "visual_aesthetic",
+    "character_intro", "emotional_hook", "pattern_interrupt", "direct_promise",
+]
+
+PayoffType = Literal[
+    "reveal", "twist", "humor", "emotional_resolution",
+    "aesthetic_satisfaction", "informational", "call_to_action",
+]
+
 
 class Blueprint(BaseModel):
     """
     18-field viral-mechanics summary of a single video.
     """
-    
-    # Open-string in v0; closed Literal[...] in v1 after taxonomy bootstrap.
-    format: str
+
+    format: FormatType
     format_subtype: str | None = None
 
-    hook_type: str
+    hook_type: HookType
     hook_subtype: str | None = None
 
-    payoff_type: str
+    payoff_type: PayoffType
     payoff_subtype: str | None = None
 
     structure: list[StructureStage]

@@ -35,14 +35,12 @@ def test_valid_payload_parses():
     assert bp.format == "talking_head"
     assert bp.structure == ["hook", "tension", "reveal", "cta"]
 
-
-def test_format_accepts_arbitrary_string_in_v0():
-    """v0 format is open-string — any non-empty string is valid."""
+def test_format_rejects_unknown_value_in_v1():
+    """v1 format is closed Literal — unknown values raise ValidationError."""
     payload = _valid_payload()
     payload["format"] = "weird_unknown_format_xyz"
-    bp = Blueprint(**payload)
-    assert bp.format == "weird_unknown_format_xyz"
-
+    with pytest.raises(ValidationError):
+        Blueprint(**payload) 
 
 def test_invalid_structure_value_rejected():
     payload = _valid_payload()
@@ -91,3 +89,4 @@ def test_subtype_optional():
     payload["format_subtype"] = "podcast_cut"
     bp = Blueprint(**payload)
     assert bp.format_subtype == "podcast_cut"
+
