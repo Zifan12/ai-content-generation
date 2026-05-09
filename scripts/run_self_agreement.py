@@ -16,13 +16,17 @@ import subprocess
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.blueprints.extractor import BlueprintExtractor
-from src.blueprints.schema import EXTRACTOR_VERSION
-from src.database import SessionLocal
-from src.evals.blueprint_eval import ENUM_FIELDS, MECHANIC_FIELDS, cohen_kappa_pairs, mae_pairs
-from src.models.eval import EvalRun
-from src.models.transcript import Transcript
-from src.models.trend import RawContentItem
+from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parent.parent / "config" / ".env")
+
+from src.blueprints.extractor import BlueprintExtractor # noqa: E402
+from src.database import SessionLocal # noqa: E402
+from src.evals.blueprint_eval import ENUM_FIELDS, MECHANIC_FIELDS, cohen_kappa_pairs, mae_pairs # noqa: E402
+from src.models.eval import EvalRun # noqa: E402
+from src.models.transcript import Transcript # noqa: E402
+from src.models.trend import RawContentItem # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger(__name__)
