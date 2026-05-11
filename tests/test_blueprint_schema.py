@@ -6,50 +6,39 @@ from src.blueprints.schema import Blueprint, EXTRACTOR_VERSION
 
 def _valid_payload() -> dict:
     return {
-        "format": "talking_head",  # v0: open string
-        "format_subtype": None,
-        "hook_type": "shocking_claim",
-        "hook_subtype": None,
-        "payoff_type": "reveal",
-        "payoff_subtype": None,
-        "structure": ["hook", "tension", "reveal", "cta"],
-        "primary_emotion": "surprise",
+        "hook_type": "visual_shock",
+        "hook_subtype": "unsettling_reveal",
+        "primary_emotion": "awe",
+        "share_hook_type": "technical_awe",
+        "comment_bait_type": "question_to_viewer",
+        "pacing": "moderate",
+        "loop_type": "seamless_loop",
+        "audio_type": "music_driven",
+        "visual_complexity": "dense",
+        "color_mood": "vivid_saturated",
         "duration_band": "10_20s",
-        "hook_strength": 0.8,
-        "curiosity_gap": 0.7,
-        "immediate_clarity": 0.6,
-        "emotional_charge": 0.75,
-        "payoff_quality": 0.85,
-        "replayability": 0.4,
-        "comment_trigger": 0.3,
-        "shareability": 0.6,
+        "aesthetic_descriptors": ["photorealistic", "impossible_physics", "uncanny"],
+        "niche_label": "surreal_hyperreal",
         "extractor_version": EXTRACTOR_VERSION,
         "extractor_model": "claude-sonnet-4-6",
-        "confidence": 0.8,
         "notes": None,
     }
 
 
 def test_valid_payload_parses():
     bp = Blueprint(**_valid_payload())
-    assert bp.format == "talking_head"
-    assert bp.structure == ["hook", "tension", "reveal", "cta"]
+    assert bp.hook_type == "visual_shock"
+    assert bp.primary_emotion == "awe"
+    assert bp.niche_label == "surreal_hyperreal"
+    assert bp.aesthetic_descriptors == ["photorealistic", "impossible_physics", "uncanny"]
 
-def test_format_rejects_unknown_value_in_v1():
-    """v1 format is closed Literal — unknown values raise ValidationError."""
+def test_hook_type_accepts_arbitrary_string():
     payload = _valid_payload()
-    payload["format"] = "weird_unknown_format_xyz"
-    with pytest.raises(ValidationError):
-        Blueprint(**payload) 
+    payload["hook_type"] = "slow_reveal_uncanny"
+    bp = Blueprint(**payload)
+    assert bp.hook_type == "slow_reveal_uncanny"
 
-def test_invalid_structure_value_rejected():
-    payload = _valid_payload()
-    payload["structure"] = ["hook", "alien_stage", "cta"]
-    with pytest.raises(ValidationError):
-        Blueprint(**payload)
-
-
-def test_invalid_emotion_rejected():
+def test_primary_emotion_rejects_unknown_value():
     payload = _valid_payload()
     payload["primary_emotion"] = "ennui"
     with pytest.raises(ValidationError):
@@ -63,30 +52,59 @@ def test_invalid_duration_band_rejected():
         Blueprint(**payload)
 
 
-def test_mechanic_above_one_rejected():
+def test_aesthetic_descriptors_must_be_list_of_strings():
     payload = _valid_payload()
-    payload["hook_strength"] = 1.5
+    payload["aesthetic_descriptors"] = "not_a_list"
     with pytest.raises(ValidationError):
         Blueprint(**payload)
 
 
-def test_mechanic_below_zero_rejected():
+def test_aesthetic_descriptors_can_hold_arbitrary_strings():
     payload = _valid_payload()
-    payload["curiosity_gap"] = -0.1
-    with pytest.raises(ValidationError):
-        Blueprint(**payload)
-
-
-def test_confidence_above_one_rejected():
-    payload = _valid_payload()
-    payload["confidence"] = 1.2
-    with pytest.raises(ValidationError):
-        Blueprint(**payload)
-
-
-def test_subtype_optional():
-    payload = _valid_payload()
-    payload["format_subtype"] = "podcast_cut"
+    payload["aesthetic_descriptors"] = ["chaotic", "italian_brainrot", "absurdist"]
     bp = Blueprint(**payload)
-    assert bp.format_subtype == "podcast_cut"
+    assert bp.aesthetic_descriptors == ["chaotic", "italian_brainrot", "absurdist"]
+
+
+def test_niche_label_accepts_arbitrary_string():
+    payload = _valid_payload()
+    payload["niche_label"] = "some_new_niche_we_just_invented"
+    bp = Blueprint(**payload)
+    assert bp.niche_label == "some_new_niche_we_just_invented"
+
+
+def test_blueprint_round_trips_via_json():
+    bp = Blueprint(**_valid_payload())
+    payload = bp.model_dump_json()
+    bp2 = Blueprint.model_validate_json(payload)
+    assert bp == bp2
+
+
+def test_hook_subtype_optional():
+    payload = _valid_payload()
+    payload["hook_subtype"] = "unsettling_reveal"
+    bp = Blueprint(**payload)
+    assert bp.hook_subtype == "unsettling_reveal"
+
+
+def test_no_legacy_v1_fields_present():
+    bp = Blueprint(**_valid_payload())
+    dumped = bp.model_dump()
+    for legacy_field in [
+        "format",
+        "format_subtype",
+        "payoff_type",
+        "payoff_subtype",
+        "structure",
+        "hook_strength",
+        "curiosity_gap",
+        "immediate_clarity",
+        "emotional_charge",
+        "payoff_quality",
+        "replayability",
+        "comment_trigger",
+        "shareability",
+        "confidence",
+    ]:
+        assert legacy_field not in dumped, f"Legacy v1 field present: {legacy_field}"
 
