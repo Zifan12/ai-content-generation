@@ -1,15 +1,19 @@
 """
-TikTok scraper backed by the Clockworks Apify actor.
+TikTok scraper backed by the apidojo Apify actor.
 
-Apify returns metric and timestamp fields with inconsistent types across
-runs; this module's normalizer is the project's single trust boundary for
-that data, so downstream code can treat RawContentItem as clean.
+Switched from clockworks~tiktok-hashtag-scraper to apidojo/tiktok-scraper
+on 2026-05-10. apidojo returns a richer payload (direct video download URL,
+hashtags array, multi-language subtitles, POI metadata) and is 16x cheaper.
+
+The normalizer is the project's single trust boundary for Apify field shapes —
+downstream code can treat RawContentItem as clean.
 """
 
 import asyncio
 import os
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -19,9 +23,12 @@ from src.models.trend import RawContentItem
 from src.scrapers.base import BaseScraper
 
 
+SUBTITLES_DIR = Path("data/subtitles")
+
+
 class TikTokScraper(BaseScraper):
     """
-    Apify-backed TikTok hashtag scraper.
+    Apify-backed TikTok hashtag scraper using the apidojo actor.
 
     Polling cap = poll_interval_seconds * poll_attempts, hard-capped by
     max_duration_seconds.
@@ -33,7 +40,7 @@ class TikTokScraper(BaseScraper):
     def __init__(
         self,
         db: Session,
-        actor_id: str = "clockworks~tiktok-hashtag-scraper",
+        actor_id: str = "apidojo/tiktok-scraper",
         poll_interval_seconds: float = 5.0,
         poll_attempts: int = 24,
         max_duration_seconds: int = 120,
@@ -61,9 +68,18 @@ class TikTokScraper(BaseScraper):
         else:
             hashtags = ["viral"]
 
+        start_urls = [
+            f"https://www.tiktok.com/tag/{tag.lstrip('#')}" for tag in hashtags
+        ]
+
         run_input = {
-            "hashtags": hashtags,
-            "resultsPerPage": max(1, min(max_results, 800)),
+            "startUrls": start_urls,
+            "maxItems": max(1, max_results),
+            "keywords": [],
+            "dateRange": "DEFAULT",
+            "location": "US",
+            "sortType": "RELEVANCE",
+            "customMapFunction": "(object) => { return {...object} }",
         }
 
         headers = {
@@ -82,10 +98,12 @@ class TikTokScraper(BaseScraper):
 
             dataset_items = await self._fetch_dataset_items(client, headers, dataset_id)
 
-        items = []
-        for item in dataset_items:
-            normalized = self._normalize_item(item, niche_id)
-            if normalized is not None:
+            items: list[RawContentItem] = []
+            for raw in dataset_items:
+                normalized = self._normalize_item(raw, niche_id)
+                if normalized is None:
+                    continue
+                await self._download_subtitle_if_present(client, normalized)
                 items.append(normalized)
 
         return self.save_items(items)
@@ -96,8 +114,10 @@ class TikTokScraper(BaseScraper):
         headers: dict[str, str],
         run_input: dict[str, Any],
     ) -> dict:
+        # apidojo expects a tilde-encoded actor id in the URL path
+        actor_path = self.actor_id.replace("/", "~")
         response = await client.post(
-            f"/acts/{self.actor_id}/runs",
+            f"/acts/{actor_path}/runs",
             headers=headers,
             json=run_input,
             params={"token": self.api_token},
@@ -157,127 +177,134 @@ class TikTokScraper(BaseScraper):
         data = response.json()
         return data if isinstance(data, list) else []
 
+    async def _download_subtitle_if_present(
+        self, client: httpx.AsyncClient, item: RawContentItem
+    ) -> None:
+        """Eagerly download the picked English subtitle (signed URLs expire ~30 days)."""
+        if not item.subtitle_url:
+            return
+        SUBTITLES_DIR.mkdir(parents=True, exist_ok=True)
+        target = SUBTITLES_DIR / f"{item.platform_content_id}_en.vtt"
+        if target.exists():
+            return
+        try:
+            response = await client.get(item.subtitle_url, timeout=15.0)
+            response.raise_for_status()
+            target.write_text(response.text, encoding="utf-8")
+        except (httpx.HTTPError, OSError):
+            # Subtitle archival is best-effort; the URL stays in the row for retry.
+            return
+
     def _normalize_item(
         self, item: dict[str, Any], niche_id: int | None
     ) -> RawContentItem | None:
-        # Apify scraper returns metric/timestamp fields with inconsistent types
-        # (str | int | None) across runs — coerce defensively rather than trust schema.
+        # apidojo returns metric/timestamp fields with mostly-consistent types,
+        # but we still coerce defensively across runs.
         item_id = item.get("id")
         if not item_id:
             return None
 
-        url = item.get("webVideoUrl") or item.get("videoUrl")
-
-        try:
-            views = int(item.get("playCount") or 0)
-        except (ValueError, TypeError):
-            views = 0
-
-        try:
-            likes = int(item.get("diggCount") or 0)
-        except (ValueError, TypeError):
-            likes = 0
-
-        try:
-            comments = int(item.get("commentCount") or 0)
-        except (ValueError, TypeError):
-            comments = 0
-
-        try:
-            shares = int(item.get("shareCount") or 0)
-        except (ValueError, TypeError):
-            shares = 0
-
-        # Extract audio ID from nested musicMeta
-        audio_id = None
-        video_url = None # This is just the audio url of the video
-        music_meta = item.get("musicMeta")
-        if music_meta and isinstance(music_meta, dict):
-            music_id = music_meta.get("musicId")
-            if music_id:
-                audio_id = str(music_id)
-            play_url = music_meta.get("playUrl")
-            if play_url:
-                video_url = str(play_url) 
-
-        # Extract duration from nested videoMeta
-        duration_in_seconds = None
-        video_meta = item.get("videoMeta")
-        if video_meta and isinstance(video_meta, dict):
+        def _coerce_int(value: Any, default: int = 0) -> int:
             try:
-                duration = video_meta.get("duration")
-                if duration is not None:
-                    duration_in_seconds = int(duration)
+                return int(value or 0)
             except (ValueError, TypeError):
-                pass
+                return default
 
-        # Extract and normalize hashtags
+        views = _coerce_int(item.get("views"))
+        likes = _coerce_int(item.get("likes"))
+        comments = _coerce_int(item.get("comments"))
+        shares = _coerce_int(item.get("shares"))
+        collect_count = _coerce_int(item.get("bookmarks"))
+
+        hashtags_raw = item.get("hashtags") or []
+        seen: set[str] = set()
         hashtags_list: list[str] = []
-        hashtags_raw = item.get("hashtags")
-        if hashtags_raw and isinstance(hashtags_raw, list):
-            seen = set()
-            for hashtag_obj in hashtags_raw:
-                if isinstance(hashtag_obj, dict):
-                    name = hashtag_obj.get("name")
-                    if name:
-                        # Lowercase, strip leading #, and deduplicate
-                        normalized = name.lower().lstrip("#")
-                        if normalized and normalized not in seen:
-                            hashtags_list.append(normalized)
-                            seen.add(normalized)
-            hashtags_list.sort()
+        for tag in hashtags_raw:
+            if not isinstance(tag, str):
+                continue
+            normalized = tag.lower().lstrip("#").strip()
+            if normalized and normalized not in seen:
+                hashtags_list.append(normalized)
+                seen.add(normalized)
+        hashtags_list.sort()
 
-        # Extract published_at from createTime
-        published_at = None
-        create_time = item.get("createTime")
-        if create_time is not None:
+        channel = item.get("channel") or {}
+        author_username = channel.get("username") or None
+        if author_username is not None:
+            author_username = str(author_username)
+        author_tiktok_id = channel.get("id")
+        if author_tiktok_id is not None:
+            author_tiktok_id = str(author_tiktok_id)
+
+        video = item.get("video") or {}
+        video_download_url = video.get("url") or None
+        video_aspect_ratio = video.get("ratio") or None
+        thumbnail_url = video.get("cover") or video.get("thumbnail") or None
+        duration_in_seconds = None
+        duration_raw = video.get("duration")
+        if duration_raw is not None:
             try:
-                published_at = datetime.fromtimestamp(int(create_time), tz=timezone.utc)
-            except (ValueError, TypeError, OSError):
-                pass
+                duration_in_seconds = int(duration_raw)
+            except (ValueError, TypeError):
+                duration_in_seconds = None
 
-        # Extract description 
-        description = item.get("text")
-
-        thumbnail_url = None
-        if video_meta and isinstance(video_meta, dict):
-            cover = video_meta.get("coverUrl")
-            if cover:
-                thumbnail_url = str(cover)
+        song = item.get("song") or {}
+        song_id = song.get("id")
+        audio_id = str(song_id) if song_id is not None else None
+        # apidojo does not return a music stream URL — leave music_audio_url None.
+        music_audio_url = None
 
         subtitle_url = None
-        subtitle_links = (video_meta or {}).get("subtitleLinks") or [] # guarantee list to avoid None during iteration
-        for link in subtitle_links:
-            if isinstance(link, dict) and str(link.get("language", "")).startswith("eng"):
-                subtitle_url = link.get("downloadLink")
-                break
-      
-        author_username = None
-        author_meta = item.get("authorMeta")
-        if author_meta and isinstance(author_meta, dict):
-            name = author_meta.get("name")
-            if name:
-                author_username = str(name)
+        subs = item.get("subtitleInformation") or []
+        if isinstance(subs, list):
+            for sub in subs:
+                if not isinstance(sub, dict):
+                    continue
+                lang_code = str(sub.get("language_code") or "").lower()
+                if lang_code.startswith("en"):
+                    subtitle_url = sub.get("url")
+                    break
+
+        published_at = None
+        uploaded_at = item.get("uploadedAt")
+        if uploaded_at is not None:
+            try:
+                published_at = datetime.fromtimestamp(int(uploaded_at), tz=timezone.utc)
+            except (ValueError, TypeError, OSError):
+                published_at = None
+
+        poi = item.get("poi") or {}
+        poi_name = poi.get("poiName") or None
+        poi_country = poi.get("regionCode") or None
+        if poi_country is not None:
+            poi_country = str(poi_country)[:8]
 
         return RawContentItem(
             niche_id=niche_id,
             platform=self.platform,
             platform_content_id=str(item_id),
-            url=url,
+            url=item.get("postPage") or "",
             views=views,
             likes=likes,
             comments=comments,
             shares=shares,
+            collect_count=collect_count,
             audio_id=audio_id,
             hashtags=hashtags_list,
             duration_in_seconds=duration_in_seconds,
             content_format="video",
             published_at=published_at,
-            title=None, # Tiktok does not have titles
-            description=description,
+            title=None,
+            description=item.get("title"),
             thumbnail_url=thumbnail_url,
-            video_url=video_url,
+            music_audio_url=music_audio_url,
+            video_download_url=video_download_url,
+            video_aspect_ratio=video_aspect_ratio,
             subtitle_url=subtitle_url,
             author_username=author_username,
+            author_tiktok_id=author_tiktok_id,
+            poi_name=poi_name,
+            poi_country=poi_country,
+            input_source=item.get("inputSource"),
+            raw_apify_payload=item,
         )
-
