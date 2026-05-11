@@ -1,0 +1,63 @@
+{
+  "inputSource": "https://www.tiktok.com/tag/ai",
+  "id": "7636793337772608790",
+  "title": "part 1 ( the turnaround ) #aigeneratedvideos #viralvideos #aiautomation #ai #fyp ",
+  "views": 4520,
+  "likes": 273,
+  "comments": 12,
+  "shares": 7,
+  "bookmarks": 28,
+  "hashtags": ["aigeneratedvideos", "viralvideos", "aiautomation", "ai", "fyp"],
+  "channel": {
+    "id": "7632744055432840214",
+    "name": "AIGrowthLab",
+    "username": "aigrowthlab3",
+    "bio": "tell short stories about fruit life and other stories",
+    "avatar": "https://example.com/avatar.jpg",
+    "verified": false,
+    "url": "https://www.tiktok.com/@aigrowthlab3",
+    "followers": null,
+    "following": null,
+    "videos": null
+  },
+  "collabInfo": null,
+  "uploadedAt": 1778079515,
+  "uploadedAtFormatted": "2026-05-06T14:58:35.000Z",
+  "video": {
+    "width": 576,
+    "height": 1024,
+    "ratio": "540p",
+    "duration": 333.231,
+    "url": "https://example.com/video.mp4",
+    "cover": "https://example.com/cover.jpg",
+    "thumbnail": "https://example.com/thumb.jpg"
+  },
+  "song": {
+    "id": 7636793420523605000,
+    "title": "original sound - aigrowthlab3",
+    "artist": "AIGrowthLab",
+    "album": null,
+    "duration": 333,
+    "cover": "https://example.com/song_cover.jpg"
+  },
+  "subtitleInformation": [
+    {
+      "caption_format": "webvtt",
+      "is_auto_generated": true,
+      "is_original_caption": true,
+      "lang": "eng-US",
+      "language_code": "en",
+      "url": "https://example.com/subtitles.vtt"
+    }
+  ],
+  "postPage": "https://www.tiktok.com/@aigrowthlab3/video/7636793337772608790",
+  "poi": {
+    "poiName": "Benin City Nigeria Temple",
+    "address": "11 Commercial Ave, Oka, Benin City 300102, Edo, Nigeria",
+    "cityCode": "8636764",
+    "cityName": "Oredo",
+    "latitude": "6.314690",
+    "longitude": "5.625377",
+    "regionCode": "2328926"
+  }
+}
