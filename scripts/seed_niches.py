@@ -36,6 +36,19 @@ NICHES = [
         "hashtag_seeds": ["horrortok", "aihorror", "darkstories", "scarystories", "truecrime"],
         "is_active": True,
     },
+    {
+        "name": "surreal_hyperreal",
+        "keywords": [
+            "surreal", "hyperreal", "photorealistic", "uncanny",
+            "impossible", "weirdcore", "liminal", "dreamcore",
+        ],
+        "hashtag_seeds": [
+            "aiweirdcore", "aisurreal", "surrealai", "aiart",
+            "weirdai", "liminalai", "uncanny", "dreamcore_ai",
+            "kling", "runwayai",
+        ],
+        "is_active": True,
+    },
     # {
     #     "name": "animal_fusion",
     #     "keywords": ["animal", "fusion", "hybrid", "mashup", "creature"],
