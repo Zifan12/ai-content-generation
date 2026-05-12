@@ -51,7 +51,6 @@ dependencies = [
     # Postgres driver (pgvector + async)
     "psycopg[binary]>=3.2.0",
     "asyncpg>=0.30.0",
-    "apify-client>=2.5.0",
 ]
 
 [tool.pytest.ini_options]
