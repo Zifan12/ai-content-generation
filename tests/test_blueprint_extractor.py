@@ -10,23 +10,22 @@ from src.models.trend import RawContentItem
 
 def _fake_blueprint() -> Blueprint:
     return Blueprint(
-        format="talking_head",
-        hook_type="shocking_claim",
-        payoff_type="reveal",
-        structure=["hook", "reveal", "cta"],
-        primary_emotion="surprise",
+        hook_type="visual_shock",
+        primary_emotion="awe",
+        share_hook_type="technical_awe",
+        comment_bait_type="question_to_viewer",
+        pacing="fast",
+        loop_type="seamless_visual",
+        audio_type="original_voiceover",
+        visual_complexity="dense",
+        color_mood="desaturated",
         duration_band="10_20s",
-        hook_strength=0.8,
-        curiosity_gap=0.7,
-        immediate_clarity=0.6,
-        emotional_charge=0.7,
-        payoff_quality=0.8,
-        replayability=0.5,
-        comment_trigger=0.4,
-        shareability=0.6,
+        aesthetic_descriptors=["photorealistic", "liminal_space"],
+        niche_label="surreal_hyperreal",
+        hook_subtype=None,
         extractor_version=EXTRACTOR_VERSION,
         extractor_model="claude-sonnet-4-6",
-        confidence=0.8,
+        notes=None,
     )
 
 
@@ -55,7 +54,7 @@ def test_extract_calls_llm_with_envelope():
     fake_llm.parse.return_value = _fake_blueprint() # Mock parse() to return a predictable Blueprint for this test
     extractor = BlueprintExtractor(llm=fake_llm)
 
-    result = extractor.extract(item=_item(), transcript_text="Zeus was the king of the gods")
+    result = extractor.extract(item=_item(), transcript_text="Zeus was the king of the gods", niche_label="surreal_hyperreal")
 
     assert isinstance(result, Blueprint)
     fake_llm.parse.assert_called_once()
@@ -66,15 +65,16 @@ def test_extract_calls_llm_with_envelope():
     assert "Zeus was the king" in call_kwargs["prompt"]
     assert "@mythguy" in call_kwargs["prompt"]
     assert "22" in call_kwargs["prompt"]  # duration
+    assert "surreal_hyperreal" in call_kwargs["prompt"]
 
 def test_extract_handles_missing_transcript():
     fake_llm = MagicMock()
     fake_llm.parse.return_value = _fake_blueprint()
     extractor = BlueprintExtractor(llm=fake_llm)
     
-    extractor.extract(item=_item(), transcript_text=None)
+    extractor.extract(item=_item(), transcript_text=None, niche_label="surreal_hyperreal")
 
-    call_kwargs = fake_llm.parse.call_args.kwargs 
+    call_kwargs = fake_llm.parse.call_args.kwargs
     prompt = call_kwargs["prompt"].lower()
     # When transcript missing, envelope should mark it explicitly so LLM lowers confidence
     assert "transcript" in prompt
@@ -88,7 +88,7 @@ def test_extract_returns_blueprint_unchanged():
     fake_llm.parse.return_value = expected_blueprint
     extractor = BlueprintExtractor(llm=fake_llm)
 
-    result = extractor.extract(item=_item(), transcript_text="hello")  # Any text is fine here; this test only checks pass-through behavior.
+    result = extractor.extract(item=_item(), transcript_text="hello", niche_label="surreal_hyperreal")  # Any text is fine here; this test only checks pass-through behavior.
 
     assert result is expected_blueprint
     assert result.model_dump() == expected_blueprint.model_dump()
