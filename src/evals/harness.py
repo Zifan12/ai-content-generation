@@ -171,7 +171,7 @@ def main():
             return
 
         else:
-            raise SystemExit(f"Unknown component: {args.component}. Supported: rule-based-scorer")
+            raise SystemExit(f"Unknown component: {args.component}. Supported: rule-based-scorer, blueprint-extractor-v1")
         
         report = harness.run(component=args.component)
         print(
