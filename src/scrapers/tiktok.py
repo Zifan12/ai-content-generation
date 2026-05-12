@@ -57,16 +57,30 @@ class TikTokScraper(BaseScraper):
         max_results: int = 50,
         niche_id: int | None = None,
         query: list[str] | None = None,
+        keywords: list[str] | None = None,
+        sort_type: str = "RELEVANCE",
     ) -> list[RawContentItem]:
+        """Fetch trending TikTok content via apidojo actor.
+
+        Args:
+            max_results: Maximum items to fetch from Apify.
+            niche_id: FK to niches table, attached to each saved item.
+            query: Hashtag seeds — converted to startUrls (hashtag pages).
+                sortType has NO effect on startUrls; TikTok controls ordering.
+            keywords: Search keyword terms. sortType applies to these.
+                Use alongside or instead of query for sort-controlled results.
+            sort_type: One of RELEVANCE, MOST_LIKED, DATE_POSTED.
+                Only affects keyword search results, ignored for startUrls.
+        """
         if not self.api_token:
             raise RuntimeError("APIFY_API_TOKEN is not set")
 
         if isinstance(query, list):
-            hashtags = query if query else ["viral"]
+            hashtags = query if query else []
         elif query:
             hashtags = [query]
         else:
-            hashtags = ["viral"]
+            hashtags = []
 
         start_urls = [
             f"https://www.tiktok.com/tag/{tag.lstrip('#')}" for tag in hashtags
@@ -75,10 +89,10 @@ class TikTokScraper(BaseScraper):
         run_input = {
             "startUrls": start_urls,
             "maxItems": max(1, max_results),
-            "keywords": [],
+            "keywords": keywords or [],
             "dateRange": "DEFAULT",
             "location": "US",
-            "sortType": "RELEVANCE",
+            "sortType": sort_type,
             "customMapFunction": "(object) => { return {...object} }",
         }
 
