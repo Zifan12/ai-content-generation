@@ -17,12 +17,11 @@ import math
 import numpy as np
 from sklearn.metrics import cohen_kappa_score
 
-MECHANIC_FIELDS = [
-    "hook_strength", "curiosity_gap", "immediate_clarity", "emotional_charge",
-    "payoff_quality", "replayability", "comment_trigger", "shareability",
-]
-
-ENUM_FIELDS = ["format", "hook_type", "payoff_type"]
+# v3 closes only two enums (primary_emotion, duration_band). Other Tier 1 fields
+# (hook_type, share_hook_type, comment_bait_type, pacing, loop_type, audio_type,
+# visual_complexity, color_mood) ship as open str and lock in v3.1 — kappa scoring
+# returns for them in v3.1. See ADR-0002.
+ENUM_FIELDS = ["primary_emotion", "duration_band"]
 
 def schema_valid_rate(records: Iterable[BlueprintRecord]) -> float:
     """
