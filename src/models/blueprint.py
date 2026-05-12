@@ -27,6 +27,6 @@ class BlueprintRecord(Base):
     extracted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
-    confidence: Mapped[float] = mapped_column(Float)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     blueprint_data: Mapped[dict[str, Any]] = mapped_column(JSON) # Stored Blueprint Pydantic objects as JSON dict in SQLite/Postgres
 
