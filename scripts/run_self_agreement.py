@@ -23,9 +23,10 @@ load_dotenv(Path(__file__).resolve().parent.parent / "config" / ".env")
 
 from src.blueprints.extractor import BlueprintExtractor # noqa: E402
 from src.database import SessionLocal # noqa: E402
-from src.evals.blueprint_eval import ENUM_FIELDS, MECHANIC_FIELDS, cohen_kappa_pairs, mae_pairs # noqa: E402
+from src.evals.blueprint_eval import ENUM_FIELDS, cohen_kappa_pairs # noqa: E402
 from src.models.eval import EvalRun # noqa: E402
-from src.models.transcript import Transcript # noqa: E402
+from src.models.niche import Niche # noqa: E402
+from src.models.transcript import Transcript# noqa: E402
 from src.models.trend import RawContentItem # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -81,9 +82,11 @@ def main():
         for item in items:
             try:
                 text = get_transcript_text(db, item.id)
+                niche = db.get(Niche, item.niche_id) if item.niche_id else None
+                niche_label = niche.name if niche else "unknown"
                 # Two independent extractions per item; non-determinism between runs is the self-agreement signal.
-                run_a.append(extractor.extract(item=item, transcript_text=text))
-                run_b.append(extractor.extract(item=item, transcript_text=text))
+                run_a.append(extractor.extract(item=item, transcript_text=text, niche_label=niche_label))
+                run_b.append(extractor.extract(item=item, transcript_text=text, niche_label=niche_label))
 
             except Exception as e:
                 log.warning("Skipped item %d: %s", item.id, e)
@@ -101,15 +104,6 @@ def main():
             b_vals = [getattr(bp, field) for bp in run_b]
             metrics[f"kappa_{field}"] = cohen_kappa_pairs(a_vals, b_vals)
 
-        for field in MECHANIC_FIELDS:
-            a_vals = [getattr(bp, field) for bp in run_a]
-            b_vals = [getattr(bp, field) for bp in run_b]
-            metrics[f"mae_{field}"] = mae_pairs(a_vals, b_vals)
-
-
-        mae_values = [v for k, v in metrics.items() if k.startswith("mae_")]
-        mae_mean = sum(mae_values)/len(mae_values)
-        metrics["mae_mean"] = mae_mean
         metrics["pair_count"] = float(len(run_a))
 
         for name, value in metrics.items():

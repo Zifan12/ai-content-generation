@@ -8,26 +8,21 @@ from src.evals.blueprint_eval import cohen_kappa_pairs, mae_pairs
 
 def _good_payload() -> dict:
     return {
-        "format": "talking_head",
-        "format_subtype": None,
-        "hook_type": "shocking_claim",
-        "hook_subtype": None,
-        "payoff_type": "reveal",
-        "payoff_subtype": None,
-        "structure": ["hook", "reveal", "cta"],
-        "primary_emotion": "surprise",
+        "hook_type": "visual_shock",
+        "primary_emotion": "awe",
+        "share_hook_type": "technical_awe",
+        "comment_bait_type": "question_to_viewer",
+        "pacing": "fast",
+        "loop_type": "seamless_visual",
+        "audio_type": "original_voiceover",
+        "visual_complexity": "dense",
+        "color_mood": "desaturated",
         "duration_band": "10_20s",
-        "hook_strength": 0.8,
-        "curiosity_gap": 0.7,
-        "immediate_clarity": 0.6,
-        "emotional_charge": 0.7,
-        "payoff_quality": 0.8,
-        "replayability": 0.5,
-        "comment_trigger": 0.4,
-        "shareability": 0.6,
+        "aesthetic_descriptors": ["photorealistic", "liminal_space"],
+        "niche_label": "surreal_hyperreal",
+        "hook_subtype": None,
         "extractor_version": EXTRACTOR_VERSION,
         "extractor_model": "claude-sonnet-4-6",
-        "confidence": 0.8,
         "notes": None,
     }
 
@@ -37,8 +32,7 @@ def _record(payload: dict) -> BlueprintRecord:
         content_item_id=1,
         extractor_version=EXTRACTOR_VERSION,
         extractor_model=payload["extractor_model"],
-        confidence=payload["confidence"],
-        blueprint_data=payload
+        blueprint_data=payload,
     )
 
 def test_schema_valid_rate_all_valid():
