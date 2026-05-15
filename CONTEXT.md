@@ -123,3 +123,13 @@ Tier 2 is deliberately minimal — 3 fields. The `aesthetic_descriptors: list[st
 - `aesthetic_descriptors: list[str]` — free-text tags, dual use for RAG retrieval signal + prompt fragments.
 - `niche_label: str` — free-string label attached to the Blueprint, joined to a `niches` table row (e.g. `surreal_hyperreal`).
 - `hook_subtype: str | None` — free-text companion to `hook_type` capturing niche flavor (v1 examples: `"anime_transformation"`, `"retro internet aesthetic"`).
+
+## SYSTEM_PROMPT
+
+The persistent instruction document passed as the `system` parameter to every Sonnet extraction call. Lives as a module-level constant in `src/blueprints/extractor.py`. Distinct from the per-item `envelope` (caption + transcript + metadata).
+_Avoid_: "prompt" without qualifier — ambiguous between SYSTEM_PROMPT and envelope.
+
+## envelope
+
+The per-item user message sent on each extraction call. Built by `BlueprintExtractor._build_envelope` from `RawContentItem` metadata + optional transcript + niche label. Always changes between items by construction.
+_Avoid_: "user prompt", "input"

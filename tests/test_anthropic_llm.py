@@ -55,7 +55,13 @@ def test_parse_calls_client_with_correct_params():
 
 
 def test_parse_includes_system_when_provided():
-    """system kwarg must be forwarded to the client when not None."""
+    """
+    System kwarg must be forwarded as a cache-eligible text block list when not None.
+
+    The block-list shape (vs plain string) is required so the cache_control marker
+    can be attached. The Anthropic API silently ignores cache_control on system
+    prompts shorter than 1024 tokens; this test does not depend on prompt length.
+    """
     expected = SimpleOutput(answer="ok", score=0.5)
     llm = AnthropicLLM()
     llm.client = MagicMock()
@@ -64,7 +70,11 @@ def test_parse_includes_system_when_provided():
     llm.parse(prompt="hi", response_model=SimpleOutput, system="You are a helpful assistant.")
 
     call_kwargs = llm.client.messages.parse.call_args.kwargs
-    assert call_kwargs["system"] == "You are a helpful assistant."
+    assert call_kwargs["system"] == [{
+        "type": "text",
+        "text": "You are a helpful assistant.",
+        "cache_control": {"type": "ephemeral", "ttl": "1h"},
+    }]
 
 
 def test_parse_omits_system_when_none():

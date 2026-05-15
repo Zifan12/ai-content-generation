@@ -17,11 +17,21 @@ import math
 import numpy as np
 from sklearn.metrics import cohen_kappa_score
 
-# v3 closes only two enums (primary_emotion, duration_band). Other Tier 1 fields
-# (hook_type, share_hook_type, comment_bait_type, pacing, loop_type, audio_type,
-# visual_complexity, color_mood) ship as open str and lock in v3.1 — kappa scoring
-# returns for them in v3.1. See ADR-0002.
-ENUM_FIELDS = ["primary_emotion", "duration_band"]
+# v3.1 locks all 10 Tier 1 categorical fields to Literal[...] per ADR-0003. Kappa
+# scoring covers every locked field; eval gate (CI) rejects extractor regressions
+# where any field's kappa drops below 0.6.
+ENUM_FIELDS = [
+    "primary_emotion",
+    "duration_band",
+    "hook_type",
+    "share_hook_type",
+    "comment_bait_type",
+    "pacing",
+    "loop_type",
+    "audio_type",
+    "visual_complexity",
+    "color_mood",
+]
 
 def schema_valid_rate(records: Iterable[BlueprintRecord]) -> float:
     """

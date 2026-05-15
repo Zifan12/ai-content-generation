@@ -98,7 +98,7 @@ def main() -> None:
                 text = get_transcript_text(db, item.id)
                 niche = db.get(Niche, item.niche_id) if item.niche_id else None
                 niche_label = niche.name if niche else "unknown"
-                bp = extractor.extract(item, text, niche_label=niche_label)
+                bp = extractor.extract_or_reparse(item, text, niche_label=niche_label, db=db)
                 save_blueprint(db, item.id, bp, args.extractor_version, extractor.llm.model)
                 successes += 1
                 log.info(f"item {item.id} niche={niche_label}")

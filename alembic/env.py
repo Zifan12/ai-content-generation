@@ -11,6 +11,7 @@ import src.models.trend
 import src.models.eval
 import src.models.transcript
 import src.models.blueprint
+import src.models.extractor_response
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

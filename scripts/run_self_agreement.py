@@ -85,8 +85,8 @@ def main():
                 niche = db.get(Niche, item.niche_id) if item.niche_id else None
                 niche_label = niche.name if niche else "unknown"
                 # Two independent extractions per item; non-determinism between runs is the self-agreement signal.
-                run_a.append(extractor.extract(item=item, transcript_text=text, niche_label=niche_label))
-                run_b.append(extractor.extract(item=item, transcript_text=text, niche_label=niche_label))
+                run_a.append(extractor.extract(item=item, transcript_text=text, niche_label=niche_label, db=db))
+                run_b.append(extractor.extract(item=item, transcript_text=text, niche_label=niche_label, db=db))
 
             except Exception as e:
                 log.warning("Skipped item %d: %s", item.id, e)

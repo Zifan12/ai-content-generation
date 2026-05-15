@@ -12,8 +12,8 @@ def _valid_payload() -> dict:
         "share_hook_type": "technical_awe",
         "comment_bait_type": "question_to_viewer",
         "pacing": "moderate",
-        "loop_type": "seamless_loop",
-        "audio_type": "music_driven",
+        "loop_type": "seamless_visual",
+        "audio_type": "music_only",
         "visual_complexity": "dense",
         "color_mood": "vivid_saturated",
         "duration_band": "10_20s",
@@ -32,11 +32,12 @@ def test_valid_payload_parses():
     assert bp.niche_label == "surreal_hyperreal"
     assert bp.aesthetic_descriptors == ["photorealistic", "impossible_physics", "uncanny"]
 
-def test_hook_type_accepts_arbitrary_string():
+def test_hook_type_rejects_unlocked_value():
+    """v3.1: hook_type is Literal-locked; invented values must raise ValidationError (ADR-0003)."""
     payload = _valid_payload()
     payload["hook_type"] = "slow_reveal_uncanny"
-    bp = Blueprint(**payload)
-    assert bp.hook_type == "slow_reveal_uncanny"
+    with pytest.raises(ValidationError):
+        Blueprint(**payload)
 
 def test_primary_emotion_rejects_unknown_value():
     payload = _valid_payload()
