@@ -118,6 +118,57 @@ color_mood — dominant color treatment
   - neon — fluorescent, glowing color blocks
 """
 
+def build_envelope(item: RawContentItem, transcript_text: str | None, niche_label: str) -> str:
+    """Build LLM prompt envelope from a scraped item. Pure function — no LLM call, no DB write.
+    
+    Extracted from BlueprintExtractor for reuse by dry-run cost estimator and future
+    indexers. 
+    """
+    transcript_block = (
+        f"Transcript:\n{transcript_text}"
+        if transcript_text
+        else "Transcript: (missing)"
+    )
+
+    hashtags = ", ".join(item.hashtags) if item.hashtags else "(none)"
+
+    music_is_original = item.music_is_original
+    if music_is_original is None:
+        music_flag = "unknown"
+    elif music_is_original:
+        music_flag = "true (original sound by this author)"
+    else:
+        music_flag = "false (likely trending/meme audio)"
+
+    source_line = (
+        f"Originating hashtag URL: {item.input_source}"
+        if item.input_source
+        else "Originating hashtag URL: (unknown)"
+    )
+
+    poi_line = (
+        f"Location signal: {item.poi_name}"
+        if item.poi_name
+        else "Location signal: (none)"
+    )
+
+    return (
+        f"Niche label: {niche_label}\n"
+        f"Author: {item.author_username or '(unknown)'}\n"
+        f"Duration: {item.duration_in_seconds or 'unknown'} seconds\n"
+        f"Views: {item.views:,} | Likes: {item.likes:,} | "
+        f"Comments: {item.comments:,} | Shares: {item.shares:,} | "
+        f"Saves: {item.collect_count or 0:,}\n"
+        f"Hashtags: {hashtags}\n"
+        f"{source_line}\n"
+        f"{poi_line}\n"
+        f"Music is original: {music_flag}\n\n"
+        f"Caption / Description:\n{item.description or '(no caption)'}\n\n"
+        f"{transcript_block}\n\n"
+        f"Extract the {EXTRACTOR_VERSION} Blueprint now. Set extractor_version='{EXTRACTOR_VERSION}' and "
+        f"extractor_model='claude-sonnet-4-6'. Set niche_label='{niche_label}'."
+    )
+
 def compute_prompt_fingerprint(system_prompt: str, envelope: str, model: str, sampling_params: dict) -> str:
     """
     Compute a deterministic SHA-256 fingerprint of a prompt configuration.
@@ -171,7 +222,7 @@ class BlueprintExtractor:
         Returns:
             Validated Blueprint object. Notes will flag low confidence if transcript missing.
         """
-        envelope = self._build_envelope(item, transcript_text, niche_label)
+        envelope = build_envelope(item, transcript_text, niche_label)
 
         blueprint, raw_meta = self.llm.parse_with_raw(
             prompt=envelope,
@@ -207,53 +258,6 @@ class BlueprintExtractor:
             
         return blueprint
 
-
-    def _build_envelope(self, item: RawContentItem, transcript_text: str | None, niche_label: str) -> str:
-        """Build LLM prompt envelope. Fills missing fields with placeholders."""
-        transcript_block = (
-            f"Transcript:\n{transcript_text}"
-            if transcript_text
-            else "Transcript: (missing)"
-        )
-
-        hashtags = ", ".join(item.hashtags) if item.hashtags else "(none)"
-
-        music_is_original = item.music_is_original
-        if music_is_original is None:
-            music_flag = "unknown"
-        elif music_is_original:
-            music_flag = "true (original sound by this author)"
-        else:
-            music_flag = "false (likely trending/meme audio)"
-
-        source_line = (
-            f"Originating hashtag URL: {item.input_source}"
-            if item.input_source
-            else "Originating hashtag URL: (unknown)"
-        )
-
-        poi_line = (
-            f"Location signal: {item.poi_name}"
-            if item.poi_name
-            else "Location signal: (none)"
-        )
-
-        return (
-            f"Niche label: {niche_label}\n"
-            f"Author: {item.author_username or '(unknown)'}\n"
-            f"Duration: {item.duration_in_seconds or 'unknown'} seconds\n"
-            f"Views: {item.views:,} | Likes: {item.likes:,} | "
-            f"Comments: {item.comments:,} | Shares: {item.shares:,} | "
-            f"Saves: {item.collect_count or 0:,}\n"
-            f"Hashtags: {hashtags}\n"
-            f"{source_line}\n"
-            f"{poi_line}\n"
-            f"Music is original: {music_flag}\n\n"
-            f"Caption / Description:\n{item.description or '(no caption)'}\n\n"
-            f"{transcript_block}\n\n"
-            f"Extract the {EXTRACTOR_VERSION} Blueprint now. Set extractor_version='{EXTRACTOR_VERSION}' and "
-            f"extractor_model='claude-sonnet-4-6'. Set niche_label='{niche_label}'."
-        )
     
     def reparse_from_cache(
         self,
@@ -284,7 +288,7 @@ class BlueprintExtractor:
                 invalid under the current Blueprint schema. Propagated so the caller can
                 surface the failure rather than silently falling back to a re-call.
         """
-        envelope = self._build_envelope(item, transcript_text, niche_label)
+        envelope = build_envelope(item, transcript_text, niche_label)
         fingerprint = compute_prompt_fingerprint(SYSTEM_PROMPT, envelope, self.llm.model, {"max_tokens": 2048})
 
         resp = db.query(ExtractorResponse).filter_by(
