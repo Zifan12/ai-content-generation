@@ -39,6 +39,7 @@ load_dotenv(Path(__file__).resolve().parent.parent / "config" / ".env")
 from sqlalchemy import select  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
+from src.blueprints.pricing import PRICE_PER_M_TOKENS, cost  # noqa: E402
 from src.database import SessionLocal  # noqa: E402
 from src.models.extractor_response import ExtractorResponse  # noqa: E402
 from src.models.niche import Niche  # noqa: E402
@@ -46,19 +47,6 @@ from src.models.trend import RawContentItem  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger(__name__)
-
-
-PRICE_PER_M_TOKENS = {
-    "input": 3.00,
-    "output": 15.00,
-    "cache_write": 6.00, # 1-hour TTL
-    "cache_read": 0.30,
-}
-
-
-def cost(tokens: int | None, price_per_m: float) -> float:
-    """Return dollar cost for ``tokens`` at the given per-million rate. None == 0."""
-    return (tokens or 0) / 1_000_000 * price_per_m
 
 
 def aggregate_row(rows: list[ExtractorResponse]) -> dict:
