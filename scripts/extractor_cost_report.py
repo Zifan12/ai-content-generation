@@ -21,6 +21,8 @@ Usage:
   uv run python scripts/extractor_cost_report.py --since 2026-05-01
   uv run python scripts/extractor_cost_report.py --niche surreal_hyperreal
   uv run python scripts/extractor_cost_report.py --format json
+  uv run python scripts/extractor_cost_report.py --dry-run 100
+  uv run python scripts/extractor_cost_report.py --dry-run 100 --niche surreal_hyperreal
 """
 
 import argparse
@@ -34,7 +36,7 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parent.parent / "config" / ".env")
 
-from sqlalchemy import func, select  # noqa: E402
+from sqlalchemy import select  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 from src.database import SessionLocal  # noqa: E402
@@ -49,7 +51,7 @@ log = logging.getLogger(__name__)
 PRICE_PER_M_TOKENS = {
     "input": 3.00,
     "output": 15.00,
-    "cache_write": 6.00,
+    "cache_write": 6.00, # 1-hour TTL
     "cache_read": 0.30,
 }
 
@@ -191,6 +193,64 @@ def parse_since(value: str | None) -> datetime | None:
     parsed = date.fromisoformat(value)
     return datetime(parsed.year, parsed.month, parsed.day)
 
+def dry_run_estimate(db: Session, future_n: int, niche_name: str | None) -> dict:
+    """Estimate cost of extracting ``future_n`` new items using historical median cost per call.
+
+    Queries ``extractor_responses`` for real per-call cost data (including cache effects),
+    computes the median, and scales by ``future_n``. Raises if no historical rows exist —
+    dry-run requires a populated cache for calibration (see ADR-0005 pre-flight gate).
+
+    Args:
+        db: SQLAlchemy session.
+        future_n: Number of future extraction calls to estimate.
+        niche_name: If given, restricts calibration rows to that niche only.
+
+    Returns:
+        Dict with keys: sample_size, future_n, niche, median_cost_per_call_usd, estimated_usd.
+
+    Raises:
+        RuntimeError: If no extractor_responses rows exist (or match the niche filter).
+    """
+    ...
+    stmt = (
+        select(ExtractorResponse)
+        .where(ExtractorResponse.usage_input_tokens.isnot(None))
+        .join(RawContentItem, ExtractorResponse.content_item_id == RawContentItem.id)
+        .join(Niche, RawContentItem.niche_id == Niche.id)
+    )
+
+    if niche_name:
+        stmt = stmt.where(Niche.name == niche_name)
+
+    rows = list(db.execute(stmt).scalars())
+
+    if not rows:
+        suffix = f" for niche {niche_name!r}" if niche_name else ""
+        raise RuntimeError(f"No extractor_responses rows found{suffix}. Run at least one extraction first.")
+    
+    per_call_costs = []
+    for row in rows:
+        per_call_costs.append(cost(row.usage_input_tokens, PRICE_PER_M_TOKENS["input"])
+                        + cost(row.usage_output_tokens, PRICE_PER_M_TOKENS["output"])
+                        + cost(row.usage_cache_read_tokens, PRICE_PER_M_TOKENS["cache_read"])
+                        + cost(row.usage_cache_write_tokens, PRICE_PER_M_TOKENS["cache_write"]))
+        
+    per_call_costs.sort()
+
+    middle_index = len(per_call_costs) // 2
+
+    if len(per_call_costs) % 2 == 1:
+        median_cost = per_call_costs[middle_index]
+    else:
+        median_cost = (per_call_costs[middle_index - 1] + per_call_costs[middle_index]) / 2
+
+    return {
+        "sample_size": len(rows),
+        "future_n": future_n,
+        "niche": niche_name,
+        "median_cost_per_call_usd": median_cost,
+        "estimated_usd": median_cost * future_n
+    }
 
 def main():
     parser = argparse.ArgumentParser(description="Report Blueprint extractor token cost.")
@@ -203,12 +263,20 @@ def main():
     parser.add_argument("--niche", help="Filter to a single niche name (e.g. surreal_hyperreal).")
     parser.add_argument("--since", help="Filter to rows created on or after YYYY-MM-DD.")
     parser.add_argument("--format", choices=["table", "json"], default="table")
+    parser.add_argument("--dry-run", type=int, metavar="N", help="Estimate cost for N future extractions using historical median cost per call.")
     args = parser.parse_args()
 
     since = parse_since(args.since)
 
     db = SessionLocal()
     try:
+
+        if args.dry_run:
+            result = dry_run_estimate(db, future_n=args.dry_run, niche_name=args.niche)
+            print(json.dumps(result, indent=2))
+            return
+
+
         joined = fetch_rows(db, niche_name=args.niche, since=since)
         if not joined:
             log.warning("No extractor_responses rows match the filters. Nothing to report.")
