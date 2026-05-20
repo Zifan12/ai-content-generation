@@ -59,7 +59,7 @@ class TikTokScraper(BaseScraper):
         query: list[str] | None = None,
         keywords: list[str] | None = None,
         sort_type: str = "RELEVANCE",
-    ) -> list[RawContentItem]:
+    ) -> tuple[list[RawContentItem], int, int]:
         """Fetch trending TikTok content via apidojo actor.
 
         Args:
@@ -120,7 +120,9 @@ class TikTokScraper(BaseScraper):
                 await self._download_subtitle_if_present(client, normalized)
                 items.append(normalized)
 
-        return self.save_items(items)
+            (inserted, updated) = self.upsert_items(items)
+
+        return (items, inserted, updated) 
 
     async def _start_run(
         self,
@@ -128,6 +130,7 @@ class TikTokScraper(BaseScraper):
         headers: dict[str, str],
         run_input: dict[str, Any],
     ) -> dict:
+        """POST to Apify to start an actor run; return the run metadata dict."""
         # apidojo expects a tilde-encoded actor id in the URL path
         actor_path = self.actor_id.replace("/", "~")
         response = await client.post(
@@ -145,6 +148,7 @@ class TikTokScraper(BaseScraper):
         headers: dict[str, str],
         run_id: str,
     ) -> dict:
+        """Poll until SUCCEEDED or terminal status; raise TimeoutError if budget exceeded."""
         started = time.monotonic()
 
         for _ in range(self.poll_attempts):
@@ -182,6 +186,7 @@ class TikTokScraper(BaseScraper):
         headers: dict[str, str],
         dataset_id: str,
     ) -> list[dict]:
+        """Fetch all items from a completed Apify dataset; return empty list on non-list response."""
         response = await client.get(
             f"/datasets/{dataset_id}/items",
             headers=headers,
@@ -219,6 +224,21 @@ class TikTokScraper(BaseScraper):
             return None
 
         def _coerce_int(value: Any, default: int = 0) -> int:
+            """
+            Safely coerce a value to int, with fallback default.
+            
+            Apify metric fields (views, likes, comments, shares) vary in type
+            across scrape runs (sometimes null, sometimes string, sometimes already int).
+            This defensive helper ensures consistent int output even if the source
+            is malformed, missing, or has unexpected type.
+            
+            Args:
+                value: any value (str, int, None, float, etc.)
+                default: fallback if coercion fails (default 0)
+            
+            Returns:
+                int(value) or default if coercion/parsing fails
+            """
             try:
                 return int(value or 0)
             except (ValueError, TypeError):

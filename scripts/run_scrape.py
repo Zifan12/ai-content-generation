@@ -1,3 +1,34 @@
+"""
+Scrape TikTok trending content via Apify actor.
+
+PIPELINE ROLE:
+  → Scrape (this file) → Trend analysis → Label → Blueprint extraction → RAG/Generation
+
+WHY THIS SCRIPT EXISTS:
+  Bootstraps the content corpus from TikTok. Runs Apify's tiktok-scraper actor
+  (cost: ~$0.30 per 1K items) on niche keywords + hashtags. Stores raw content
+  in RawContentItem table with full audit trail (raw_apify_payload).
+
+WORKFLOW:
+  1. Query niches table (or use --niche flag)
+  2. Build startUrls from keywords + hashtag_seeds
+  3. Call Apify actor with startUrls, limit, sort_type
+  4. Normalize response via TikTokScraper._normalize_item()
+  5. Save to RawContentItem (unique constraint prevents duplicates)
+  6. Print counts (new vs duplicates)
+
+FLAGS:
+  --niche NAME          Scrape only this niche (default: all active niches)
+  --limit N             Max items per niche (default: 50)
+  --keywords K1 K2...   Custom keywords (overrides niche.keywords)
+  --sort-type TYPE      Ranking: RELEVANCE (default), MOST_LIKED, DATE_POSTED
+  --no-hashtags         Skip hashtag startUrls, keywords only
+
+COST:
+  ~$0.30 per 1000 items via Apify Starter plan.
+  Track usage in config/providers.yaml [apify_starter].
+"""
+
 import argparse
 import asyncio
 import logging
@@ -18,6 +49,9 @@ log = logging.getLogger(__name__)
 
 
 async def main():
+    """
+    CLI entry point. Parse args, then scrape niches.
+    """
     parser = argparse.ArgumentParser(description="Scrape TikTok trending content.")
     parser.add_argument("--niche", type=str, default=None, help="Niche name to scrape (default: all active niches)")
     parser.add_argument("--limit", type=int, default=50, help="Max items per scrape run")

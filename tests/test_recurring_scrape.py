@@ -85,7 +85,7 @@ def _seed_niche_and_items(db, niche_name, n_items):
 def test_happy_path_all_cache_hits(mock_fetch, mock_reparse, db):
     niche, items = _seed_niche_and_items(db, "test_niche", 5)
 
-    mock_fetch.return_value = items
+    mock_fetch.return_value = (items, len(items), 0)
     mock_reparse.return_value = MagicMock()
     factory  = _make_factory(db)
     result = run_niche_scrape(niche.id, session_factory=factory)
@@ -103,7 +103,7 @@ def test_happy_path_all_cache_hits(mock_fetch, mock_reparse, db):
 @patch("src.scrapers.recurring.TikTokScraper.fetch_trending", new_callable=AsyncMock)
 def test_mixed_cache_hits_and_misses(mock_fetch, mock_reparse, mock_extract, db):
     niche, items = _seed_niche_and_items(db, "test_niche", 5)
-    mock_fetch.return_value = items 
+    mock_fetch.return_value = (items, len(items), 0)
     mock_reparse.side_effect = [MagicMock(), MagicMock(), MagicMock(), None, None]
     mock_extract.side_effect = fake_extract
     factory = _make_factory(db)
@@ -121,7 +121,7 @@ def test_mixed_cache_hits_and_misses(mock_fetch, mock_reparse, mock_extract, db)
 def test_budget_exceeded_raises_and_preserves_partial_counts(mock_fetch, mock_reparse, mock_extract, db, monkeypatch):
     monkeypatch.setattr("src.scrapers.recurring.DEFAULT_MAX_DAILY_SPEND", 0.001)
     niche, items = _seed_niche_and_items(db, "test_niche", 5)
-    mock_fetch.return_value = items 
+    mock_fetch.return_value = (items, len(items), 0)
     mock_reparse.return_value = None
     mock_extract.side_effect = fake_extract
     factory = _make_factory(db)

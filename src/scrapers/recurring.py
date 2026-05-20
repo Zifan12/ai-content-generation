@@ -50,11 +50,12 @@ def run_niche_scrape(niche_id: int, session_factory: Callable[[], Session] = Ses
             result["niche_name"] = niche.name
 
             scraper = TikTokScraper(db)
-            items = asyncio.run(
-                scraper.fetch_trending(niche_id=niche_id, query=niche.hashtag_seeds, max_results=50)
-            )
+
+            result_tuple = asyncio.run(scraper.fetch_trending(niche_id=niche_id, query=niche.hashtag_seeds, max_results=50))
+            items, inserted, updated = result_tuple
             result["items_scraped"] = len(items)
-            result["items_inserted"] = len(items)   
+            result["items_inserted"] = inserted
+            result["items_updated"] = updated
 
             extractor = BlueprintExtractor()
             for item in items:
