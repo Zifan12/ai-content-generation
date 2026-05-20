@@ -122,6 +122,9 @@ class TikTokScraper(BaseScraper):
 
             (inserted, updated) = self.upsert_items(items)
 
+            platform_ids = [item.platform_content_id for item in items]
+            items = self.db.query(RawContentItem).filter(RawContentItem.platform_content_id.in_(platform_ids)).all()
+
         return (items, inserted, updated) 
 
     async def _start_run(

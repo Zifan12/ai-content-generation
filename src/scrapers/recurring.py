@@ -105,6 +105,7 @@ def run_niche_scrape(niche_id: int, session_factory: Callable[[], Session] = Ses
                     cost = compute_response_cost(resp)
                     result["extraction_usd_spent"] += cost 
                     result["items_extracted"] += 1
+            db.commit()
      
             
 
