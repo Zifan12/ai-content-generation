@@ -136,3 +136,22 @@ def test_budget_exceeded_raises_and_preserves_partial_counts(mock_fetch, mock_re
     assert partial["extraction_usd_spent"] >= 0.001
     assert partial["completed_at"] != ""
 
+
+@patch("src.scrapers.recurring.today_extraction_spend")
+@patch("src.scrapers.recurring.BlueprintExtractor.extract")
+@patch("src.scrapers.recurring.BlueprintExtractor.reparse_from_cache")
+@patch("src.scrapers.recurring.TikTokScraper.fetch_trending", new_callable=AsyncMock)
+def test_budget_guard_uses_db_spend(mock_fetch, mock_reparse, mock_extract, mock_today_spend, db):
+    niche, items = _seed_niche_and_items(db, "test_niche", 2)
+    mock_fetch.return_value = (items, 2, 0)
+    mock_reparse.return_value = None
+    mock_extract.side_effect = fake_extract
+    mock_today_spend.side_effect = [0.999, 1.001]
+
+    factory = _make_factory(db)
+
+    with pytest.raises(BudgetExceeded) as excinfo:
+        run_niche_scrape(niche.id, session_factory=factory)
+
+    partial = excinfo.value.partial_result
+    assert partial["items_extracted"] == 1
