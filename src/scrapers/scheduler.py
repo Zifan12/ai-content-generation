@@ -1,46 +1,68 @@
 """
-APScheduler glue that runs one TikTok scrape per active niche on a 24h cycle.
+RQ dispatcher that enqueues one run_niche_scrape job per active niche.
 
-Lives outside the scrapers themselves so the schedule can change without
-touching scraper code, and so FastAPI's lifespan can start/stop it cleanly.
+Replaces the old APScheduler glue (which ran scrapes inline in the
+FastAPI process). Now start() enqueues to the default RQ queue and
+returns immediately — a separate `rq worker` process executes the jobs.
 """
 
-from datetime import datetime, timezone
-
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from src.database import SessionLocal
-from src.scrapers.tiktok import TikTokScraper
 from src.models.niche import Niche
+from src.scrapers.recurring import run_niche_scrape
 
-scheduler = AsyncIOScheduler()
+from rq import Queue
+from redis import Redis
 
-async def scrape_tiktok(hashtags: list[str], niche_id: int):
+def get_redis_connection() -> Redis:
     """
-    Run one TikTok scrape job for the given niche, swallowing exceptions so a
-    single failure does not abort the scheduler loop.
+    Return a Redis client connected to localhost:6379.
+
+    Host and port are hardcoded for local dev. Task 6 will wire these
+    to config/settings.yaml scrape.recurring keys.
+    """
+    return Redis(host="localhost", port=6379)
+
+def dispatch_all_niches() -> list[str]:
+    """
+    Enqueue one run_niche_scrape job per active niche into the default RQ queue.
+
+    Opens a DB session to query active niches, enqueues each, then closes the
+    session. Does not wait for jobs to complete — fire and forget.
+
+    Returns:
+        List of RQ job ID strings, one per enqueued niche.
     """
     db = SessionLocal()
-    try:
-        scraper = TikTokScraper(db)
-        await scraper.fetch_trending(max_results=30, niche_id=niche_id, query=hashtags)
-    except Exception as e:
-        print(f"[scheduler] tiktok scrape failed ({hashtags}): {e}")
-    finally:
-        db.close()
+    niches = db.query(Niche).filter(Niche.is_active == True).all()
 
-def start():
-    """Register one 24h job per active niche with seeds, then start the scheduler loop."""
-    db = SessionLocal()
-    try:
-        niches = db.query(Niche).filter(Niche.is_active == True).all()
-        for niche in niches:
-            if niche.hashtag_seeds:
-                # next_run_time=now forces immediate first run; without it APScheduler
-                # waits a full 24h before firing.
-                scheduler.add_job(scrape_tiktok, "interval", hours=24, args=[niche.hashtag_seeds, niche.id], next_run_time=datetime.now(timezone.utc))
-    finally:
-        db.close()
-    scheduler.start()
+    queue = Queue(connection=get_redis_connection())
 
-def stop():
-    scheduler.shutdown()
+    job_ids = []
+    for niche in niches:
+        job = queue.enqueue(run_niche_scrape, niche.id)
+        job_ids.append(job.id)
+
+    db.close()
+
+    return job_ids 
+
+
+def start() -> None:
+    """
+    Dispatch all active-niche scrape jobs to the RQ queue and log the count.
+
+    Called from FastAPI lifespan on startup. Returns immediately — actual
+    execution happens in the RQ worker process.
+    """
+    jobs = dispatch_all_niches()
+    print(f"[scheduler] enqueued {len(jobs)} niche scrape jobs")
+
+def stop() -> None:
+    """
+    No-op. RQ worker lifecycle is managed externally (systemd/tmux/rq worker CLI).
+
+    Kept for API compatibility with the old APScheduler-based scheduler.
+    """
+    print("[scheduler] RQ worker manages its own lifecycle — no-op")
+
+

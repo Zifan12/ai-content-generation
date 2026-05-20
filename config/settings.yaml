@@ -3,6 +3,13 @@ scraping:
   interval_hours: 6
   items_per_scrape: 50
 
+# Recurring scrape settings (P1.6 RQ dispatcher)
+scrape:
+  recurring:
+    schedule_cron: "0 */6 * * *"       # every 6h; consumed by external cron/rq-scheduler
+    max_daily_extraction_spend: 1.00    # USD; mirrors DEFAULT_MAX_DAILY_SPEND in recurring.py
+    per_niche_volume: 50                # max items per niche per run
+
 # Content generation defaults
 generation:
   default_duration_seconds: 30
