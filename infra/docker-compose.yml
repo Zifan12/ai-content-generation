@@ -13,5 +13,24 @@ services:
       timeout: 3s
       retries: 5
 
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: aicg-postgres
+    environment:
+      POSTGRES_USER: aicg
+      POSTGRES_PASSWORD: aicg_local
+      POSTGRES_DB: aicg
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aicg -d aicg"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
 volumes:
   redis_data:
+  postgres_data:
