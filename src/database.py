@@ -1,12 +1,15 @@
 """
 SQLAlchemy engine, session factory, and Base for the project.
 
-SQLite for local dev (single-file under data/app.db); the URL is the only
-thing that needs to change to swap in RDS Postgres in prod.
+DATABASE_URL env var controls which backend is used — SQLite (default, backward-compat)
+or Postgres (P2+ with pgvector). Engine kwargs branch on URL scheme so callers never
+need to know which backend is active. SessionLocal, Base, and get_db interface unchanged.
 """
 
+import os
 from pathlib import Path
 from typing import Generator
+
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
@@ -14,17 +17,15 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DB_PATH = BASE_DIR / "data" / "app.db"
-DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)  # unconditional — harmless on Postgres, required on SQLite for first-run setup
 
-DATABASE_URL = f"sqlite:///{DB_PATH.as_posix()}"
+DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{DB_PATH.as_posix()}")
 
-engine = create_engine(
-    DATABASE_URL,
-    # SQLite only allows access from the thread that created it by default.
-    # FastAPI handles requests across multiple threads, so we disable this check.
-    connect_args={"check_same_thread": False},
-    future=True,
-)
+if DATABASE_URL.startswith("sqlite"):
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False}, future=True)
+else:
+    engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_size=5, max_overflow=10, future=True)
+
 
 SessionLocal = sessionmaker(
     bind=engine,
