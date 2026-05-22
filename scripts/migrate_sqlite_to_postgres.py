@@ -42,8 +42,8 @@ TABLE_ORDER: list[str] = [
     "blueprints",
     "extractor_responses",
     "transcripts",
-    # "golden_labels" skipped — 97/100 rows are orphaned (content_item_ids deleted
-    # during re-scrape). Table exists in schema; re-label against surreal_hyperreal at P3.5.
+    # "golden_labels" skipped — most rows reference content_item_ids deleted during
+    # re-scrape (orphaned FKs). Postgres enforces FKs strictly, unlike SQLite.
     "eval_runs",
     "miner_rankings",
 ]

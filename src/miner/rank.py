@@ -5,6 +5,7 @@ import statistics
 import argparse
 import json
 
+# load_dotenv before src.database import — engine reads DATABASE_URL at module load.
 from dotenv import load_dotenv
 load_dotenv("config/.env")
 
@@ -113,6 +114,10 @@ def rank_candidates(db: Session, niche_label: str, recency_weeks: int=4, min_mat
 
 
 def main():
+    """Parse CLI args, run ranker against the configured DB, emit JSON to stdout or file.
+
+    Optionally persists the run to miner_rankings when --persist is passed.
+    """
     parser = argparse.ArgumentParser(description="Rank viral mechanic combos for a niche using rule-based scoring.")
 
     parser.add_argument("--niche", required=True)
