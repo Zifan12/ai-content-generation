@@ -4,16 +4,21 @@ import math
 import statistics
 import argparse
 import json
-from datetime import datetime, timedelta, timezone
-from collections import defaultdict
 
-from sqlalchemy.orm import Session
+from dotenv import load_dotenv
+load_dotenv("config/.env")
 
-from src.models.blueprint import BlueprintRecord
-from src.models.trend import RawContentItem
-from src.miner.schemas import BlueprintCandidate, MinerEvidence
-from src.miner.storage import persist_run
-from src.database import SessionLocal
+from datetime import datetime, timedelta, timezone  # noqa: E402
+from collections import defaultdict  # noqa: E402
+
+from sqlalchemy.orm import Session  # noqa: E402
+from sqlalchemy import cast, String  # noqa: E402
+
+from src.models.blueprint import BlueprintRecord  # noqa: E402
+from src.models.trend import RawContentItem  # noqa: E402
+from src.miner.schemas import BlueprintCandidate, MinerEvidence  # noqa: E402
+from src.miner.storage import persist_run  # noqa: E402
+from src.database import SessionLocal  # noqa: E402
 
 def _score_groups(group: dict[tuple, list], min_matching_items: int, recency_weeks: int, field_names: tuple) -> list:
     """Score one group dict (keyed by combo tuple) and return scored tuples.
@@ -30,15 +35,14 @@ def _score_groups(group: dict[tuple, list], min_matching_items: int, recency_wee
         median_views = int(statistics.median([item.views for item in items_list]))
         p90_views = int(statistics.quantiles([item.views for item in items_list], n=10)[8])
         
-        # SQLite returns naive datetimes; strip UTC tzinfo so comparison doesn't raise TypeError
-        mid_cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(weeks=recency_weeks // 2)
+        mid_cutoff = datetime.now(timezone.utc) - timedelta(weeks=recency_weeks // 2)
 
 
-        recent_bucket = [item for item in items_list if item.published_at >= mid_cutoff]
-        prior_bucket = [item for item in items_list if item.published_at < mid_cutoff]
+        recent_bucket = [item for item in items_list if (item.published_at if item.published_at.tzinfo else item.published_at.replace(tzinfo=timezone.utc)) >= mid_cutoff]
+        prior_bucket  = [item for item in items_list if (item.published_at if item.published_at.tzinfo else item.published_at.replace(tzinfo=timezone.utc)) < mid_cutoff]
 
 
-        if not prior_bucket:
+        if not prior_bucket or not recent_bucket:
             trend_slope_4wk_pct = 0.0
         else:
             recent_median = statistics.median([recent.views for recent in recent_bucket])
@@ -63,7 +67,7 @@ def rank_candidates(db: Session, niche_label: str, recency_weeks: int=4, min_mat
         .join(RawContentItem, BlueprintRecord.content_item_id == RawContentItem.id)
         .filter(BlueprintRecord.extractor_version == "v3.1")
         .filter(RawContentItem.published_at >= cutoff_date)
-        .filter(BlueprintRecord.blueprint_data["niche_label"].as_string() == niche_label)
+        .filter(cast(BlueprintRecord.blueprint_data["niche_label"], String) == f'"{niche_label}"')
         .all()
     )
 
