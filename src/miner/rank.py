@@ -1,5 +1,9 @@
+"""Rule-based mechanic ranker: groups BlueprintRecord rows by mechanic combos, scores each
+group by views + trend slope, returns top-N BlueprintCandidates for RAG query generation."""
 import math
 import statistics
+import argparse
+import json
 from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 
@@ -8,17 +12,25 @@ from sqlalchemy.orm import Session
 from src.models.blueprint import BlueprintRecord
 from src.models.trend import RawContentItem
 from src.miner.schemas import BlueprintCandidate, MinerEvidence
+from src.miner.storage import persist_run
+from src.database import SessionLocal
 
 def _score_groups(group: dict[tuple, list], min_matching_items: int, recency_weeks: int, field_names: tuple) -> list:
+    """Score one group dict (keyed by combo tuple) and return scored tuples.
 
+    Each surviving combo (len >= min_matching_items) produces one tuple:
+    (score, combo, matching_items, median_views, p90_views, trend_slope_4wk_pct, field_names).
+    Slope is 0.0 when prior half-window is empty (all items are recent).
+    """
     result = []
     for combo, items_list in group.items():
         if len(items_list) < min_matching_items:
             continue
 
-        median_views = statistics.median([item.views for item in items_list])
-        p90_views = statistics.quantiles([item.views for item in items_list], n=10)[8]
+        median_views = int(statistics.median([item.views for item in items_list]))
+        p90_views = int(statistics.quantiles([item.views for item in items_list], n=10)[8])
         
+        # SQLite returns naive datetimes; strip UTC tzinfo so comparison doesn't raise TypeError
         mid_cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(weeks=recency_weeks // 2)
 
 
@@ -40,6 +52,11 @@ def _score_groups(group: dict[tuple, list], min_matching_items: int, recency_wee
     return result
 
 def rank_candidates(db: Session, niche_label: str, recency_weeks: int=4, min_matching_items: int=5, top_n: int=10) -> list[BlueprintCandidate]:
+    """Rank mechanic combos by composite score for a given niche.
+
+    Filters to extractor_version v3.1 rows published within recency_weeks.
+    Groups by three combo dimensions, scores each, returns top_n BlueprintCandidates sorted desc.
+    """
     cutoff_date = datetime.now(timezone.utc) - timedelta(weeks=recency_weeks) 
     rows = (
         db.query(BlueprintRecord, RawContentItem)
@@ -89,4 +106,33 @@ def rank_candidates(db: Session, niche_label: str, recency_weeks: int=4, min_mat
 
     return candidates
 
-        
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Rank viral mechanic combos for a niche using rule-based scoring.")
+
+    parser.add_argument("--niche", required=True)
+    parser.add_argument("--recency-weeks", type=int, default=4)
+    parser.add_argument("--min-items", type=int, default=5)
+    parser.add_argument("--top-n", type=int, default=10)
+    parser.add_argument("--output", required=False)
+    parser.add_argument("--persist", action="store_true")
+
+    args = parser.parse_args()
+
+    db = SessionLocal()
+
+    candidates = rank_candidates(db, niche_label=args.niche, recency_weeks=args.recency_weeks, min_matching_items=args.min_items, top_n=args.top_n)
+    output_json = json.dumps([c.model_dump() for c in candidates], indent=2)
+
+    if args.output:
+        with open(args.output, "w") as f:
+            f.write(output_json)
+    else:
+        print(output_json)
+
+    if args.persist:
+        persist_run(db, candidates, args.niche)
+
+
+if __name__ == "__main__": main()
