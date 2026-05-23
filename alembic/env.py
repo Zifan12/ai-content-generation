@@ -5,13 +5,18 @@ from sqlalchemy import pool
 
 from alembic import context
 
-from src.database import Base, DATABASE_URL
-import src.models.niche
-import src.models.trend
-import src.models.eval
-import src.models.transcript
-import src.models.blueprint
-import src.models.extractor_response
+from dotenv import load_dotenv
+
+load_dotenv("config/.env")
+
+from src.database import Base, DATABASE_URL  # noqa: E402
+import src.models.niche  # noqa: E402
+import src.models.trend  # noqa: E402
+import src.models.eval  # noqa: E402
+import src.models.transcript  # noqa: E402
+import src.models.blueprint  # noqa: E402
+import src.models.extractor_response  # noqa: E402
+import src.models.viral_video  # noqa: E402, F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
