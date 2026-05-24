@@ -34,9 +34,12 @@ dependencies = [
     "lightgbm>=4.5.0",
     "scikit-learn>=1.6.0",
     "pandas>=2.2.0",
-    "numpy>=1.26.0",
-    # ML — deep learning (CPU by default; install CUDA wheels separately if needed)
+    "numpy>=1.26.0,<2.5",
+    "pyarrow>=17,<19",                       # Win+py3.13 native-ABI stability; pyarrow>=20 crashes on import
+    # ML — deep learning (CUDA wheels pinned via [tool.uv.sources] below)
     "torch>=2.5.0",
+    "torchvision>=0.20.0",
+    "torchaudio>=2.5.0",
     "transformers>=4.47.0",
     # Fine-tuning
     "peft>=0.14.0",
@@ -52,6 +55,16 @@ dependencies = [
     "psycopg[binary]>=3.2.0",
     "asyncpg>=0.30.0",
 ]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu124" }
+torchvision = { index = "pytorch-cu124" }
+torchaudio = { index = "pytorch-cu124" }
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

@@ -16,3 +16,13 @@ llm:
 image:
   active: null
   providers: {}
+
+embedder:
+  text:
+    active: bge-m3
+    options:
+      bge-m3:
+        model_name: BAAI/bge-m3
+        dim: 1024
+        device: auto                  # cuda if available, else cpu
+        normalize: true

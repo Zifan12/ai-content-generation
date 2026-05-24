@@ -15,3 +15,9 @@ generation:
   default_duration_seconds: 30
   default_aspect_ratio: "9:16"
   content_style: "faceless"  # faceless, narrated, mixed
+
+# RAG (retrieval-augmented generation) — P2
+rag:
+  embedder:
+    active: bge-m3
+    batch_size: 32
