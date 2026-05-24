@@ -1,3 +1,22 @@
+"""
+Raw scraped content items from video platforms (TikTok, YouTube, Instagram).
+
+PIPELINE ROLE:
+  Scrape (apidojo/YouTube API) → RawContentItem (this file) → Trend analysis → Blueprint extraction → Generation
+
+WHY THIS FILE EXISTS:
+  Normalized schema for all scraped video metadata. Acts as the **single source of truth**
+  for content data. All downstream analysis (virality scoring, Blueprint extraction, RAG
+  indexing, ML features) depends on this schema.
+
+KEY DESIGN DECISIONS:
+  - Platform-agnostic: supports TikTok, YouTube, Instagram with consistent fields
+  - Stores raw_apify_payload for audit trail (what was scraped, what got normalized)
+  - niche_id: nullable, assigned post-scrape if needed
+  - music_is_original: computed property (heuristic: artist == author username)
+  - Unique constraint on (platform, platform_content_id) to prevent duplicates
+"""
+
 from datetime import datetime
 from typing import Any
 
@@ -6,7 +25,28 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from src.database import Base
 
-class RawContentItem(Base): 
+class RawContentItem(Base):
+    """
+    Normalized video metadata from Apify/platform scrapers.
+    
+    Central schema for all scraped content. Fields populated by platform-specific
+    scrapers (TikTokScraper, YouTubeScraper) via _normalize_item() patterns.
+    
+    Key Fields:
+      - platform: "tiktok", "youtube", or "instagram" (index for queries)
+      - platform_content_id: platform's unique ID (unique with platform)
+      - views, likes, comments, shares: engagement metrics (used for virality scoring)
+      - audio_id: platform-specific sound/music ID
+      - hashtags: list[str], extracted and normalized
+      - subtitle_url: direct download URL to WebVTT file (expires ~30 days)
+      - niche_id: optional, assigned post-scrape for content classification
+      - raw_apify_payload: full JSON response from Apify actor (audit trail)
+      - published_at, collected_at: timestamps for temporal analysis
+    
+    Constraints:
+      - (platform, platform_content_id) must be unique (prevents duplicates)
+      - title, description, author_username indexed for search
+    """ 
     __tablename__ = "raw_content_items"
     __table_args__ = (
         UniqueConstraint("platform", "platform_content_id", name="uniq_raw_platform_content_id"),
