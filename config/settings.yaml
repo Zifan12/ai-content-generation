@@ -20,4 +20,7 @@ generation:
 rag:
   embedder:
     active: bge-m3
-    batch_size: 32
+    # batch_size tuned for RTX 4070 8GB + typical Windows desktop apps. 8 is safe with
+    # browser/Discord/VS Code open; 16 may work with apps closed; 32 needs fp16 or empty
+    # GPU. Increase when GPU is dedicated or fp16 mode is added.
+    batch_size: 8
