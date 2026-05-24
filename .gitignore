@@ -40,7 +40,9 @@ guides/
 .claude/
 CLAUDE.md
 PLAN.md
-docs/superpowers/
+
+# Docs (local-only — may go public selectively later)
+docs/
 
 # OS
 .DS_Store
