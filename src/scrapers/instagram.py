@@ -44,6 +44,16 @@ class InstagramScraper(BaseScraper):
 
 
     async def fetch_trending(self, max_results = 20, niche_id = None, query = None) -> list[RawContentItem]:
+        """Fetch recent Instagram Reels for a username or profile URL.
+
+        Args:
+            max_results: capped internally at 50 (actor limit).
+            niche_id: FK attached to each saved item.
+            query: username or profile URL; defaults to "instagram" if omitted.
+
+        Returns:
+            List of saved RawContentItems (deduped via BaseScraper.save_items).
+        """
         if not self.api_token:
             raise RuntimeError("APIFY_API_TOKEN is not set")
         
@@ -81,6 +91,7 @@ class InstagramScraper(BaseScraper):
         return self.save_items(items)
 
     async def _start_run(self, client: httpx.AsyncClient, headers: dict[str, str], run_input: dict[str, Any]):
+        """POST to Apify to start an actor run; return the run metadata dict."""
         response = await client.post(
             f"/acts/{self.actor_id}/runs",
             headers=headers,
@@ -92,6 +103,7 @@ class InstagramScraper(BaseScraper):
         return data["data"]
     
     async def _poll_run(self, client: httpx.AsyncClient, headers: dict[str, str], run_id: str):
+        """Poll run status until SUCCEEDED or terminal failure; raise TimeoutError if budget exceeded."""
         started = time.monotonic()
 
         for _ in range(self.poll_attempts):
@@ -122,7 +134,7 @@ class InstagramScraper(BaseScraper):
 
 
     async def _fetch_dataset_items(self, client: httpx.AsyncClient, headers: dict[str, str], dataset_id: str):
-
+        """Fetch all items from a completed Apify dataset; return empty list on non-list response."""
         response = await client.get(
             f"/datasets/{dataset_id}/items",
             headers=headers,
@@ -182,6 +194,7 @@ class InstagramScraper(BaseScraper):
         )
 
     def _extract_hashtags(self, caption, api_hashtags) -> list[str]:
+        """Merge hashtags from caption text and API hashtag list into a sorted deduplicated list."""
         out: set[str] = set()
         if caption:
             out.update(h.lower() for h in self._hashtag_re.findall(caption))
@@ -192,12 +205,14 @@ class InstagramScraper(BaseScraper):
         return sorted(out)
 
     def _pick_first(self, item: dict, keys):
+        """Return first non-None value from item for the given keys, or None if none found."""
         for key in keys:
             if key in item and item[key] is not None:
                 return item[key]
         return None
     
     def _pick_first_str(self, item, keys):
+        """Return first non-None value as a non-empty string, or None if all keys missing/empty."""
         value = self._pick_first(item, keys)
         if value is None:
             return None
@@ -206,12 +221,14 @@ class InstagramScraper(BaseScraper):
         return str(value)
 
     def _to_int(self, value: Any) -> int:
+        """Safely cast to int; return 0 on TypeError/ValueError."""
         try:
             return int(value)
         except (TypeError, ValueError):
             return 0
 
     def _parse_datetime(self, value):
+        """Parse Unix epoch (int/float) or ISO 8601 string into a UTC-aware datetime; return None on failure."""
         # Actor returns either Unix epoch (int|float) or ISO 8601 string.
         # Coerce both into UTC-aware datetime; storage column is timezone-aware.
         if isinstance(value, (int, float)):

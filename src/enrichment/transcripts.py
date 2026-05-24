@@ -71,6 +71,13 @@ class TranscriptFetcher:
 
         Strips WEBVTT header, timestamp lines, blank lines, and consecutive
         duplicate caption segments (TikTok CDN often repeats segments).
+        
+        Deduplication Logic:
+          TikTok's CDN-hosted WebVTT files often repeat caption segments verbatim.
+          This causes duplicate text in the transcript, which corrupts downstream
+          features (Blueprint extraction, RAG embeddings, language analysis).
+          Solution: Track previous line, skip if current == previous (line-by-line dedup).
+        
         Returns None on HTTP error or if parsed text is empty.
         """
         try:
