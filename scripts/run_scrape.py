@@ -36,6 +36,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from sqlalchemy import select
+
 from src.database import SessionLocal
 from src.models.niche import Niche
 from src.scrapers.tiktok import TikTokScraper
@@ -62,26 +64,28 @@ async def main():
 
     with SessionLocal() as db:
         if args.niche:
-            niches = db.query(Niche).filter(Niche.name == args.niche, Niche.is_active == True).all()
+            niches = db.execute(
+                select(Niche).where(Niche.name == args.niche, Niche.is_active == True)
+            ).scalars().all()
             if not niches:
                 log.error(f"Niche '{args.niche}' not found or not active")
                 return
         else:
-            niches = db.query(Niche).filter(Niche.is_active == True).all()
+            niches = db.execute(select(Niche).where(Niche.is_active == True)).scalars().all()
 
         scraper = TikTokScraper(db=db)
 
         for niche in niches:
             hashtag_seeds = [] if args.no_hashtags else niche.hashtag_seeds
             log.info(f"Scraping niche={niche.name} limit={args.limit} sort={args.sort_type} hashtags={len(hashtag_seeds)} keywords={len(args.keywords or [])}")
-            items = await scraper.fetch_trending(
+            items, inserted, updated = await scraper.fetch_trending(
                 max_results=args.limit,
                 niche_id=niche.id,
                 query=hashtag_seeds,
                 keywords=args.keywords,
                 sort_type=args.sort_type,
             )
-            log.info(f"{niche.name}: {len(items)} new items saved")
+            log.info(f"{niche.name}: {inserted} new items saved | {updated} items updated")
 
 
 if __name__ == "__main__":

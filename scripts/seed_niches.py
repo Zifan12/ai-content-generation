@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 load_dotenv("config/.env")
 
+from sqlalchemy import select  # noqa: E402
 from src.database import SessionLocal  # noqa: E402
 from src.models.niche import Niche  # noqa: E402
 
@@ -76,12 +77,18 @@ NICHES = [
 ]
 
 def seed():
+    """
+    Idempotent seeder: add niches from NICHES list to DB, skip if already exist.
+    
+    Safe to run multiple times; only adds missing niches. Useful for CI/CD and
+    local setup.
+    """
     db = SessionLocal()
     added = 0
     skipped = 0
     try:
         for data in NICHES:
-            existing = db.query(Niche).filter(Niche.name == data["name"]).first()
+            existing = db.execute(select(Niche).where(Niche.name == data["name"])).scalar_one_or_none()
             if existing:
                 print(f"  skip (exists): {data['name']}")
                 skipped += 1

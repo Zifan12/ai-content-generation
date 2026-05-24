@@ -3,7 +3,7 @@ import uuid
 import pytest
 import statistics
 from datetime import datetime, timezone, timedelta
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
 from src.database import Base
@@ -121,7 +121,7 @@ def test_stability(db, corpus):
 
 def test_discrimination(db, corpus):
     result = rank_candidates(db, niche_label=corpus.name, top_n=5)
-    views = db.query(RawContentItem.views).filter(RawContentItem.niche_id == corpus.id).all()
+    views = db.execute(select(RawContentItem.views).where(RawContentItem.niche_id == corpus.id)).all()
     
     median = statistics.median([v[0] for v in views])
     assert result[0].evidence.median_views >= 3 * median

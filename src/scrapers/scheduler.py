@@ -6,6 +6,8 @@ FastAPI process). Now start() enqueues to the default RQ queue and
 returns immediately — a separate `rq worker` process executes the jobs.
 """
 
+from sqlalchemy import select
+
 from src.database import SessionLocal
 from src.models.niche import Niche
 from src.scrapers.recurring import run_niche_scrape
@@ -33,7 +35,7 @@ def dispatch_all_niches() -> list[str]:
         List of RQ job ID strings, one per enqueued niche.
     """
     db = SessionLocal()
-    niches = db.query(Niche).filter(Niche.is_active == True).all()
+    niches = db.execute(select(Niche).where(Niche.is_active == True)).scalars().all()
 
     queue = Queue(connection=get_redis_connection())
 

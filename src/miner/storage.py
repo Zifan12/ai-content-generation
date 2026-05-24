@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any
 import uuid
 
-from sqlalchemy import DateTime, Float, Integer, JSON, String, func
+from sqlalchemy import DateTime, Float, Integer, JSON, String, func, select
 from sqlalchemy.orm import Mapped, mapped_column, Session
 
 from src.database import Base
@@ -36,7 +36,11 @@ class MinerRanking(Base):
 
 
 def persist_run(db: Session, candidates: list[BlueprintCandidate], niche_label: str) -> str:
+    """Insert one MinerRanking row per candidate under a fresh run_id (UUID).
 
+    Returns the run_id so callers can correlate the persisted batch.
+    Commits once after the full loop — atomic batch insert.
+    """
     run_id = str(uuid.uuid4())
 
     for candidate in candidates:
@@ -59,14 +63,25 @@ def persist_run(db: Session, candidates: list[BlueprintCandidate], niche_label: 
     return run_id
 
 def latest_run(db: Session, niche_label: str) -> list[BlueprintCandidate]:
+    """Reconstruct the most recent ranked candidate list for a niche.
 
-    latest = db.query(MinerRanking).filter(MinerRanking.niche_label == niche_label).order_by(MinerRanking.created_at.desc()).first()
+    Picks the latest run_id by created_at, then loads its rows ordered by rank.
+    Returns [] when no run exists for the niche.
+    """
+    latest = db.execute(
+        select(MinerRanking)
+        .where(MinerRanking.niche_label == niche_label)
+        .order_by(MinerRanking.created_at.desc())
+        .limit(1)
+    ).scalar_one_or_none()
 
     if latest is None:
         return []
-    
+
     run_id = latest.run_id
-    rows = db.query(MinerRanking).filter(MinerRanking.run_id == run_id).order_by(MinerRanking.rank).all()
+    rows = db.execute(
+        select(MinerRanking).where(MinerRanking.run_id == run_id).order_by(MinerRanking.rank)
+    ).scalars().all()
     
     return [
         BlueprintCandidate(

@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.models.trend import RawContentItem
@@ -123,7 +124,9 @@ class TikTokScraper(BaseScraper):
             (inserted, updated) = self.upsert_items(items)
 
             platform_ids = [item.platform_content_id for item in items]
-            items = self.db.query(RawContentItem).filter(RawContentItem.platform_content_id.in_(platform_ids)).all()
+            items = self.db.execute(
+                select(RawContentItem).where(RawContentItem.platform_content_id.in_(platform_ids))
+            ).scalars().all()
 
         return (items, inserted, updated) 
 

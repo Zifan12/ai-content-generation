@@ -9,7 +9,7 @@ unique-constraint handling.
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
-from sqlalchemy import func
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
@@ -74,11 +74,11 @@ class BaseScraper(ABC):
         mutable_fields = ["likes", "views", "comments", "shares", "collect_count"]
 
         for item in items:
-            exists = (
-                self.db.query(RawContentItem)
-                .filter_by(platform=item.platform, platform_content_id=item.platform_content_id)
-                .first()
-            )
+            exists = self.db.execute(
+                select(RawContentItem).filter_by(
+                    platform=item.platform, platform_content_id=item.platform_content_id
+                )
+            ).scalar_one_or_none()
 
             values = {col.name: getattr(item, col.name) for col in RawContentItem.__table__.columns if col.name not in ("id", "collected_at", "created_at")}
             values["collected_at"] = func.now()

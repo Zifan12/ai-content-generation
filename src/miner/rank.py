@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone  # noqa: E402
 from collections import defaultdict  # noqa: E402
 
 from sqlalchemy.orm import Session  # noqa: E402
-from sqlalchemy import cast, String  # noqa: E402
+from sqlalchemy import cast, String, select  # noqa: E402
 
 from src.models.blueprint import BlueprintRecord  # noqa: E402
 from src.models.trend import RawContentItem  # noqa: E402
@@ -63,14 +63,14 @@ def rank_candidates(db: Session, niche_label: str, recency_weeks: int=4, min_mat
     Groups by three combo dimensions, scores each, returns top_n BlueprintCandidates sorted desc.
     """
     cutoff_date = datetime.now(timezone.utc) - timedelta(weeks=recency_weeks) 
-    rows = (
-        db.query(BlueprintRecord, RawContentItem)
+    stmt = (
+        select(BlueprintRecord, RawContentItem)
         .join(RawContentItem, BlueprintRecord.content_item_id == RawContentItem.id)
-        .filter(BlueprintRecord.extractor_version == "v3.1")
-        .filter(RawContentItem.published_at >= cutoff_date)
-        .filter(cast(BlueprintRecord.blueprint_data["niche_label"], String) == f'"{niche_label}"')
-        .all()
+        .where(BlueprintRecord.extractor_version == "v3.1")
+        .where(RawContentItem.published_at >= cutoff_date)
+        .where(cast(BlueprintRecord.blueprint_data["niche_label"], String) == f'"{niche_label}"')
     )
+    rows = db.execute(stmt).all()
 
     group3 = defaultdict(list)
     group2 = defaultdict(list)

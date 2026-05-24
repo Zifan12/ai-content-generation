@@ -1,5 +1,5 @@
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
@@ -66,7 +66,7 @@ def test_write_and_read_roundtrip(db, raw_item):
     db.add(row)
     db.commit()
 
-    result = db.query(ExtractorResponse).filter_by(prompt_fingerprint="fp_roundtrip").one()
+    result = db.execute(select(ExtractorResponse).filter_by(prompt_fingerprint="fp_roundtrip")).scalar_one()
     assert result.content_item_id == raw_item.id
     assert result.model == "claude-sonnet-4-6"
     assert result.raw_response == {"hook_type": "visual_shock", "pacing": "slow_atmospheric"}
@@ -93,7 +93,7 @@ def test_different_fingerprint_same_item_allowed(db, raw_item):
     db.add(_make_response(raw_item.id, fingerprint="fp_v2"))
     db.commit()
 
-    rows = db.query(ExtractorResponse).filter_by(content_item_id=raw_item.id).all()
+    rows = db.execute(select(ExtractorResponse).filter_by(content_item_id=raw_item.id)).scalars().all()
     assert len(rows) == 2
 
 
@@ -114,7 +114,7 @@ def test_nullable_usage_columns(db, raw_item):
     db.add(row)
     db.commit()
 
-    result = db.query(ExtractorResponse).filter_by(prompt_fingerprint="fp_no_usage").one()
+    result = db.execute(select(ExtractorResponse).filter_by(prompt_fingerprint="fp_no_usage")).scalar_one()
     assert result.usage_input_tokens is None
     assert result.usage_output_tokens is None
     assert result.usage_cache_read_tokens is None

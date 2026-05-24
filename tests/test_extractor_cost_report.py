@@ -7,7 +7,7 @@ constructing an Anthropic SDK client (ADR-0005 pre-flight gate).
 """
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
 from src.database import Base
@@ -48,13 +48,13 @@ def seed_extraction(
     Uses unique platform_content_id per row by counting existing items so test data
     doesn't collide on the unique constraint.
     """
-    niche = db.query(Niche).filter_by(name=niche_name).first()
+    niche = db.execute(select(Niche).filter_by(name=niche_name)).scalar_one_or_none()
     if niche is None:
         niche = Niche(name=niche_name, keywords=[], hashtag_seeds=[])
         db.add(niche)
         db.flush()
 
-    existing_count = db.query(RawContentItem).count()
+    existing_count = db.execute(select(func.count()).select_from(RawContentItem)).scalar_one()
     item = RawContentItem(
         platform="tiktok",
         platform_content_id=f"test_{existing_count}",

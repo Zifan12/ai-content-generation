@@ -15,6 +15,7 @@ from src.models.extractor_response import ExtractorResponse
 from src.observability.tracing import traced
 from src.providers.llm.anthropic_llm import AnthropicLLM
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
@@ -291,9 +292,11 @@ class BlueprintExtractor:
         envelope = build_envelope(item, transcript_text, niche_label)
         fingerprint = compute_prompt_fingerprint(SYSTEM_PROMPT, envelope, self.llm.model, {"max_tokens": 2048})
 
-        resp = db.query(ExtractorResponse).filter_by(
-            content_item_id=item.id, prompt_fingerprint=fingerprint
-        ).first()
+        resp = db.execute(
+            select(ExtractorResponse).filter_by(
+                content_item_id=item.id, prompt_fingerprint=fingerprint
+            )
+        ).scalar_one_or_none()
 
         if resp is None:
             return None

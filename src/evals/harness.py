@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from sqlalchemy import select
+
 from src.analysis.scorer import RuleBasedScorer
 from src.database import SessionLocal
 from src.evals.metrics import auc, precision_at_k
@@ -91,7 +93,7 @@ class EvalHarness:
 
     def _load_golden(self) -> list[dict]:
         """
-        Read golden JSONL; skip blank lines.
+        Load golden label records from JSONL; blank lines silently skipped.
         """
         with open(self.golden_path, encoding="utf-8") as f:
             return [json.loads(line) for line in f if line.strip()]
@@ -150,7 +152,9 @@ def main():
                 
             )
         elif args.component == "blueprint-extractor-v1":
-            records = db.query(BlueprintRecord).filter(BlueprintRecord.extractor_version == EXTRACTOR_VERSION).all()
+            records = db.execute(
+                select(BlueprintRecord).where(BlueprintRecord.extractor_version == EXTRACTOR_VERSION)
+            ).scalars().all()
             rate = _schema_valid_rate(records)
             git_sha = harness._git_sha()
             db.add(EvalRun(component=args.component, git_sha=git_sha, metric_name="schema_valid_rate", metric_value=rate, dataset_version=args.dataset_version))

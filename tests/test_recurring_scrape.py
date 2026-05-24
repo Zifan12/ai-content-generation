@@ -1,6 +1,6 @@
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from contextlib import contextmanager
 
@@ -56,7 +56,7 @@ def _make_factory(session):
     return factory
 
 def _seed_niche_and_items(db, niche_name, n_items):
-    niche = db.query(Niche).filter_by(name=niche_name).first()
+    niche = db.execute(select(Niche).filter_by(name=niche_name)).scalar_one_or_none()
     if niche is None:
         niche = Niche(name=niche_name, keywords=[], hashtag_seeds=[])
         db.add(niche)

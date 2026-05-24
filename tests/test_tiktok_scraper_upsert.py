@@ -1,5 +1,5 @@
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
 from src.models.trend import RawContentItem
@@ -42,7 +42,7 @@ def test_upsert_inserts_new_item(db):
     inserted, updated = scraper.upsert_items([item])
 
     assert (inserted, updated) == (1, 0)
-    assert db.query(RawContentItem).filter_by(platform_content_id="test_1").first() is not None
+    assert db.execute(select(RawContentItem).filter_by(platform_content_id="test_1")).scalar_one_or_none() is not None
 
 def test_upsert_updates_existing_item(db):
 
@@ -74,6 +74,6 @@ def test_upsert_updates_existing_item(db):
 
     inserted, updated = scraper.upsert_items([item2])
     assert (inserted, updated) == (0, 1)
-    row = db.query(RawContentItem).filter_by(platform_content_id="test_1").first()
+    row = db.execute(select(RawContentItem).filter_by(platform_content_id="test_1")).scalar_one_or_none()
     assert row.views == 10000
-    assert db.query(RawContentItem).count() == 1
+    assert db.execute(select(func.count()).select_from(RawContentItem)).scalar_one() == 1
