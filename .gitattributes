@@ -1,0 +1,54 @@
+# Normalize all text files to LF in repo; checkout as LF on all platforms.
+# Overrides core.autocrlf. Kills CRLF/LF churn from Windows + WSL mixed work.
+
+* text=auto eol=lf
+
+# Explicit text formats (keep LF even on Windows)
+*.py        text eol=lf
+*.pyi       text eol=lf
+*.ts        text eol=lf
+*.tsx       text eol=lf
+*.js        text eol=lf
+*.jsx       text eol=lf
+*.json      text eol=lf
+*.yaml      text eol=lf
+*.yml       text eol=lf
+*.toml      text eol=lf
+*.md        text eol=lf
+*.sh        text eol=lf
+*.mako      text eol=lf
+*.html      text eol=lf
+*.css       text eol=lf
+*.sql       text eol=lf
+*.vtt       text eol=lf
+.env*       text eol=lf
+Dockerfile* text eol=lf
+
+# PowerShell scripts must keep CRLF (Windows convention)
+*.ps1       text eol=crlf
+
+# Binary — never touch line endings, never diff
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.webp      binary
+*.ico       binary
+*.pdf       binary
+*.mp4       binary
+*.mp3       binary
+*.wav       binary
+*.parquet   binary
+*.db        binary
+*.sqlite    binary
+*.sqlite3   binary
+*.woff      binary
+*.woff2     binary
+*.ttf       binary
+*.zip       binary
+*.tar       binary
+*.gz        binary
+*.safetensors binary
+*.pt        binary
+*.pth       binary
+*.bin       binary
