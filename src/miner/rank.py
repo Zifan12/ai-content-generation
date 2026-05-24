@@ -5,19 +5,15 @@ import statistics
 import argparse
 import json
 
-# load_dotenv before src.database import — engine reads DATABASE_URL at module load.
-from dotenv import load_dotenv
-load_dotenv("config/.env")
+from datetime import datetime, timedelta, timezone
+from collections import defaultdict
 
-from datetime import datetime, timedelta, timezone  # noqa: E402
-from collections import defaultdict  # noqa: E402
+from sqlalchemy.orm import Session
+from sqlalchemy import cast, String, select
 
-from sqlalchemy.orm import Session  # noqa: E402
-from sqlalchemy import cast, String, select  # noqa: E402
-
-from src.models.blueprint import BlueprintRecord  # noqa: E402
-from src.models.trend import RawContentItem  # noqa: E402
-from src.miner.schemas import BlueprintCandidate, MinerEvidence  # noqa: E402
+from src.models.blueprint import BlueprintRecord
+from src.models.trend import RawContentItem
+from src.miner.schemas import BlueprintCandidate, MinerEvidence
 from src.miner.storage import persist_run  # noqa: E402
 from src.database import SessionLocal  # noqa: E402
 

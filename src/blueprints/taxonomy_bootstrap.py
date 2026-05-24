@@ -1,11 +1,24 @@
 """
-Bootstrap v1 closed-enum taxonomy from v0 open-string Blueprint values.
+Historical script: bootstrap v1 taxonomy from v0 open-string values.
 
-v0 extractor stores free-text labels for `format` / `hook_type` / `payoff_type`.
-Before promoting to v1, those labels must collapse to a tight enum or RAG/ML
-consumers see ~1000 unique strings instead of ~10 mechanics. This script asks
-an LLM to cluster the observed v0 labels into 8-15 named groups; output is a
-proposal the human reviews before hand-coding the v1 enum.
+**STATUS: LEGACY** — This script ran once during v0→v1 transition (early 2026).
+Kept for reference only. Current version is v3 (niche-agnostic schema).
+
+WHAT IT DID (past tense):
+  v0 extractor stored free-text labels for format/hook_type/payoff_type. Before
+  promoting to v1, those labels needed to collapse to a tight enum (~10 mechanics
+  per field, not 1000+ unique strings). This script asked Claude to cluster v0
+  values, produced a proposal for human review, then those clusters became v1 enums.
+
+WHY IT'S NOT USED NOW:
+  v1 enums are now baked into the schema. v3 evolved beyond v1 with niche
+  conditioning (universal + niche-specific fields). Taxonomy expansion now
+  happens in prompts, not via bootstrapping scripts.
+
+KEEPING IT:
+  Preserved for audit trail + potential future re-clustering if v3 enums
+  need evolutionary bumps. Also demonstrates the taxonomy methodology.
+
 """
 
 import argparse
@@ -14,16 +27,11 @@ import logging
 from collections import Counter
 from pathlib import Path
 
-from dotenv import load_dotenv
+from pydantic import BaseModel
+from sqlalchemy import select
 
-# Must load before src.database / AnthropicLLM import — both read env at import time.
-load_dotenv(Path(__file__).resolve().parent.parent.parent / "config" / ".env")
-
-from pydantic import BaseModel  # noqa: E402
-from sqlalchemy import select  # noqa: E402
-
-from src.database import SessionLocal  # noqa: E402
-from src.models.blueprint import BlueprintRecord  # noqa: E402
+from src.database import SessionLocal
+from src.models.blueprint import BlueprintRecord
 from src.providers.llm.anthropic_llm import AnthropicLLM  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
