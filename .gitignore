@@ -22,6 +22,19 @@ data/
 # IDE
 .vscode/
 .idea/
+.cursor/
+
+# Local instructions (mirrors CLAUDE.md, local-only)
+.instructions.md
+
+# graphify skill output
+graphify-out/
+
+# Apify actor source / scraper experiments (local-only reference)
+apify/
+
+# Reference notes / guides (local-only)
+guides/
 
 # Claude Code
 .claude/
