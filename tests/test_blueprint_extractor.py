@@ -6,7 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from pydantic import ValidationError
 
-from src.blueprints.extractor import BlueprintExtractor, compute_prompt_fingerprint, SYSTEM_PROMPT
+from src.blueprints.extractor import BlueprintExtractor, compute_prompt_fingerprint, SYSTEM_PROMPT, build_envelope
 from src.blueprints.schema import Blueprint, EXTRACTOR_VERSION
 from src.database import Base
 from src.models.extractor_response import ExtractorResponse
@@ -149,7 +149,7 @@ def test_reparse_from_cache_hit_no_llm_call(db):
     fake_llm.model = "claude-sonnet-4-6"
 
     extractor = BlueprintExtractor(llm=fake_llm)
-    envelope = extractor._build_envelope(item, None, "surreal_hyperreal")
+    envelope = build_envelope(item, None, "surreal_hyperreal")
     fake_fingerprint = compute_prompt_fingerprint(SYSTEM_PROMPT, envelope, "claude-sonnet-4-6", {"max_tokens": 2048})
 
     row = ExtractorResponse(
@@ -177,7 +177,7 @@ def test_reparse_from_cache_miss_different_fingerprint(db):
     fake_llm.model = "claude-sonnet-4-6"
 
     extractor = BlueprintExtractor(llm=fake_llm)
-    envelope = extractor._build_envelope(item, None, "surreal_hyperreal")
+    envelope = build_envelope(item, None, "surreal_hyperreal")
     wrong_fingerprint = "a" * 64
 
     row = ExtractorResponse(
@@ -204,7 +204,7 @@ def test_reparse_from_cache_hit_no_llm_call_invalid_raw_response(db):
     fake_llm.model = "claude-sonnet-4-6"
 
     extractor = BlueprintExtractor(llm=fake_llm)
-    envelope = extractor._build_envelope(item, None, "surreal_hyperreal")
+    envelope = build_envelope(item, None, "surreal_hyperreal")
     fake_fingerprint = compute_prompt_fingerprint(SYSTEM_PROMPT, envelope, "claude-sonnet-4-6", {"max_tokens": 2048})
 
     row = ExtractorResponse(
