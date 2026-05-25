@@ -133,3 +133,13 @@ _Avoid_: "prompt" without qualifier — ambiguous between SYSTEM_PROMPT and enve
 
 The per-item user message sent on each extraction call. Built by `BlueprintExtractor._build_envelope` from `RawContentItem` metadata + optional transcript + niche label. Always changes between items by construction.
 _Avoid_: "user prompt", "input"
+
+## Deferred decisions (P5 agent layer)
+
+The following are NOT decided. Defer until P5 spec writing (post-P3.5). Decisions made earlier would be guesswork — context too thin.
+
+- **Agent framework:** Pydantic AI vs LangGraph vs raw Anthropic SDK tool-calling. `langgraph>=0.2.0` currently in `pyproject.toml` from speculative P0 stack pick; not yet imported anywhere.
+- **Multi-agent vs single agent:** Roadmap line 184 implies single ReAct loop ("0 code-level branching, all routing is LLM-driven"). Default = single agent unless P5 scope reveals genuine role separation.
+- **Pydantic AI adoption scope:** If picked, applies only to P5. BlueprintExtractor stays on `instructor` + `anthropic` SDK (shipped, cache-tuned, 438 rows extracted).
+
+Re-open when writing `docs/superpowers/specs/<date>-phase-5-agent-orchestrator.md`. Not before.
