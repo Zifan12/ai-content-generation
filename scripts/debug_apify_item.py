@@ -1,8 +1,32 @@
-"""Print one raw Apify TikTok item to verify field names before Blueprint migration.
+"""
+Debug script: inspect raw Apify TikTok response fields.
 
-One-shot debug — run, inspect output, confirm field names match the Phase 1.5
-spec assumption (`text`, `videoMeta.coverUrl`, `videoMeta.downloadAddr`,
-`authorMeta.name`). Discard after.
+WHY THIS EXISTS:
+  One-shot debug utility. Run to fetch a single TikTok item via Apify actor
+  and inspect the raw JSON response. Useful when:
+  - Migrating scraper logic (verify field names match assumptions)
+  - Debugging missing/malformed fields
+  - Confirming API response structure after actor updates
+
+EXPECTED FIELDS (verify presence after run):
+  - id: video unique ID
+  - text: caption/description
+  - videoMeta.coverUrl: thumbnail URL
+  - videoMeta.downloadAddr: direct MP4 download URL
+  - authorMeta.name: creator username
+  - video.duration: length in seconds
+  - song.{id, title, artist}: audio metadata
+  - hashtags[]: list of hashtag strings
+  - stats: {diggCount, shareCount, commentCount, playCount}
+
+USAGE:
+  uv run python scripts/debug_apify_item.py
+  
+  Prints pretty-printed JSON response to stdout. Inspect manually.
+  No output is saved; this is diagnostic only.
+
+DISCARD AFTER:
+  This is a throwaway debug script. Delete once fields are confirmed.
 """
 import asyncio
 import json

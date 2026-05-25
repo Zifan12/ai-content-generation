@@ -1,6 +1,40 @@
-"""CLI: human-grade 20 blueprints on 1–5 rubric, write EvalRun row.
+"""Human-grade Blueprint extractions and record scores to EvalRun.
 
-Run once per prompt revision. ~30 minutes of manual work."""
+PIPELINE ROLE:
+  BlueprintRecords → Human review (this file) → EvalRun metrics
+
+WHY THIS SCRIPT EXISTS:
+  P1.5 Foundation needs ground truth for eval gates. This script randomly
+  samples Blueprints, shows them to human annotator with 1-5 rubric, records
+  scores to EvalRun table. CI gate: avg_score >= 3.5 to unblock next phase.
+
+WORKFLOW:
+  1. Sample N random Blueprints (default: 20) at specified extractor_version
+  2. For each Blueprint:
+     - Load Transcript text
+     - Show video stats + transcript + extracted Blueprint
+     - Prompt human for score (1-5) on rubric
+  3. Compute mean score
+  4. Record to EvalRun: (component="blueprint-grader", metric_name="mean_score",
+     metric_value=<mean>, git_sha=<current>, dataset_version=<arg>)
+  5. Output results
+
+RUBRIC (1-5):
+  5: Perfect extraction, format/hook/payoff match, mechanics calibrated
+  4: Good, minor mechanic disagreement
+  3: OK, one enum off or miscalibrated
+  2: Bad, multiple enums off or wildly wrong
+  1: Useless, barely related to video
+
+FLAGS:
+  --sample N                    Blueprints to grade (default: 20, ~30 min)
+  --extractor-version VERSION   Which extractor schema (default: current in schema.py)
+  --dataset-version VERSION     For EvalRun tracking (default: v1)
+
+TIMING:
+  ~1-2 minutes per Blueprint (human review). 20 Blueprints ≈ 30-40 minutes.
+
+"""
 import argparse
 import json
 import logging
@@ -32,6 +66,12 @@ Score the Blueprint extraction 1-5 holistically:
 
 
 def git_sha() -> str:
+    """
+    Get current short git SHA for audit trail.
+    
+    Returns: 7-character commit hash (e.g., "a1b2c3d")
+             or "unknown" if git is unavailable.
+    """
     try:
         return subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"], text=True
@@ -46,6 +86,9 @@ def get_transcript_text(db: Session, content_item_id: int) -> str | None:
 
 
 def main() -> None:
+    """
+    CLI entry point. Parse args, load Blueprints, grade interactively.
+    """
     parser = argparse.ArgumentParser(description="Human-grade Blueprint extractions.")
     parser.add_argument("--sample", type=int, default=20)
     parser.add_argument("--extractor-version", default=EXTRACTOR_VERSION)
