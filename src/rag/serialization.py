@@ -126,9 +126,7 @@ def embed_text_hash(text: str) -> str:
 
     Stored alongside each `viral_videos.embedding` row. Re-index only when
     the hash for the current serialized text differs from the stored one —
-    lets the indexer skip re-embedding unchanged rows. Length is fixed at
-    16 hex chars (64 bits of entropy, low collision risk at corpus scale
-    <1M items).
+    lets the indexer skip re-embedding unchanged rows.
     """
     return hashlib.sha256(text.encode()).hexdigest()[:16]
 

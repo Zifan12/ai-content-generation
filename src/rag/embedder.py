@@ -66,8 +66,7 @@ class BgeM3Embedder(TextEmbedder):
     BAAI/bge-m3 implementation of TextEmbedder via sentence-transformers.
 
     Native 1024-dim, MIT licensed, bi-encoder (no task switch between query
-    and document encoding). Same model family as the Task 18.5 reranker,
-    which simplifies the dependency surface.
+    and document encoding). 
     """
 
     def __init__(self, model_name: str = "BAAI/bge-m3", device: str = "auto", normalize: bool = True):
