@@ -31,6 +31,7 @@ class RetrievalHit(BaseModel):
     score: float
     blueprint_data: dict
     niche_label: str
+    serialized_text: str | None = None
 
 
 class RetrievalResponse(BaseModel):

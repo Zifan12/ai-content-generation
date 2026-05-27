@@ -24,3 +24,12 @@ rag:
     # browser/Discord/VS Code open; 16 may work with apps closed; 32 needs fp16 or empty
     # GPU. Increase when GPU is dedicated or fp16 mode is added.
     batch_size: 8
+  reranker:
+    active: bge-reranker-v2-m3
+    # stage_1_k = vector top-K fed to cross-encoder; reranker returns top_n from these.
+    # Larger K = more recall fed to precision stage, but linearly slower rerank.
+    stage_1_k: 20
+    # batch_size = pairs per CrossEncoder.predict() forward pass. Starts at 8 to share
+    # the same VRAM budget as embedder above. Tune up after nvidia-smi shows headroom
+    # with both BGE-M3 + bge-reranker-v2-m3 resident in fp16 (~2.2GB weights total).
+    batch_size: 8

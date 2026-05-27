@@ -26,3 +26,12 @@ embedder:
         dim: 1024
         device: auto                  # cuda if available, else cpu
         normalize: true
+
+reranker:
+  text:
+    active: bge-reranker-v2-m3
+    options:
+      bge-reranker-v2-m3:
+        model_name: BAAI/bge-reranker-v2-m3
+        device: auto                  # cuda if available, else cpu
+        batch_size: 8                 # pairs per forward pass; matches rag.reranker.batch_size in settings.yaml
