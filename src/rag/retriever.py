@@ -38,17 +38,24 @@ class BlueprintRetriever:
 
 
     def retrieve(self, query: RetrievalQuery) -> RetrievalResponse:
-        """Query pgvector for blueprints nearest to the serialized candidate.
+        """Retrieve blueprints nearest to the query candidate, optionally reranked.
 
-        Serializes the candidate to embed-input text, embeds it, runs a cosine-distance
-        ANN query against viral_videos.embedding, joins BlueprintRecord, and returns hits
-        sorted by similarity descending.
+        Serializes the candidate to embed-input text, embeds it, and runs a
+        cosine-distance ANN query against viral_videos.embedding joined to
+        BlueprintRecord. When a reranker is configured, stage 1 fetches stage_1_k
+        candidates instead of top_k, each is re-serialized to doc text, and the
+        cross-encoder rescores the (query, doc) pairs down to top_k. Without a
+        reranker the vector ranking is returned as-is.
 
         Args:
             query: RetrievalQuery with candidate blueprint template and top_k limit.
 
         Returns:
             RetrievalResponse with hits sorted by score descending and wall-clock elapsed_ms.
+
+        Raises:
+            ValueError: when a reranker is configured and top_k exceeds stage_1_k —
+                the reranker cannot return more candidates than stage 1 fed it.
         """
         t0 = perf_counter()
 
@@ -57,10 +64,12 @@ class BlueprintRetriever:
 
         k = query.top_k
 
+        # Stage 1 widens the pool to stage_1_k so the cross-encoder can resurface
+        # candidates the bi-encoder ranked low; it can never return more than this.
         if self._reranker is not None:
             k = self._stage_1_k
             if query.top_k > self._stage_1_k:
-                raise ValueError
+                raise ValueError(f"top_k: {query.top_k } exceeded stage_1_k: {self._stage_1_k}")
         
         stmt = (
             select(BlueprintRecord, ViralVideo.embedding.cosine_distance(vec).label("dist"))
@@ -69,6 +78,11 @@ class BlueprintRetriever:
             .order_by(ViralVideo.embedding.cosine_distance(vec))
             .limit(k)
         )
+
+        # Drop excluded ids from the ANN scan before reranking — leave-one-out
+        # callers pass the held-out row's id so it can't match itself.
+        if query.exclude_ids:
+            stmt = stmt.where(BlueprintRecord.content_item_id.not_in(query.exclude_ids))
 
         rows = self._db.execute(stmt).all()
 
@@ -83,12 +97,14 @@ class BlueprintRetriever:
             for blueprint_record, dist in rows
         ]
 
+        # The cross-encoder scores (query, doc-text) pairs, so re-serialize each
+        # retrieved doc to its embed-input text at query time (not persisted in the DB).
         if self._reranker is not None:
             ids = [h.content_item_id for h in hits]
 
             hydration_stmt = (
                 select(RawContentItem.description, RawContentItem.hashtags, RawContentItem.id, Transcript.text)
-                .join(Transcript, RawContentItem.id == Transcript.content_item_id)
+                .outerjoin(Transcript, RawContentItem.id == Transcript.content_item_id)
                 .where(RawContentItem.id.in_(ids))
             )
 
