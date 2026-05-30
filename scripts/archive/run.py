@@ -142,6 +142,18 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    # Guard the Windows drive-relative path footgun: an arg like "D:foo" (or a
+    # "D:\foo" whose backslash the shell ate) has a drive but no root, so it
+    # resolves relative to the current directory ON that drive — silently
+    # archiving gigabytes to the wrong place. Reject it; demand a fully
+    # absolute root so the destination is never ambiguous.
+    if not args.dry_run and not args.root.is_absolute():
+        raise SystemExit(
+            f"--root must be an absolute path, got {args.root!r}. "
+            f"On Windows, write it as 'D:/tiktok_archive' or 'D:\\\\tiktok_archive' "
+            f"(a bare 'D:tiktok_archive' is drive-relative and lands in the wrong dir)."
+        )
+
     load_dotenv(PROJECT_ROOT / "config" / ".env")
     token = os.getenv("APIFY_API_TOKEN")
     if not token:
