@@ -1,0 +1,13 @@
+# Apify credit-burn archive seeds.
+# De-overlapped: each hashtag assigned to exactly ONE niche; generic
+# mega-tags (aiart, aianimation, fyp, ai) dropped to avoid paying twice for
+# the same cross-tag videos (Apify bills per item returned, before dedup).
+seeds:
+  - niche: surreal_hyperreal
+    hashtags: [aisurreal, surrealai, aiweirdcore, liminalai, dreamcore, weirdcore, uncannyai, hyperrealai, klingai, runwayai]
+  - niche: brainrot
+    hashtags: [italianbrainrot, brainrot, weirdai, aibrainrot, surrealmemes]
+  - niche: anime_ai
+    hashtags: [ghibliart, animestyleai, mangafilter, aianime, ghiblifilter]
+  - niche: horror_ai
+    hashtags: [aihorror, horrortok, darkstoriesai, scarystoriesai, creepyai]
