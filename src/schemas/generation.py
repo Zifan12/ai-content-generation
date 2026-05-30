@@ -1,69 +1,69 @@
 """
-LLM generation schemas — request/response contracts.
+Content generation schemas — the writer's structured output contract.
 
 PIPELINE ROLE:
-  Prompt engine → ScriptRequest → LLM → ScriptPackage (this file) → Post to TikTok
+  BlueprintCandidate (target mechanic combo from the miner) + retrieved viral
+  neighbors (P2 RAG)  →  ContentWriter.write()  →  ContentPackage (this file)
+  →  text-to-video provider + TikTok post (P3.5).
 
 WHY THIS FILE EXISTS:
-  Type-safe request/response schema for script generation. ScriptRequest carries
-  context (topic, viral examples, tone). ScriptPackage is the LLM's structured
-  output (hook, body, CTA, hashtags, thumbnail prompt). Few-shot examples in
-  model_config guide LLM output format and tone.
+  ContentPackage is the schema the LLM fills via structured output (the Blueprint
+  extractor run backwards). It defines what a valid, generated content kit looks
+  like — one TikTok video's full package: the visual prompt, on-screen overlays,
+  caption, hashtags, optional voiceover, plus provenance (which retrieved winners
+  grounded the generation). Pydantic validation is the guard rail: a generated
+  package that omits a required field is rejected, not silently shipped.
+
+  Replaces the retired ScriptPackage/ScriptRequest (talking-head hook/body/cta),
+  which were wrong after the surreal_hyperreal visual-first pivot.
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional
 
-class ScriptRequest(BaseModel):
+
+class ContentPackage(BaseModel):
     """
-    Input contract for TikTok script generation.
-    
+    A single generated TikTok video's full content kit — the writer's output.
+
+    The LLM produces this via structured output, grounded on real viral neighbors
+    retrieved by RAG. Every required field must be present for the package to
+    validate; optional fields carry None / empty defaults so absence is explicit.
+
     Attributes:
-      topic: what the video is about (e.g., "organizing your closet")
-      viral_examples: hook lines from top-performing videos (few-shot conditioning)
-      tone: desired voice ("educational", "entertaining", "motivational", etc.)
-      target_duration_seconds: video length constraint (affects content density)
+      video_prompt: Text-to-video prompt describing the visual to generate. Written
+        in model-agnostic cinematic grammar for v1 (subject + action + camera +
+        style/lighting + motion); tightened to the chosen video model later.
+      onscreen_text: Text overlays rendered on the video, in display order. Required
+        — the writer must consciously address overlays (pass an empty list only if
+        the video genuinely has none).
+      caption: The TikTok caption posted with the video.
+      hashtags: Discovery tags for the post.
+      voiceover: Narration script, or None when the video has no spoken track.
+        None (distinct from empty string) means "no narration" by design.
+      grounding_hit_ids: content_item_ids of the retrieved winners that grounded
+        this generation. CODE-SET from the fed hits, never trusted from the LLM —
+        provenance for the closed loop, not a field the model is asked to echo.
+      rationale: Optional free-text explanation of the creative choices the LLM made
+        (useful for debugging / eval), or None.
     """
-    topic: str = Field(description="What the video is about")
-    viral_examples: list[str] = Field(description="Hook lines from top-performing videos on this topic")
-    tone: str = Field(description="Tone of the script, e.g. educational, entertaining, motivational")
-    target_duration_seconds: int = Field(description="Target video length in seconds")
 
-
-class ScriptPackage(BaseModel):
-    """
-    Full script package — LLM output for content generation.
-    
-    Attributes:
-      hook: attention-grabbing opening (1-2 seconds of screen time)
-      body: main content delivery (builds on hook, develops idea)
-      cta: call-to-action (encourages share/comment/follow)
-      hashtags: list of platform tags (for discoverability)
-      thumbnail_prompt: image generation prompt for video cover
-    
-    Model Config (model_config):
-      Includes few-shot examples to guide LLM on format, tone, and content density.
-      Examples flow into JSON schema served to LLM, acting as implicit instruction.
-    """
-    hook: str = Field(description="Get user attention")
-    body: str = Field(description="main content")
-    cta: str = Field(description="call to action")
-    hashtags: list[str] = Field(description="platform tags")
-    thumbnail_prompt: str = Field(description="image generation prompt")
-
-    # Examples flow into the JSON schema served to the LLM via instructor —
-    # acts as few-shot conditioning for shape and tone of generated output.
-    model_config = {
-        "json_schema_extra": {
-            "examples": [
-                {
-                    "hook": "You've been folding laundry wrong your entire life.",
-                    "body": "Most people fold shirts flat, which creates creases and wastes drawer space. The ranger roll method, used by the US military, compresses the shirt into a tight bundle that stands upright.",
-                    "cta": "Try it on your next shirt and drop a comment if it worked.",
-                    "hashtags": ["#lifehack", "#organization", "#tips"],
-                    "thumbnail_prompt": "Dramatic before/after split shot: messy overflowing drawer vs. perfectly organized drawer with rolled shirts standing upright, bright lighting"
-                }
-            ]
-        }
-    }
-    
+    video_prompt: str = Field(
+        description="Text-to-video prompt: subject + action + camera + style/lighting + motion."
+    )
+    onscreen_text: list[str] = Field(
+        description="On-screen text overlays in display order; empty list only if the video has none."
+    )
+    caption: str = Field(description="TikTok caption posted with the video.")
+    hashtags: list[str] = Field(description="Discovery hashtags for the post.")
+    voiceover: str | None = Field(
+        default=None,
+        description="Narration script, or null if the video has no spoken track.",
+    )
+    grounding_hit_ids: list[int] = Field(
+        default_factory=list,
+        description="content_item_ids of the grounding winners; code-set, not LLM-generated.",
+    )
+    rationale: str | None = Field(
+        default=None,
+        description="Optional explanation of the creative choices made.",
+    )
