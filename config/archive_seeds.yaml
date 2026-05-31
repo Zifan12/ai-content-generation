@@ -1,13 +1,130 @@
 # Apify credit-burn archive seeds.
-# De-overlapped: each hashtag assigned to exactly ONE niche; generic
-# mega-tags (aiart, aianimation, fyp, ai) dropped to avoid paying twice for
-# the same cross-tag videos (Apify bills per item returned, before dedup).
+#
+# De-overlapped: each hashtag assigned to exactly ONE niche. Generic mega-tags
+# (fyp, ai, aiart, aivideo, aigenerated, viral, foryou, anime, pov, scifi,
+# history) are DROPPED — the live smoke-test manifest showed broad tags on
+# nearly every video, so they maximize cross-hashtag duplication. Apify bills
+# per item RETURNED (before our dedup), so a video returned under two seeded
+# tags is paid for twice. Low-overlap, AI-qualified seeds = more unique videos
+# per dollar and less hand-drawn / non-AI noise.
+#
+# Tag set validated by web research (2026-05-30): AI-tool tags (veo3, sora2,
+# klingai, seedance, runwayml, pika) are the current top-tier AI-video tools
+# and skew photorealistic. liminal/weirdcore/dreamcore is the live surreal
+# aesthetic cluster. historical_pov, futuristic_pov, and AI anime short film
+# confirmed as active niches via TikTok discover pages.
+#
+# Weighting reflects project priority: surreal_hyperreal is the primary niche
+# (first TikTok account, P3.5 publish target). liminal_weirdcore is its
+# surreal-family sibling. anime_ai is a likely second account (AI anime shorts).
+# brainrot / horror_ai are reference niches for ablation. historical_pov,
+# futuristic_pov, satisfying_ai are optionality for future per-category accounts.
 seeds:
+  # PRIMARY — photorealistic + impossible/uncanny. AI-tool tags live here
+  # because top-tier generators (Veo 3, Sora 2, Kling) skew photoreal.
   - niche: surreal_hyperreal
-    hashtags: [aisurreal, surrealai, aiweirdcore, liminalai, dreamcore, weirdcore, uncannyai, hyperrealai, klingai, runwayai]
-  - niche: brainrot
-    hashtags: [italianbrainrot, brainrot, weirdai, aibrainrot, surrealmemes]
+    hashtags:
+      - aisurreal
+      - surrealai
+      - hyperrealai
+      - uncannyai
+      - aihyperrealism
+      - aireality
+      - realisticai
+      - uncannyvalley
+      - veo3
+      - sora2
+      - klingai
+      - seedanceai
+      - runwayml
+      - pikalabs
+
+  # Surreal-family sibling — the live liminal/weirdcore/dreamcore aesthetic.
+  - niche: liminal_weirdcore
+    hashtags:
+      - liminal
+      - liminalspace
+      - liminalspaces
+      - dreamcore
+      - weirdcore
+      - backrooms
+      - liminalcore
+      - oddcore
+      - strangecore
+      - traumacore
+      - feverdream
+      - backroomsfound
+      - glitchcore
+      - deadmall
+      - poolcore
+      - voidcore
+
+  # Likely second account — AI anime shorts. AI-qualified ONLY: the broad
+  # tags (animeedit, animeclip, animefilter) are ~70% hand-drawn / official
+  # anime, which would pollute an AI-generated corpus. Lower volume per tag is
+  # the accepted tradeoff for clean training data.
   - niche: anime_ai
-    hashtags: [ghibliart, animestyleai, mangafilter, aianime, ghiblifilter]
+    hashtags:
+      - aianime
+      - aianimeshort
+      - aianimation
+      - aianimeedit
+      - animeai
+      - animestyleai
+      - mangafilter
+      - aimanga
+      - ghibliart
+      - ghibliai
+
+  # NEW — AI historical POV (e.g. first-person ancient Rome / medieval scenes).
+  - niche: historical_pov
+    hashtags:
+      - historicalpov
+      - povhistory
+      - aihistory
+      - historicalai
+      - romanempire
+      - ancientrome
+      - medievalpov
+
+  # NEW — AI futuristic / sci-fi POV (e.g. living on a spaceship, future cities).
+  - niche: futuristic_pov
+    hashtags:
+      - aispaceship
+      - scifipov
+      - futuristicpov
+      - spaceshiplife
+      - aiscifi
+      - cyberpunkai
+      - spacetravel
+      - dystopianpov
+
+  # Reference niche (ablation + possible future account).
+  - niche: brainrot
+    hashtags:
+      - italianbrainrot
+      - brainrot
+      - aibrainrot
+      - brainrotai
+      - surrealmemes
+      - aimeme
+
+  # Reference niche.
   - niche: horror_ai
-    hashtags: [aihorror, horrortok, darkstoriesai, scarystoriesai, creepyai]
+    hashtags:
+      - aihorror
+      - horrortok
+      - aihorrorstories
+      - scarystoriesai
+      - creepyai
+      - analoghorror
+      - foundfootage
+
+  # Optionality — high-view AI ASMR / satisfying format.
+  - niche: satisfying_ai
+    hashtags:
+      - aiasmr
+      - satisfyingai
+      - oddlysatisfyingai
+      - glassasmr
+      - aifood
