@@ -87,17 +87,25 @@ seeds:
       - ancientrome
       - medievalpov
 
-  # NEW — AI futuristic / sci-fi POV (e.g. living on a spaceship, future cities).
+  # NEW — AI futuristic / sci-fi POV (spaceships, future cities, cyberpunk).
+  # Hybrid, purity-leaning. The first guessed set (aispaceship/scifipov/...)
+  # was mostly invented compounds and returned ~10 items in the probe. Research
+  # (2026-05-31) showed broad #scifi is fandom-poisoned (startrek/starwars/
+  # cosplay/warhammer — almost no AI), so it's excluded. Kept: AI-qualified
+  # tags + the two broad tags whose clusters actually skew AI (#cyberpunk and
+  # #futuristic both carry ai/aiart/midjourney per best-hashtags). Expected to
+  # remain the smallest niche — TikTok simply has less AI sci-fi POV than the
+  # surreal/liminal/historical families. That's fine; this niche is optionality.
   - niche: futuristic_pov
     hashtags:
-      - aispaceship
-      - scifipov
-      - futuristicpov
-      - spaceshiplife
       - aiscifi
+      - aicyberpunk
+      - aispace
+      - futuristicai
+      - aifuture
       - cyberpunkai
-      - spacetravel
-      - dystopianpov
+      - cyberpunk
+      - futuristic
 
   # Reference niche (ablation + possible future account).
   - niche: brainrot
