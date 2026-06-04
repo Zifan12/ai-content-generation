@@ -145,20 +145,23 @@ def _hydrate_hits(hits: list[RetrievalHit], db: Session) -> list[dict]:
     return out
     
 
-def build_envelope(candidate: BlueprintCandidate, hydrated_hits: list[dict]) -> str:
+def build_envelope(candidate: BlueprintCandidate, hydrated_hits: list[dict], premise: str) -> str:
     """
-    Assemble the grounded user prompt: the target template followed by one labeled
-    block per retrieved winner.
+    Assemble the grounded user prompt: the premise the model must develop, then the
+    target template, then one labeled block per retrieved winner.
 
-    Each block always carries the winner's aesthetic descriptors and hook subtype
-    (the always-present signal) and adds a transcript line only when that winner has
-    one. Blocks are labeled so the model can tell separate winners apart.
+    The premise leads — it is the user's "what if X were real" concept, the WHAT the
+    video is about, kept distinct from the Blueprint (the mechanics / HOW) and the
+    winners (the evidence). Each winner block always carries its aesthetic descriptors
+    and hook subtype (the always-present signal) and adds a transcript line only when
+    that winner has one. Blocks are labeled so the model can tell separate winners apart.
     """
 
     parts = []
 
     template = json.dumps(candidate.blueprint_template)
 
+    parts.append(f"Premise:\n{premise}")
     parts.append(f"Target Blueprint:\n{template}")
 
     for i, hit in enumerate(hydrated_hits, 1):
@@ -194,13 +197,19 @@ class ContentWriter:
     def __init__(self, llm: AnthropicLLM | None = None):
             self.llm = llm or AnthropicLLM(model="claude-sonnet-4-6")
 
-    def write(self, candidate: BlueprintCandidate, hits: list[RetrievalHit], db: Session) -> ContentPackage:
+    def write(self, candidate: BlueprintCandidate, hits: list[RetrievalHit], db: Session, premise: str) -> ContentPackage:
         """
         Generate one ContentPackage for the target, grounded on the retrieved hits.
 
         Hydrates the hits, builds the grounded envelope, runs the structured-output
         call, then stamps grounding_hit_ids from the fed hits (provenance is code-set,
         never trusted from the model).
+
+        Args:
+            premise: The user's "what if X were real" concept seed — the idea the
+                writer develops across the 3-shot montage. v1 hand-feeds it so the
+                test isolates structure from concept-invention; auto-generating the
+                premise is v2.
 
         Raises:
             ValueError: if hits is empty — generation must be grounded.
@@ -210,7 +219,7 @@ class ContentWriter:
             raise ValueError("Hits cannot be empty")
         
         hydrate_hits = _hydrate_hits(hits, db)
-        envelope = build_envelope(candidate, hydrate_hits)
+        envelope = build_envelope(candidate, hydrate_hits, premise)
 
         package = self.llm.parse(envelope, ContentPackage, system=SYSTEM_PROMPT)
 

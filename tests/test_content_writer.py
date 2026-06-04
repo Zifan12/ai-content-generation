@@ -105,7 +105,9 @@ def test_build_envelope_includes_target_and_winners():
         },
     ]
 
-    result = build_envelope(candidate, hits)
+    premise = "JUNKER"
+
+    result = build_envelope(candidate, hits, premise)
 
     assert "ITS2AMINTHEMORNING" in result          # target template present
     assert "uncanny_AAA" in result                 # hit 1 aesthetics
@@ -114,6 +116,7 @@ def test_build_envelope_includes_target_and_winners():
     assert "impossible_visual" in result           # hit 1 hook subtype
     assert "Example 1" in result and "Example 2" in result  # per-winner labels
     assert "CAPTION" not in result                 # captions are no longer grounded
+    assert "JUNKER" in result
 
 
 def test_hydrate_pulls_transcript_and_blueprint_fields(db):
@@ -260,9 +263,11 @@ def test_write_returns_package_and_sets_grounding_ids(db):
         
     )
 
+    premise = "JUNKER"
+
     writer = ContentWriter(llm=FakeLLM())
 
-    result = writer.write(candidate, hits, db)
+    result = writer.write(candidate, hits, db, premise)
 
     assert isinstance(result, ContentPackage)
     assert result.grounding_hit_ids == [h.content_item_id for h in hits]
@@ -283,10 +288,12 @@ def test_write_empty_hits_raises():
         evidence=evidence,
         
     )
+
+    premise = ""
     
     writer = ContentWriter(llm=FakeLLM())
     with pytest.raises(ValueError):
-        writer.write(candidate, [], None)
+        writer.write(candidate, [], None, premise)
 
 
 
