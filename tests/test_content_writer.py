@@ -11,13 +11,22 @@ import src.models.trend       # noqa: F401 — registers RawContentItem with Bas
 import src.models.transcript  # noqa: F401 — registers Transcript with Base.metadata
 import src.models.niche       # noqa: F401 — registers Niche (FK target of RawContentItem)
 
-from src.schemas.generation import ContentPackage
+from src.schemas.generation import ContentPackage, Shot
 from src.miner.schemas import MinerEvidence
 from src.miner.schemas import BlueprintCandidate
 from src.models.trend import RawContentItem
 from src.models.transcript import Transcript
 from src.rag.schemas import RetrievalHit
 from src.generation.content_writer import build_envelope, _hydrate_hits, ContentWriter
+
+# A valid 3-shot montage for tests that just need a schema-valid ContentPackage.
+# Same mood_anchor across all three mirrors the real montage rule (mood is the glue);
+# distinct arc_roles spell out the setup -> turn -> payoff arc the schema enforces.
+VALID_SHOTS = [
+    Shot(cinematic_prompt="wide shot, harbor at dawn", mood_anchor="cold teal, photoreal", arc_role="setup"),
+    Shot(cinematic_prompt="kraken tentacle breaches", mood_anchor="cold teal, photoreal", arc_role="turn"),
+    Shot(cinematic_prompt="crowd flees the dock", mood_anchor="cold teal, photoreal", arc_role="payoff"),
+]
 
 @pytest.fixture
 def db():
@@ -31,18 +40,18 @@ def db():
 
 def test_content_package_validates_minimal():
     package = ContentPackage(
-        video_prompt="test",
+        shots=VALID_SHOTS,
         onscreen_text=["test", "test", "test"],
         caption="test123",
         hashtags=["test1", "test2"],
-        
+
     )
 
     assert package.grounding_hit_ids == []
     assert package.voiceover is None
     assert package.rationale is None
 
-def test_content_package_rejects_missing_video_prompt():
+def test_content_package_rejects_missing_shots():
     with pytest.raises(ValidationError):
         ContentPackage(
         onscreen_text=["test", "test", "test"],
@@ -50,6 +59,17 @@ def test_content_package_rejects_missing_video_prompt():
         hashtags=["test1", "test2"],
 
     )
+
+def test_content_package_rejects_wrong_shot_count():
+    # exactly-3 is enforced at the schema level (Field min_length=max_length=3),
+    # not left to the prompt. Two shots must be rejected just like zero.
+    with pytest.raises(ValidationError):
+        ContentPackage(
+            shots=VALID_SHOTS[:2],
+            onscreen_text=["test"],
+            caption="test123",
+            hashtags=["test1"],
+        )
 
 
 def test_build_envelope_includes_target_and_winners():
@@ -167,7 +187,7 @@ def test_hydrate_pulls_transcript_and_blueprint_fields(db):
 class FakeLLM():
      def parse(self, prompt, response_model, system=None, max_tokens=1024):
         package = ContentPackage(
-        video_prompt="test",
+        shots=VALID_SHOTS,
         onscreen_text=["test", "test", "test"],
         caption="test123",
         hashtags=["test1", "test2"],
