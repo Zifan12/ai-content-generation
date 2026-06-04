@@ -25,7 +25,7 @@ def db():
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     session = Session()
-    yield session
+    yield session   
     session.close()
     engine.dispose()
 
@@ -44,11 +44,11 @@ def test_content_package_validates_minimal():
 
 def test_content_package_rejects_missing_video_prompt():
     with pytest.raises(ValidationError):
-        package = ContentPackage(
+        ContentPackage(
         onscreen_text=["test", "test", "test"],
         caption="test123",
         hashtags=["test1", "test2"],
-        
+
     )
 
 
@@ -69,16 +69,34 @@ def test_build_envelope_includes_target_and_winners():
         
     )
 
-    hits = [{"caption": "CAPTION_AAA"}, {"caption": "CAPTION_BBB"}]
+    # hydrated_hits now carry transcript (None when absent) + blueprint-derived
+    # aesthetic_descriptors / hook_subtype. Hit 2 has NO transcript, so it must
+    # still contribute its aesthetics — that proves the floor-signal fix.
+    hits = [
+        {
+            "transcript": "SPOKEN_AAA",
+            "aesthetic_descriptors": ["dreamcore_void", "uncanny_AAA"],
+            "hook_subtype": "impossible_visual",
+        },
+        {
+            "transcript": None,
+            "aesthetic_descriptors": ["liminal_BBB"],
+            "hook_subtype": "slow_reveal",
+        },
+    ]
 
     result = build_envelope(candidate, hits)
 
-    assert "CAPTION_AAA" in result
-    assert "CAPTION_BBB" in result
-    assert "ITS2AMINTHEMORNING" in result
+    assert "ITS2AMINTHEMORNING" in result          # target template present
+    assert "uncanny_AAA" in result                 # hit 1 aesthetics
+    assert "liminal_BBB" in result                 # hit 2 aesthetics (no transcript, still included)
+    assert "SPOKEN_AAA" in result                  # hit 1 transcript present
+    assert "impossible_visual" in result           # hit 1 hook subtype
+    assert "Example 1" in result and "Example 2" in result  # per-winner labels
+    assert "CAPTION" not in result                 # captions are no longer grounded
 
 
-def test_hydrate_pulls_caption_and_marks_missing_transcript(db):
+def test_hydrate_pulls_transcript_and_blueprint_fields(db):
     item1 = RawContentItem(
         platform="tiktok",
         platform_content_id="vid1",
@@ -97,7 +115,9 @@ def test_hydrate_pulls_caption_and_marks_missing_transcript(db):
     db.flush()  # assigns item1.id / item2.id before the Transcript FK + hits need them
 
     # Transcript linked to item1 only. item2 deliberately has none, so the
-    # outerjoin must keep item2's hit and mark its transcript "(missing)".
+    # outerjoin must keep item2's hit and report its transcript as None (not a
+    # placeholder string — absence is carried truthfully, the formatter decides
+    # how to render it).
     has_transcript = Transcript(
         content_item_id=item1.id,
         text="TRANSCRIPT_ONE",
@@ -106,13 +126,17 @@ def test_hydrate_pulls_caption_and_marks_missing_transcript(db):
     db.add(has_transcript)
     db.flush()
 
-    # Non-id fields are irrelevant to hydration (it only reads content_item_id
-    # to look up the DB), so they carry throwaway fakes.
+    # aesthetic_descriptors + hook_subtype are read off the hit's blueprint_data
+    # (no DB round-trip). hit1 carries them; hit2's empty blueprint_data exercises
+    # the missing path (-> None).
     hit1 = RetrievalHit(
         content_item_id=item1.id,
         blueprint_id=1,
         score=0.9,
-        blueprint_data={},
+        blueprint_data={
+            "aesthetic_descriptors": ["dreamcore_void", "uncanny_AAA"],
+            "hook_subtype": "impossible_visual",
+        },
         niche_label="surreal_hyperreal",
     )
     hit2 = RetrievalHit(
@@ -125,10 +149,18 @@ def test_hydrate_pulls_caption_and_marks_missing_transcript(db):
 
     result = _hydrate_hits([hit1, hit2], db)
 
-    assert result[0]["caption"] == "CAPTION_ONE"
+    # hit1: has transcript + populated blueprint fields
     assert result[0]["transcript"] == "TRANSCRIPT_ONE"
-    assert result[1]["caption"] == "CAPTION_TWO"
-    assert result[1]["transcript"] == "(missing)"
+    assert result[0]["aesthetic_descriptors"] == ["dreamcore_void", "uncanny_AAA"]
+    assert result[0]["hook_subtype"] == "impossible_visual"
+
+    # hit2: no transcript -> None (not "(missing)"); empty blueprint -> None fields
+    assert result[1]["transcript"] is None
+    assert result[1]["aesthetic_descriptors"] is None
+    assert result[1]["hook_subtype"] is None
+
+    # caption is no longer hydrated at all
+    assert "caption" not in result[0]
 
 # ------------------------------------------------------------------
 

@@ -1,3 +1,13 @@
+"""
+Content writer (P3): turns a target Blueprint + retrieved viral neighbors into a
+validated ContentPackage.
+
+ContentWriter.write grounds generation on the retrieved winners' mechanics —
+their aesthetic descriptors, hook subtype, and transcript when one exists —
+never their captions (TikTok captions are hashtag dumps, not signal). The naked
+envelope builder is the ungrounded baseline used by the generation eval.
+"""
+
 import json
 
 from sqlalchemy import select
@@ -6,7 +16,6 @@ from src.models.trend import RawContentItem
 from src.models.transcript import Transcript
 from src.rag.schemas import RetrievalHit
 from src.schemas.generation import ContentPackage
-from src.miner.schemas import MinerEvidence
 from src.miner.schemas import BlueprintCandidate
 from src.providers.llm.anthropic_llm import AnthropicLLM
 
@@ -22,8 +31,10 @@ You receive two things:
 1. A target Blueprint as a JSON object — the viral mechanics (hook type, pacing,
    visual devices, emotional drivers, aesthetic descriptors, niche) you must
    build a NEW video around.
-2. Captions from real TikTok videos that recently went viral using those
-   mechanics. They are evidence of what works — not material to copy.
+2. A set of real TikTok videos that recently went viral using those mechanics.
+   Each is described by its aesthetic descriptors and hook subtype, plus a
+   transcript when the video had a spoken track. They are evidence of what
+   works — not material to copy.
 </inputs>
 
 <task>
@@ -32,12 +43,12 @@ that uses the target Blueprint's mechanics to deliver a new idea.
 </task>
 
 <grounding_rule>
-The retrieved captions show you the mechanics that earned views — the hook
-shape, the pattern, the emotional beat. Steal the mechanics; never reuse their
-specific topic, wording, or subject. If a winner used a "wait for it" reveal of
-a melting building, you might use a different impossible reveal — same mechanic,
-new content. Reusing the source topic is failure; transferring the mechanic to
-fresh content is the goal.
+The retrieved examples show you the mechanics that earned views — the visual
+aesthetic, the hook variant, and (when present) what was said. Steal the
+mechanics; never reuse their specific topic, wording, or subject. If a winner's
+aesthetic was a melting-building impossible reveal, you might use a different
+impossible reveal — same mechanic, new content. Reusing the source topic is
+failure; transferring the mechanic to fresh content is the goal.
 </grounding_rule>
 
 <fields>
@@ -95,59 +106,106 @@ Do not populate this; the system sets provenance itself.
 <constraints>
   - Use the target Blueprint's mechanics and aesthetic; honor its niche.
   - Originality is mandatory — no reused topics or phrasings from the source
-    captions.
+    examples.
   - Write for vertical short-form; assume sound-on, but design the hook to land
     even when muted.
 </constraints>
 """
 
 def _hydrate_hits(hits: list[RetrievalHit], db: Session) -> list[dict]:
+    """
+    Build per-hit grounding payloads: transcript from the DB, aesthetic_descriptors
+    and hook_subtype from each hit's blueprint_data.
+
+    Only transcripts need a DB round-trip (captions are deliberately not fetched —
+    no usable signal). A hit with no transcript row gets transcript=None; absence is
+    carried truthfully so build_envelope decides whether to render it.
+    """
 
     ids = [h.content_item_id for h in hits]
 
     stmt = (
-        select(RawContentItem.id, RawContentItem.description, Transcript.text)
+        select(RawContentItem.id, Transcript.text)
         .outerjoin(Transcript, RawContentItem.id == Transcript.content_item_id)
         .where(RawContentItem.id.in_(ids))
     )
 
     rows = db.execute(stmt).all()
 
-    lookup = {id: (description, text) for id, description, text in rows}
+    lookup = {id: (text) for id, text in rows}
 
     out = []
     for hit in hits:
-        description, text = lookup[hit.content_item_id]
+        text = lookup[hit.content_item_id]
         out.append({
-            "caption": description,
-            "transcript": text or "(missing)"
-        })
+            "transcript": text,
+            "aesthetic_descriptors": hit.blueprint_data.get("aesthetic_descriptors", None),
+            "hook_subtype": hit.blueprint_data.get("hook_subtype", None),
+        })  
     return out
     
 
 def build_envelope(candidate: BlueprintCandidate, hydrated_hits: list[dict]) -> str:
+    """
+    Assemble the grounded user prompt: the target template followed by one labeled
+    block per retrieved winner.
+
+    Each block always carries the winner's aesthetic descriptors and hook subtype
+    (the always-present signal) and adds a transcript line only when that winner has
+    one. Blocks are labeled so the model can tell separate winners apart.
+    """
 
     parts = []
 
     template = json.dumps(candidate.blueprint_template)
 
-    parts.append(template)
+    parts.append(f"Target Blueprint:\n{template}")
 
-    for hit in hydrated_hits:
-        parts.append(hit["caption"])
+    for i, hit in enumerate(hydrated_hits, 1):
+        aesthetic_descriptors = ", ".join(hit["aesthetic_descriptors"]) if hit["aesthetic_descriptors"] else "n/a"
+        hook_subtype = hit["hook_subtype"] if hit["hook_subtype"] else "unknown"
+
+        lines = [f"Example {i} — a real video that went viral with these mechanics:"]
+        if hit["transcript"] is not None:
+            lines.append(f"Transcript: {hit['transcript']}")
+        lines.append(f"Aesthetic descriptors: {aesthetic_descriptors}")
+        lines.append(f"Hook subtype: {hook_subtype}")
+
+        parts.append("\n".join(lines))
 
     return "\n".join(parts)
 
 
+def build_naked_envelope(candidate: BlueprintCandidate) -> str:
+    """
+    The ungrounded baseline envelope: the target template alone, no winners.
+
+    Kept as its own function (not build_envelope with empty hits) so the eval's
+    control arm stays fixed however the grounded envelope evolves.
+    """
+    return json.dumps(candidate.blueprint_template)
 
 class ContentWriter:
-    
+    """
+    Generates a validated ContentPackage from a target Blueprint and its retrieved
+    viral neighbors via a single structured-output LLM call.
+    """
+
     def __init__(self, llm: AnthropicLLM | None = None):
             self.llm = llm or AnthropicLLM(model="claude-sonnet-4-6")
 
-
     def write(self, candidate: BlueprintCandidate, hits: list[RetrievalHit], db: Session) -> ContentPackage:
-         
+        """
+        Generate one ContentPackage for the target, grounded on the retrieved hits.
+
+        Hydrates the hits, builds the grounded envelope, runs the structured-output
+        call, then stamps grounding_hit_ids from the fed hits (provenance is code-set,
+        never trusted from the model).
+
+        Raises:
+            ValueError: if hits is empty — generation must be grounded.
+        """
+
         if not hits:
             raise ValueError("Hits cannot be empty")
         
