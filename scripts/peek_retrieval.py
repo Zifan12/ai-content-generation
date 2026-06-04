@@ -89,6 +89,7 @@ def main() -> None:
             extractor_version=EXTRACTOR_VERSION,
             reranker=reranker,
             stage_1_k=20,
+            view_floor=100000
         )
 
         for target in targets:

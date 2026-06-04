@@ -352,3 +352,55 @@ def test_valid_raise(db, fake_embedder):
     with pytest.raises(ValueError):
         _ = retriever.retrieve(query)
 
+
+def test_view_floor_drops_low_view_rows(db, fake_embedder):
+    """A view_floor filters out rows whose RawContentItem.views is below it.
+
+    Seeds five same-niche rows with views straddling the floor, then asserts the
+    retriever returns ONLY the rows at or above the floor — the low-view rows are
+    absent regardless of similarity. Niche is held constant across all rows so the
+    niche filter is a no-op and this isolates the floor.
+    """
+    blueprints = _seed_blueprints(db, 5)
+
+    views = [10, 50, 200000, 300000, 90]
+    for bp, view_count in zip(blueprints, views):
+        raw = db.get(RawContentItem, bp.content_item_id)
+        raw.views = view_count
+    db.flush()
+
+    _ = index_corpus(db, fake_embedder, extractor_version=TEST_EXTRACTOR_VERSION)
+
+    evidence = MinerEvidence(
+        matching_items=1,
+        median_views=0,
+        p90_views=0,
+        trend_slope_4wk_pct=0.0,
+        rationale="test",
+    )
+
+    candidate = BlueprintCandidate(
+        rank=1,
+        niche_label="surreal_hyperreal",
+        blueprint_template=blueprints[0].blueprint_data,
+        evidence=evidence,
+    )
+
+    query = RetrievalQuery(candidate=candidate, top_k=5)
+
+    retriever = BlueprintRetriever(
+        db, fake_embedder, TEST_EXTRACTOR_VERSION, view_floor=100000
+    )
+    response = retriever.retrieve(query)
+
+    returned_ids = {hit.content_item_id for hit in response.hits}
+    high_view_ids = {blueprints[2].content_item_id, blueprints[3].content_item_id}
+    low_view_ids = {
+        blueprints[0].content_item_id,
+        blueprints[1].content_item_id,
+        blueprints[4].content_item_id,
+    }
+
+    assert returned_ids == high_view_ids
+    assert not (returned_ids & low_view_ids)
+

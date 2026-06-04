@@ -28,13 +28,15 @@ class BlueprintRetriever:
                  embedder: TextEmbedder, 
                  extractor_version: str = "v3.1", 
                  reranker: Reranker | None = None, 
-                 stage_1_k: int = 20):
+                 stage_1_k: int = 100,
+                 view_floor: int = 0):
         
         self._db = db 
         self._embedder = embedder
         self._extractor_version = extractor_version
         self._reranker = reranker
         self._stage_1_k = stage_1_k
+        self._view_floor = view_floor
 
 
     def retrieve(self, query: RetrievalQuery) -> RetrievalResponse:
@@ -73,8 +75,12 @@ class BlueprintRetriever:
         
         stmt = (
             select(BlueprintRecord, ViralVideo.embedding.cosine_distance(vec).label("dist"))
+            .select_from(BlueprintRecord)
             .join(ViralVideo, BlueprintRecord.content_item_id == ViralVideo.content_item_id)
             .where(BlueprintRecord.extractor_version == self._extractor_version)
+            .join(RawContentItem, RawContentItem.id == BlueprintRecord.content_item_id)
+            .where(RawContentItem.views >= self._view_floor)
+            .where(BlueprintRecord.blueprint_data["niche_label"].as_string() == query.candidate.niche_label)
             .order_by(ViralVideo.embedding.cosine_distance(vec))
             .limit(k)
         )
