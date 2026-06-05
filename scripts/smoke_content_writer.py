@@ -1,13 +1,21 @@
 """
 THROWAWAY smoke test for ContentWriter.write() (P3 Task 5).
 
-Runs write() ONCE against real DB rows + a real Sonnet call, prints the
-ContentPackage for human eyeballing. Not an eval, not a gate — just "does it
-produce something sane and not crash". Delete after use.
+Runs write() once per premise in PREMISES (4 stratified what-if premises, one
+per axis: creature / environment / transformation / scale) against real DB rows
++ a real Sonnet call each, and prints a human-readable arc dump per premise for
+eyeballing against the 4-failure rubric. Not an eval, not a gate — just "does it
+produce coherent montages across premises, and where does it fail". Delete after
+use.
+
+Stratifying across 4 premises (not 1) is deliberate: a single premise cannot
+reveal whether the writer overfits one template — only a spread exposes
+cross-premise monotony.
 
 Picks the most common niche among v3 blueprints, uses 3 of those blueprints as
 the retrieved "winners" (hits), hand-builds a plausible target candidate from
-the first one's grouped mechanics, and asks the writer to generate around it.
+the first one's grouped mechanics, and asks the writer to generate around each
+premise.
 """
 
 from collections import Counter
@@ -24,6 +32,13 @@ from src.models.blueprint import BlueprintRecord  # noqa: E402
 from src.miner.schemas import BlueprintCandidate, MinerEvidence  # noqa: E402
 from src.rag.schemas import RetrievalHit  # noqa: E402
 from src.generation.content_writer import ContentWriter  # noqa: E402
+
+PREMISES = [
+    "Footage of Kraken appearing in the pacific ocean",
+    "POV: Someone exploring and found the Yggdrasil",
+    "Human transforming into an angel",
+    "Life as an ant"
+]
 
 
 def main() -> None:
@@ -76,12 +91,26 @@ def main() -> None:
         print(f"hit content_item_ids: {[h.content_item_id for h in hits]}\n")
 
         writer = ContentWriter()
-        package = writer.write(candidate, hits, db)
 
-        print("=" * 60)
-        print(package.model_dump_json(indent=2))
-        print("=" * 60)
-        print(f"\ngrounding_hit_ids set by code: {package.grounding_hit_ids}")
+        for premise in PREMISES:
+            package = writer.write(candidate, hits, db, premise)
+
+            # Human-readable arc dump — surface only the fields the 4-failure
+            # rubric needs (3 labeled shots + the shared mood-anchor + overlays
+            # + caption). Skip braces/hashtags/grounding_ids/rationale: noise for
+            # the read. mood_anchor is contracted identical across shots, so it
+            # prints once.
+            print("=" * 70)
+            print(f"PREMISE: {premise}")
+            print(f"MOOD-ANCHOR: {package.shots[0].mood_anchor}")
+            print("-" * 70)
+            for shot in package.shots:
+                print(f"[{shot.arc_role.upper()}] {shot.cinematic_prompt}\n")
+            print(f"OVERLAYS: {package.onscreen_text}")
+            print(f"CAPTION:  {package.caption}")
+            print("=" * 70 + "\n")
+
+    
     finally:
         db.close()
 
