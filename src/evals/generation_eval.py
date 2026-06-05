@@ -20,8 +20,16 @@ from src.generation.content_writer import build_naked_envelope, SYSTEM_PROMPT, C
 
 
 def _render(package: ContentPackage) -> str:
-    """Render a ContentPackage to a flat string for the pairwise judge."""
-    parts = [package.video_prompt]
+    """
+    Render a ContentPackage to a flat string for the pairwise judge.
+
+    The 3-shot montage leads the string: each shot's cinematic_prompt is emitted
+    in arc order (setup → turn → payoff), which the ContentPackage.shots list is
+    contracted to hold. This replaces the retired single video_prompt — the judge
+    now sees all three beats, then the overlays, caption, hashtags, and optional
+    voiceover.
+    """
+    parts = [shot.cinematic_prompt for shot in package.shots]
     parts.extend(package.onscreen_text)
     parts.append(package.caption)
     parts.extend(package.hashtags)
