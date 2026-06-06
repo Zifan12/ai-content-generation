@@ -65,43 +65,77 @@ is the goal.
 Fill every field.
 
 <shots>
-Exactly THREE shots, in arc order. Each is one independently-rendered ~5-second
-clip with its own text-to-video prompt. Together they develop the premise:
+Exactly THREE shots, in arc order. The video is NOT text-to-video (which renders
+impossible subjects fake). Each shot is rendered STILL-FIRST: a photoreal still is
+generated from its start_keyframe, then animated to a ~5-second clip by
+image-to-video. Diffusion stills sell impossible subjects as real; the animation
+only has to move an already-real frame. Together the three develop the premise:
 
   - Shot 1 — SETUP (arc_role "setup"): establish the scene and frame the premise.
     Its first second must stop the scroll on its own — the strongest, clearest
     image of the three. This beat plants the "what if" so the viewer wants beat 2.
-  - Shot 2 — TURN (arc_role "turn"): the impossible thing happens or escalates.
-    This is the event — the premise becomes undeniable. Something visibly changes
-    from shot 1.
+  - Shot 2 — TURN (arc_role "turn"): the impossible thing happens or escalates —
+    the premise becomes undeniable. Usually the EVENT beat (see end_keyframe).
   - Shot 3 — PAYOFF (arc_role "payoff"): the consequence or reveal that lands the
     premise — the "oh" that makes the whole thing make sense.
 
-Each shot's cinematic_prompt is portable grammar any modern text-to-video model
-parses. No target model is fixed yet, so per shot:
+Each shot has three prompt fields: a frozen start_keyframe (the still), a
+transition (the one motion that animates it), and — only for event beats — an
+end_keyframe. No target model is fixed yet, so keep all three portable.
+
+START_KEYFRAME — the photoreal frozen frame the beat opens on. This is an IMAGE
+prompt, not a video prompt: describe a single frozen instant, never a movement.
   - Lead with the camera: a named shot type (wide, medium, close-up, extreme
-    close-up, over-the-shoulder) plus ONE movement (e.g. "slow push-in", "low
-    tracking shot", "static wide"). One camera move only — never stack moves.
-    VARY the shot type across the three beats — do not shoot three wides. A
-    montage of different framings (e.g. wide establish → close-up on the event →
-    extreme close-up on the consequence) reads as motion; three identical wides
-    read as static.
-  - Then the subject and one primary action, as a physical beat that fits ~5
-    seconds. One event per shot — do NOT pack a whole arc into one prompt.
-  - Name the lighting source and direction and the color palette or film-stock
-    feel. Never "cinematic" alone — translate it to lens / light / color.
-  - Describe motion explicitly. The shot must SHOW change, not hold a pose.
-  - Favor authentic-capture cues (natural grain, practical light, slight
-    handheld) over polish. Do NOT use quality incantations ("masterpiece", "8K",
-    "ultra-detailed", "breathtaking") — they push toward the fake "AI look".
+    close-up, over-the-shoulder). VARY the shot type across the three beats — do
+    not frame three wides. Different framings (wide establish → close-up on the
+    event → extreme close-up on the consequence) make the montage read as motion;
+    three identical wides read as static.
+  - Then the subject and its action FROZEN at one instant — a peak pose held still,
+    not a motion. Motion words ("erupting", "running", "shattering") produce a
+    motion-blurred, smeared still; freeze the instant instead ("tentacle reared at
+    its apex, water suspended mid-fall"). Movement belongs ONLY in transition.
+  - Name the lighting source and direction. Do NOT put the palette here — the
+    palette lives in mood_anchor (appended at render) so the three stills share one
+    grade. Keep start_keyframe about framing, subject, and light only.
+  - Favor authentic-capture cues (natural grain, practical light) over polish. Do
+    NOT use quality incantations ("masterpiece", "8K", "ultra-detailed",
+    "breathtaking") — they push toward the fake "AI look".
+  - Express scale with adjectives (colossal, monumental, towering, dwarfing the
+    frame), NEVER by comparison to a concrete object ("the size of a school bus",
+    "as big as a house"). The image model reads the named object as content to
+    spawn — "eye the size of a bus" renders an actual bus fused to the eye. State
+    the magnitude, not a thing to measure against.
   - Vertical 9:16, short-form.
 
-MOOD-ANCHOR RULE — the montage glue. Write ONE mood_anchor describing the
-palette + lighting + realism level + uncanny register, then repeat it VERBATIM
-as the mood_anchor of all three shots. The three scenes MAY differ (this is a
-montage, not one continuous location) — but the TONE must not. Identical
-mood_anchor wording is what makes three separate renders read as one video.
-Do not vary it shot to shot; copy it exactly.
+TRANSITION — the ONE movement that animates the still over ~5 seconds. Pure motion,
+no style or palette words (those are already fixed by the still and mood_anchor).
+One move only — never stack moves.
+  - Still/idle beat: one small ambient move (slow push-in, pupil dilates, surface
+    shimmer, hair drifts in the wind).
+  - Event beat: the single A→B action the animator interpolates between the start
+    and end keyframes ("the tentacle descends and closes around the hull").
+
+END_KEYFRAME — fill this ONLY for an event beat; leave it null otherwise. Use an
+event beat only when two things must visibly INTERACT, or the clip must reach a
+specific new end-state that animating a single still cannot invent (a tentacle
+gripping a boat, a hand catching a falling object). Most beats are NOT events: a
+beat that merely SHOWS something (the giant eye, the burning sky) is a still
+carried by the cut. Reserve event beats for the one interaction that lands the
+premise — usually the turn or payoff. Overusing them costs realism and money.
+  - Write end_keyframe as the start_keyframe a moment LATER, with ONLY the action
+    advanced — same subject identity, same camera, same world. It is produced by
+    editing the start still, so describe a MINIMAL delta, not a new shot.
+  - Changing more than the action (a different angle, a different subject, a new
+    location) makes the start→end pair MORPH instead of move. Keep everything
+    identical except the one thing that acts.
+
+MOOD-ANCHOR RULE — the montage glue. Write ONE mood_anchor describing the palette
++ lighting + realism level + uncanny register, then repeat it VERBATIM as the
+mood_anchor of all three shots. It is appended to every start_keyframe (and
+end_keyframe) at render, so identical wording is what locks the three stills into
+one grade and makes them read as a single video. The three scenes MAY differ (this
+is a montage, not one continuous location) — but the TONE must not. Do not vary it
+shot to shot; copy it exactly.
 </shots>
 
 <onscreen_text>
@@ -143,8 +177,10 @@ Do not populate this; the system sets provenance itself.
   - Originality is mandatory — no reused topics or phrasings from the source
     examples; the premise is the only topic.
   - Exactly three shots; the three mood_anchor strings must be identical.
-  - Each shot shows ONE event in ~5 seconds — the three connect into an arc, but
-    no single shot carries the whole story.
+  - Each shot is ONE frozen still animated by ONE motion over ~5 seconds; the
+    three connect into an arc, but no single shot carries the whole story. Use an
+    end_keyframe only for a genuine interaction / new end-state — most beats are
+    stills carried by the cut.
   - Write for vertical short-form; assume sound-on, but design the hook to land
     even when muted.
 </constraints>
