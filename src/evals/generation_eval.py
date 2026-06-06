@@ -23,13 +23,23 @@ def _render(package: ContentPackage) -> str:
     """
     Render a ContentPackage to a flat string for the pairwise judge.
 
-    The 3-shot montage leads the string: each shot's cinematic_prompt is emitted
-    in arc order (setup → turn → payoff), which the ContentPackage.shots list is
-    contracted to hold. This replaces the retired single video_prompt — the judge
-    now sees all three beats, then the overlays, caption, hashtags, and optional
-    voiceover.
+    The 3-shot montage leads the string, grouped per beat in arc order (setup →
+    turn → payoff): each shot emits its start_keyframe (the still) then its
+    transition (the motion), plus its end_keyframe when the beat is an event (a
+    still beat has none). Fields stay grouped by shot so the judge reads each
+    beat's frame + motion together, not all frames then all motions. After the
+    shots come the overlays, caption, hashtags, and optional voiceover. mood_anchor
+    is omitted (identical across shots — no comparative signal for the judge).
     """
-    parts = [shot.cinematic_prompt for shot in package.shots]
+
+    parts = []
+
+    for shot in package.shots:
+        parts.append(shot.start_keyframe)
+        parts.append(shot.transition)
+        if shot.end_keyframe is not None:
+            parts.append(shot.end_keyframe)
+
     parts.extend(package.onscreen_text)
     parts.append(package.caption)
     parts.extend(package.hashtags)

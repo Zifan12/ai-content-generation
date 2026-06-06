@@ -105,7 +105,13 @@ def main() -> None:
             print(f"MOOD-ANCHOR: {package.shots[0].mood_anchor}")
             print("-" * 70)
             for shot in package.shots:
-                print(f"[{shot.arc_role.upper()}] {shot.cinematic_prompt}\n")
+                # end_keyframe printed even when absent (as a marker) so the read
+                # shows which beats are events vs stills at a glance.
+                end = shot.end_keyframe if shot.end_keyframe is not None else "— (still beat)"
+                print(f"[{shot.arc_role.upper()}]")
+                print(f"  START:  {shot.start_keyframe}")
+                print(f"  MOTION: {shot.transition}")
+                print(f"  END:    {end}\n")
             print(f"OVERLAYS: {package.onscreen_text}")
             print(f"CAPTION:  {package.caption}")
             print("=" * 70 + "\n")
