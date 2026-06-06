@@ -4,7 +4,8 @@ Content generation schemas — the writer's structured output contract.
 PIPELINE ROLE:
   BlueprintCandidate (target mechanic combo from the miner) + retrieved viral
   neighbors (P2 RAG)  →  ContentWriter.write()  →  ContentPackage (this file)
-  →  text-to-video provider + TikTok post (P3.5).
+  →  still-first image+i2v render (nano-banana-2 stills + Kling v3 pro keyframe
+  i2v) + TikTok post (P3.5).
 
 WHY THIS FILE EXISTS:
   ContentPackage is the schema the LLM fills via structured output (the Blueprint
@@ -25,34 +26,64 @@ from pydantic import BaseModel, Field
 
 class Shot(BaseModel):
     """
-    One beat of the 3-shot montage — a single ~5s text-to-video clip.
+    One beat of the 3-shot montage — a still-first, keyframe-driven i2v clip.
 
     A ContentPackage holds exactly three Shots in arc order (setup → turn →
-    payoff). Each Shot carries its own cinematic prompt (the renderer feeds this
-    to the T2V model to produce one clip) plus a mood_anchor that the writer
-    repeats VERBATIM across all three shots so the montage reads as one piece
-    even when the scenes differ. arc_role names which beat this shot is.
+    payoff). Each Shot is rendered NOT as text-to-video (which renders impossible
+    subjects fake) but still-first: the renderer generates a photoreal STILL from
+    start_keyframe (+ mood_anchor appended), then animates it via image-to-video.
+    Two beat kinds, distinguished by end_keyframe:
+
+      - STILL / IDLE beat (end_keyframe is None) — one keyframe, animated with the
+        small ambient move in `transition` (push-in, blink, shimmer) or held and
+        carried by the cut. Single-image i2v keeps it photoreal but can only idle.
+      - EVENT beat (end_keyframe set) — two things must visibly interact / a new
+        state must be reached (a tentacle grips a hull). Single-image i2v cannot
+        invent that, so the renderer feeds start_keyframe + end_keyframe to a
+        start+end i2v model (Kling v3 pro) which interpolates the A→B action in
+        `transition`. The end frame is produced by image-EDITing the start still
+        (change ONLY the action), so the pair reads as the same world a moment
+        apart instead of two mismatched shots that morph.
+
+    mood_anchor is the writer's continuity lever: appended VERBATIM to every
+    keyframe so all three stills land in one grade. arc_role names the beat.
 
     Attributes:
-      cinematic_prompt: Model-agnostic T2V prompt for THIS shot only — subject +
-        action + camera + lighting/palette + motion, scoped to one ~5s beat (not
-        the whole video). Same cinematic grammar as the retired single
-        video_prompt, but one beat's worth.
+      start_keyframe: The photoreal FROZEN FRAME that opens this beat — camera
+        framing + subject + action frozen at an instant + lighting source/direction.
+        Generates the still. Carries NO palette (mood_anchor owns the grade).
+        Must be a frozen peak, NOT motion ("tentacle erupting" smears the still);
+        movement belongs only in `transition`.
+      end_keyframe: Event beats ONLY — the SAME world a moment later with only the
+        action advanced (produced by image-editing the start still). None marks a
+        still/idle beat with no specific end-state to reach. Changing more than the
+        action here (different camera/subject) makes the start+end pair morph.
+      transition: The ONE movement that animates this beat over ~5s, no style words.
+        For an event beat: the A→B action the start+end i2v interpolates. For a
+        still/idle beat: the ambient move (or empty if the beat is a held cut).
       mood_anchor: Palette + lighting + realism level + uncanny register. MUST be
-        described identically across all three shots — this is the connective
-        tissue that holds a montage of differing scenes together. Not a fixed
-        subject or location; scenes may differ, mood may not.
+        described identically across all three shots and appended to each keyframe
+        at still generation — this is what locks the grade across the stills so a
+        montage of differing scenes reads as one piece. Scenes may differ, mood may
+        not.
       arc_role: Which structural beat this shot is. Constrained to the three
         montage roles so the writer cannot drift into ad-hoc labels: "setup"
         (hook + the what-if framing), "turn" (the impossible thing happens /
         escalates), "payoff" (the consequence / reveal that lands the premise).
     """
 
-    cinematic_prompt: str = Field(
-        description="T2V prompt for THIS shot: subject + action + camera + lighting/palette + motion."
+    start_keyframe: str = Field(
+        description="Photoreal FROZEN frame opening this beat: camera + subject + frozen action + lighting. No palette."
+    )
+    end_keyframe: str | None = Field(
+        default=None,
+        description="Event beats only: same world a moment later, ONLY the action advanced. None = still/idle beat.",
+    )
+    transition: str = Field(
+        description="The one ~5s movement animating this beat (A→B for events, ambient for stills); no style words."
     )
     mood_anchor: str = Field(
-        description="Palette + lighting + realism + uncanny register; MUST be identical across all 3 shots."
+        description="Palette + lighting + realism + uncanny register; identical across all 3 shots, appended to every keyframe."
     )
     arc_role: Literal["setup", "turn", "payoff"] = Field(
         description="Which beat this shot is: setup (hook/what-if), turn (escalation), payoff (reveal)."

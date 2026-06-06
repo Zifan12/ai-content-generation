@@ -23,9 +23,9 @@ from src.generation.content_writer import build_envelope, _hydrate_hits, Content
 # Same mood_anchor across all three mirrors the real montage rule (mood is the glue);
 # distinct arc_roles spell out the setup -> turn -> payoff arc the schema enforces.
 VALID_SHOTS = [
-    Shot(cinematic_prompt="wide shot, harbor at dawn", mood_anchor="cold teal, photoreal", arc_role="setup"),
-    Shot(cinematic_prompt="kraken tentacle breaches", mood_anchor="cold teal, photoreal", arc_role="turn"),
-    Shot(cinematic_prompt="crowd flees the dock", mood_anchor="cold teal, photoreal", arc_role="payoff"),
+    Shot(start_keyframe="wide shot, harbor at dawn", transition="slow push in",mood_anchor="cold teal, photoreal", arc_role="setup"),
+    Shot(start_keyframe="kraken tentacle breaches", transition="fast grab", mood_anchor="cold teal, photoreal", arc_role="turn", end_keyframe="kraken grabs the ship"),
+    Shot(start_keyframe="crowd flees the dock", transition="crowd running", mood_anchor="cold teal, photoreal", arc_role="payoff", end_keyframe="crowd running away"),
 ]
 
 @pytest.fixture
@@ -70,6 +70,41 @@ def test_content_package_rejects_wrong_shot_count():
             caption="test123",
             hashtags=["test1"],
         )
+
+def test_shot_no_start_keyframe():
+    # start_keyframe is required (every beat opens on a frame). Supply every OTHER
+    # field so the ONLY reason construction fails is the missing start_keyframe —
+    # isolates the field under test.
+    with pytest.raises(ValidationError):
+        Shot(
+            transition="slow push in",
+            mood_anchor="cold teal, photoreal",
+            arc_role="setup",
+        )
+
+
+def test_shot_no_transition():
+    # transition is required (every beat moves). Everything else present, so the
+    # raise pins to the absent transition alone.
+    with pytest.raises(ValidationError):
+        Shot(
+            start_keyframe="wide shot, harbor at dawn",
+            mood_anchor="cold teal, photoreal",
+            arc_role="setup",
+        )
+
+
+def test_shot_end_keyframe_optional():
+    # end_keyframe is the still-vs-event switch: omitting it must SUCCEED (a still
+    # beat with no end-state to reach) and default to None. No pytest.raises here —
+    # this asserts the optional path directly, not just via the VALID_SHOTS fixture.
+    shot = Shot(
+        start_keyframe="wide shot, harbor at dawn",
+        transition="slow push in",
+        mood_anchor="cold teal, photoreal",
+        arc_role="setup",
+    )
+    assert shot.end_keyframe is None
 
 
 def test_build_envelope_includes_target_and_winners():
