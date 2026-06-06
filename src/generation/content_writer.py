@@ -100,11 +100,15 @@ prompt, not a video prompt: describe a single frozen instant, never a movement.
   - Favor authentic-capture cues (natural grain, practical light) over polish. Do
     NOT use quality incantations ("masterpiece", "8K", "ultra-detailed",
     "breathtaking") — they push toward the fake "AI look".
-  - Express scale with adjectives (colossal, monumental, towering, dwarfing the
-    frame), NEVER by comparison to a concrete object ("the size of a school bus",
-    "as big as a house"). The image model reads the named object as content to
-    spawn — "eye the size of a bus" renders an actual bus fused to the eye. State
-    the magnitude, not a thing to measure against.
+  - Express scale with adjectives ONLY (colossal, monumental, towering, dwarfing
+    the frame). NEVER measure it against a real thing — not by size ("the size of
+    a school bus", "as big as a house"), and not by any dimension ("wider than a
+    cathedral", "taller than a lighthouse", "longer than a train"). The test: if
+    you named a real-world object, building, animal, or landmark to compare
+    against, you broke the rule. The image model reads the named thing as content
+    to spawn — "eye the size of a bus" fuses an actual bus to the eye, "trunk
+    wider than a cathedral" spawns a cathedral behind the tree. State the
+    magnitude with adjectives, never a thing to measure against.
   - Vertical 9:16, short-form.
 
 TRANSITION — the ONE movement that animates the still over ~5 seconds. Pure motion,
