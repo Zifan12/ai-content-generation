@@ -43,11 +43,18 @@ You receive three things:
 
 <task>
 Produce one complete content package for a single ~12-15 second vertical video,
-built as a MONTAGE OF 3 CONNECTED SHOTS that develop the premise. The video is
-not one continuous take — it is three separate ~5-second beats, cut together,
-that take the premise from setup to payoff. A single held shot is the failure
-you are replacing: nothing develops, nothing happens, it is bland. Three
-connected beats make something HAPPEN.
+built as a VIGNETTE MONTAGE: three separate ~5-second atmospheric beats of ONE
+subject, cut together, unified by a single organizing principle. The video is NOT
+a story and NOT one continuous take. The three beats do not tell a plot — they
+show three facets / moments / intensities of the same uncanny subject, held
+together by tone and by the principle you choose below.
+
+Two failures you are replacing at once:
+  - The BLAND single held shot (nothing develops) — three distinct beats fix this.
+  - The ACTION-NARRATIVE trap (beat 1 sets up an event, beat 2 is the event, beat
+    3 is the aftermath). That demands the viewer see cause→effect ACROSS a hard
+    cut, which a montage cannot deliver — the event falls into the cut and the
+    video reads as disconnected. Do NOT write a plot. Write atmosphere.
 </task>
 
 <grounding_rule>
@@ -64,32 +71,72 @@ is the goal.
 <fields>
 Fill every field.
 
+<organizing_principle>
+FIRST, before writing any shot, read the premise and choose ONE organizing
+principle from this CLOSED menu. The principle decides how the three vignette
+beats cohere and escalate WITHOUT a plot. Pick the one the premise naturally
+wants — do not default to the same principle every time; the pick must follow the
+premise, not your habit.
+
+  - "intimacy_zoom" — the same subject, the camera CLOSER each beat: wide context
+    → telling detail → extreme close-up. Builds dread through proximity, no plot.
+    Fits a single arresting subject you can move toward (a creature, a face, an
+    object, a place with one focal point).
+  - "escalating_wrongness" — start near-plausible, each beat more uncanny /
+    impossible: ordinary → off → nightmare. The only principle that MAY use a
+    single event beat (an end_keyframe) at the closing, for one transformation.
+    Fits "X but something is wrong" premises (a person, a familiar scene corrupting).
+  - "sustained_mood" — three near-identical CALM beats, almost nothing changes,
+    pure atmosphere; micro-variation only (light shifts, a slow drift). Lowest
+    energy and, in this niche, the most reliable performer. Fits dreamcore /
+    liminal / "POV you are somewhere eerie" premises where the WORLD is the point.
+  - "facet_rotation" — three INDEPENDENT angles or aspects of the subject, no
+    spatial or intensity logic, just "here are three strange things about this."
+    Maximum variety, weakest single arc. Fits world-tour / "life as X" / showcase
+    premises.
+
+THEN write principle_rationale: one or two sentences naming the principle and why
+THIS premise wants it. This is not decoration — it is how cross-premise monotony
+is caught, so make the reason specific to the premise.
+</organizing_principle>
+
 <shots>
-Exactly THREE shots, in arc order. The video is NOT text-to-video (which renders
+Exactly THREE shots, in beat order. The video is NOT text-to-video (which renders
 impossible subjects fake). Each shot is rendered STILL-FIRST: a photoreal still is
 generated from its start_keyframe, then animated to a ~5-second clip by
 image-to-video. Diffusion stills sell impossible subjects as real; the animation
-only has to move an already-real frame. Together the three develop the premise:
+only has to move an already-real frame.
 
-  - Shot 1 — SETUP (arc_role "setup"): establish the scene and frame the premise.
-    Its first second must stop the scroll on its own — the strongest, clearest
-    image of the three. This beat plants the "what if" so the viewer wants beat 2.
-  - Shot 2 — TURN (arc_role "turn"): the impossible thing happens or escalates —
-    the premise becomes undeniable. Usually the EVENT beat (see end_keyframe).
-  - Shot 3 — PAYOFF (arc_role "payoff"): the consequence or reveal that lands the
-    premise — the "oh" that makes the whole thing make sense.
+Each shot's beat_position is its slot only — "opening", "middle", "closing" — NOT
+a story stage. Regardless of principle, the OPENING beat carries the 3-second
+scroll-stop hook: it must be the strongest, clearest image of the three and land
+on its own with sound off. The other two sustain, not "resolve" — there is no plot
+to resolve.
+
+Shape the three beats by the organizing_principle you chose:
+  - intimacy_zoom → opening = wide context, middle = a telling detail, closing =
+    extreme close-up. Same subject, the camera closer each beat.
+  - escalating_wrongness → opening = near-plausible, middle = clearly off, closing
+    = nightmare. The closing MAY be a single event beat (one end_keyframe) if a
+    transformation needs to complete on screen.
+  - sustained_mood → three near-equal calm beats of the same place/subject; vary
+    only framing and micro-motion, never the energy. Almost nothing happens — that
+    is correct, not a failure.
+  - facet_rotation → three independent angles/aspects of the subject, no spatial or
+    intensity ladder. Each beat stands alone; only the subject and mood connect them.
 
 Each shot has three prompt fields: a frozen start_keyframe (the still), a
-transition (the one motion that animates it), and — only for event beats — an
-end_keyframe. No target model is fixed yet, so keep all three portable.
+transition (the one motion that animates it), and — only for the rare event beat —
+an end_keyframe. No target model is fixed yet, so keep all three portable.
 
 START_KEYFRAME — the photoreal frozen frame the beat opens on. This is an IMAGE
 prompt, not a video prompt: describe a single frozen instant, never a movement.
   - Lead with the camera: a named shot type (wide, medium, close-up, extreme
     close-up, over-the-shoulder). VARY the shot type across the three beats — do
-    not frame three wides. Different framings (wide establish → close-up on the
-    event → extreme close-up on the consequence) make the montage read as motion;
-    three identical wides read as static.
+    not frame three wides. Distinct framings make the montage read as motion; three
+    identical wides read as static. (intimacy_zoom makes this variation literal —
+    wide → detail → ECU; the other principles still vary framing, just not on a
+    zoom ladder.)
   - Then the subject and its action FROZEN at one instant — a peak pose held still,
     not a motion. Motion words ("erupting", "running", "shattering") produce a
     motion-blurred, smeared still; freeze the instant instead ("tentacle reared at
@@ -124,8 +171,10 @@ event beat only when two things must visibly INTERACT, or the clip must reach a
 specific new end-state that animating a single still cannot invent (a tentacle
 gripping a boat, a hand catching a falling object). Most beats are NOT events: a
 beat that merely SHOWS something (the giant eye, the burning sky) is a still
-carried by the cut. Reserve event beats for the one interaction that lands the
-premise — usually the turn or payoff. Overusing them costs realism and money.
+carried by the cut. Most vignettes have NO event beat at all — only
+escalating_wrongness typically needs one, at the closing, for a single
+transformation. Overusing them costs realism and money, and an event that spans a
+cut reintroduces the action-narrative trap. When in doubt, leave end_keyframe null.
   - Write end_keyframe as the start_keyframe a moment LATER, with ONLY the action
     advanced — same subject identity, same camera, same world. It is produced by
     editing the start still, so describe a MINIMAL delta, not a new shot.
@@ -166,8 +215,8 @@ spoken track" by design — do not invent narration to fill the field.
 
 <rationale>
 One or two sentences naming which mechanics you pulled from the winners, how you
-transferred them onto the premise, and how the three beats develop it from setup
-to payoff. For debugging and eval.
+transferred them onto the premise, and how the three beats cohere under the chosen
+organizing_principle (NOT as a story). For debugging and eval.
 </rationale>
 
 <grounding_hit_ids>
@@ -180,11 +229,17 @@ Do not populate this; the system sets provenance itself.
   - Use the target Blueprint's mechanics and aesthetic; honor its niche.
   - Originality is mandatory — no reused topics or phrasings from the source
     examples; the premise is the only topic.
+  - Pick exactly ONE organizing_principle from the closed menu and write all three
+    beats to obey it; justify the pick in principle_rationale.
   - Exactly three shots; the three mood_anchor strings must be identical.
-  - Each shot is ONE frozen still animated by ONE motion over ~5 seconds; the
-    three connect into an arc, but no single shot carries the whole story. Use an
-    end_keyframe only for a genuine interaction / new end-state — most beats are
-    stills carried by the cut.
+  - The three beats are NOT a story. No cause→effect may span a cut. A viewer must
+    never need to have seen what happened BETWEEN two beats. If beat N's meaning
+    depends on an event the viewer did not see, you wrote an action-narrative —
+    rewrite it as three independent atmospheric beats of the subject.
+  - Each shot is ONE frozen still animated by ONE motion over ~5 seconds; the three
+    cohere by principle + shared mood, not by plot. Use an end_keyframe only for a
+    genuine on-screen interaction / new end-state — most beats are stills carried
+    by the cut.
   - Write for vertical short-form; assume sound-on, but design the hook to land
     even when muted.
 </constraints>
