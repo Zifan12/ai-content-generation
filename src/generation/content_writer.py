@@ -72,32 +72,43 @@ is the goal.
 Fill every field.
 
 <organizing_principle>
-FIRST, before writing any shot, read the premise and choose ONE organizing
-principle from this CLOSED menu. The principle decides how the three vignette
-beats cohere and escalate WITHOUT a plot. Pick the one the premise naturally
-wants — do not default to the same principle every time; the pick must follow the
-premise, not your habit.
+FIRST, before writing any shot, choose ONE organizing principle from this CLOSED
+menu. The principle decides how the three vignette beats cohere WITHOUT a plot.
 
-  - "intimacy_zoom" — the same subject, the camera CLOSER each beat: wide context
-    → telling detail → extreme close-up. Builds dread through proximity, no plot.
-    Fits a single arresting subject you can move toward (a creature, a face, an
-    object, a place with one focal point).
-  - "escalating_wrongness" — start near-plausible, each beat more uncanny /
-    impossible: ordinary → off → nightmare. The only principle that MAY use a
-    single event beat (an end_keyframe) at the closing, for one transformation.
-    Fits "X but something is wrong" premises (a person, a familiar scene corrupting).
-  - "sustained_mood" — three near-identical CALM beats, almost nothing changes,
-    pure atmosphere; micro-variation only (light shifts, a slow drift). Lowest
-    energy and, in this niche, the most reliable performer. Fits dreamcore /
-    liminal / "POV you are somewhere eerie" premises where the WORLD is the point.
-  - "facet_rotation" — three INDEPENDENT angles or aspects of the subject, no
-    spatial or intensity logic, just "here are three strange things about this."
-    Maximum variety, weakest single arc. Fits world-tour / "life as X" / showcase
-    premises.
+CRITICAL: "intimacy_zoom" is the LAST-RESORT FALLBACK, not the default. Almost any
+premise CAN be rationalized as "move the camera closer on the interesting thing" —
+that is exactly why it is a trap. Reaching for zoom every time produces a channel
+of identical wide→detail→eye videos. So you must RULE OUT the other three first,
+in this order, and only land on intimacy_zoom if none apply:
 
-THEN write principle_rationale: one or two sentences naming the principle and why
-THIS premise wants it. This is not decoration — it is how cross-premise monotony
-is caught, so make the reason specific to the premise.
+  1. Is the premise a TRANSFORMATION or CORRUPTION — something BECOMING something
+     else, or a familiar thing going wrong (a human becoming an angel, a normal
+     room decaying, a face changing)?  → "escalating_wrongness": ordinary → off →
+     nightmare/awe. This is the ONLY principle that MAY use a single event beat
+     (an end_keyframe) at the closing, for the change completing on screen.
+
+  2. Is the premise a PLACE / WORLD / "POV you are somewhere", where the point is
+     to BE there and nothing needs to happen (dreamcore, liminal, a sacred or eerie
+     location, found-footage of a space)?  → "sustained_mood": three near-identical
+     CALM beats, micro-variation only (light shifts, a slow drift). Lowest energy
+     and, in this niche, the MOST reliable performer. When in doubt between this and
+     zoom for a place premise, choose sustained_mood.
+
+  3. Is the premise a TOUR / SHOWCASE — "life as X", "a day as Y", or otherwise
+     asking to see several different aspects of one world?  → "facet_rotation":
+     three INDEPENDENT angles/aspects, no spatial or intensity ladder, each beat
+     stands alone.
+
+  4. ONLY if none of 1-3 fit — the premise is a SINGLE monolithic subject whose
+     entire power is its incomprehensible scale, with no transformation, no world
+     to dwell in, and no facets to tour (a colossal creature, a single monument)
+     →  "intimacy_zoom": same subject, camera closer each beat, dread through
+     proximity. If you pick this, your rationale must say WHY 1-3 were ruled out.
+
+THEN write principle_rationale: one or two sentences naming the principle AND, when
+you chose intimacy_zoom, why the other three did not fit. A fluent justification for
+zoom is not enough — the test is whether a transformation/place/tour premise was
+correctly routed away from zoom. This is how cross-premise monotony is caught.
 </organizing_principle>
 
 <shots>
