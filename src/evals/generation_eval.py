@@ -23,16 +23,23 @@ def _render(package: ContentPackage) -> str:
     """
     Render a ContentPackage to a flat string for the pairwise judge.
 
-    The 3-shot montage leads the string, grouped per beat in arc order (setup →
-    turn → payoff): each shot emits its start_keyframe (the still) then its
-    transition (the motion), plus its end_keyframe when the beat is an event (a
-    still beat has none). Fields stay grouped by shot so the judge reads each
-    beat's frame + motion together, not all frames then all motions. After the
-    shots come the overlays, caption, hashtags, and optional voiceover. mood_anchor
-    is omitted (identical across shots — no comparative signal for the judge).
+    The organizing_principle + rationale lead (how the beats are meant to cohere),
+    then the 3-shot vignette montage in beat order (opening → middle → closing):
+    each shot emits its start_keyframe (the still) then its transition (the motion),
+    plus its end_keyframe when the beat is an event (a still beat has none). Fields
+    stay grouped by shot so the judge reads each beat's frame + motion together, not
+    all frames then all motions. After the shots come the overlays, caption,
+    hashtags, and optional voiceover. mood_anchor is omitted (identical across shots
+    — no comparative signal for the judge).
     """
 
     parts = []
+
+    # The organizing principle leads — it tells the judge how the three vignette
+    # beats are meant to cohere (zoom / wrongness / mood / facets), so the beats are
+    # read against their own intent rather than as a (non-existent) plot.
+    parts.append(f"organizing_principle: {package.organizing_principle}")
+    parts.append(f"principle_rationale: {package.principle_rationale}")
 
     for shot in package.shots:
         parts.append(shot.start_keyframe)

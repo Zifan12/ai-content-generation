@@ -92,8 +92,11 @@ def main() -> None:
 
         writer = ContentWriter()
 
+        chosen_principles: list[str] = []
+
         for premise in PREMISES:
             package = writer.write(candidate, hits, db, premise)
+            chosen_principles.append(package.organizing_principle)
 
             # Human-readable arc dump — surface only the fields the 4-failure
             # rubric needs (3 labeled shots + the shared mood-anchor + overlays
@@ -102,13 +105,14 @@ def main() -> None:
             # prints once.
             print("=" * 70)
             print(f"PREMISE: {premise}")
+            print(f"PRINCIPLE: {package.organizing_principle}  —  {package.principle_rationale}")
             print(f"MOOD-ANCHOR: {package.shots[0].mood_anchor}")
             print("-" * 70)
             for shot in package.shots:
                 # end_keyframe printed even when absent (as a marker) so the read
                 # shows which beats are events vs stills at a glance.
                 end = shot.end_keyframe if shot.end_keyframe is not None else "— (still beat)"
-                print(f"[{shot.arc_role.upper()}]")
+                print(f"[{shot.beat_position.upper()}]")
                 print(f"  START:  {shot.start_keyframe}")
                 print(f"  MOTION: {shot.transition}")
                 print(f"  END:    {end}\n")
@@ -116,7 +120,21 @@ def main() -> None:
             print(f"CAPTION:  {package.caption}")
             print("=" * 70 + "\n")
 
-    
+        # Cross-premise principle-variety check — the anti-monotony guard being
+        # exercised. A single premise cannot reveal a template; only the spread can.
+        # If all 4 premises collapse to one principle, the writer is defaulting to a
+        # habit instead of letting the premise drive the pick — that is the monotony
+        # failure (finding #4) resurfacing, so shout it. This is a printed diagnostic
+        # for the human, not an assertion.
+        distinct = set(chosen_principles)
+        print("#" * 70)
+        print(f"PRINCIPLE PICKS (in premise order): {chosen_principles}")
+        print(f"DISTINCT PRINCIPLES: {sorted(distinct)}  ({len(distinct)} of {len(chosen_principles)})")
+        if len(distinct) == 1:
+            print(">>> MONOTONY WARNING: all premises chose the same principle. "
+                  "The pick is not tracking the premise — iterate the prompt.")
+        print("#" * 70)
+
     finally:
         db.close()
 
