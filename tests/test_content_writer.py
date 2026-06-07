@@ -21,11 +21,12 @@ from src.generation.content_writer import build_envelope, _hydrate_hits, Content
 
 # A valid 3-shot montage for tests that just need a schema-valid ContentPackage.
 # Same mood_anchor across all three mirrors the real montage rule (mood is the glue);
-# distinct arc_roles spell out the setup -> turn -> payoff arc the schema enforces.
+# beat_position marks each shot's slot in the montage (opening/middle/closing) —
+# position only, NOT a setup->turn->payoff story stage.
 VALID_SHOTS = [
-    Shot(start_keyframe="wide shot, harbor at dawn", transition="slow push in",mood_anchor="cold teal, photoreal", arc_role="setup"),
-    Shot(start_keyframe="kraken tentacle breaches", transition="fast grab", mood_anchor="cold teal, photoreal", arc_role="turn", end_keyframe="kraken grabs the ship"),
-    Shot(start_keyframe="crowd flees the dock", transition="crowd running", mood_anchor="cold teal, photoreal", arc_role="payoff", end_keyframe="crowd running away"),
+    Shot(start_keyframe="wide shot, harbor at dawn", transition="slow push in",mood_anchor="cold teal, photoreal", beat_position="opening"),
+    Shot(start_keyframe="kraken tentacle breaches", transition="fast grab", mood_anchor="cold teal, photoreal", beat_position="middle", end_keyframe="kraken grabs the ship"),
+    Shot(start_keyframe="crowd flees the dock", transition="crowd running", mood_anchor="cold teal, photoreal", beat_position="closing", end_keyframe="crowd running away"),
 ]
 
 @pytest.fixture
@@ -44,7 +45,8 @@ def test_content_package_validates_minimal():
         onscreen_text=["test", "test", "test"],
         caption="test123",
         hashtags=["test1", "test2"],
-
+        organizing_principle="sustained_mood",
+        principle_rationale="test rationale",
     )
 
     assert package.grounding_hit_ids == []
@@ -57,7 +59,8 @@ def test_content_package_rejects_missing_shots():
         onscreen_text=["test", "test", "test"],
         caption="test123",
         hashtags=["test1", "test2"],
-
+        organizing_principle="sustained_mood",
+        principle_rationale="test rationale",
     )
 
 def test_content_package_rejects_wrong_shot_count():
@@ -69,7 +72,52 @@ def test_content_package_rejects_wrong_shot_count():
             onscreen_text=["test"],
             caption="test123",
             hashtags=["test1"],
+            organizing_principle="sustained_mood",
+            principle_rationale="test rationale",
         )
+
+
+def test_content_package_accepts_valid_organizing_principle():
+    # A valid closed-menu principle + a rationale must validate. Pins the happy
+    # path for the new vignette-cohesion field.
+    package = ContentPackage(
+        shots=VALID_SHOTS,
+        onscreen_text=["test"],
+        caption="test123",
+        hashtags=["test1"],
+        organizing_principle="intimacy_zoom",
+        principle_rationale="premise is one subject, so zoom in.",
+    )
+    assert package.organizing_principle == "intimacy_zoom"
+
+
+def test_content_package_rejects_invalid_organizing_principle():
+    # The menu is CLOSED — an off-menu value (here a smuggled-in story word) must
+    # raise, which is what makes cross-premise monotony detectable + the field
+    # evalable.
+    with pytest.raises(ValidationError):
+        ContentPackage(
+            shots=VALID_SHOTS,
+            onscreen_text=["test"],
+            caption="test123",
+            hashtags=["test1"],
+            organizing_principle="plot_twist",
+            principle_rationale="test rationale",
+        )
+
+
+def test_content_package_requires_principle_rationale():
+    # principle_rationale is REQUIRED (no default) — the writer must justify the
+    # pick, not silently default to a habit. Omitting it must raise.
+    with pytest.raises(ValidationError):
+        ContentPackage(
+            shots=VALID_SHOTS,
+            onscreen_text=["test"],
+            caption="test123",
+            hashtags=["test1"],
+            organizing_principle="sustained_mood",
+        )
+
 
 def test_shot_no_start_keyframe():
     # start_keyframe is required (every beat opens on a frame). Supply every OTHER
@@ -79,7 +127,7 @@ def test_shot_no_start_keyframe():
         Shot(
             transition="slow push in",
             mood_anchor="cold teal, photoreal",
-            arc_role="setup",
+            beat_position="opening",
         )
 
 
@@ -90,7 +138,7 @@ def test_shot_no_transition():
         Shot(
             start_keyframe="wide shot, harbor at dawn",
             mood_anchor="cold teal, photoreal",
-            arc_role="setup",
+            beat_position="opening",
         )
 
 
@@ -102,7 +150,7 @@ def test_shot_end_keyframe_optional():
         start_keyframe="wide shot, harbor at dawn",
         transition="slow push in",
         mood_anchor="cold teal, photoreal",
-        arc_role="setup",
+        beat_position="opening",
     )
     assert shot.end_keyframe is None
 
@@ -230,6 +278,8 @@ class FakeLLM():
         caption="test123",
         hashtags=["test1", "test2"],
         grounding_hit_ids=[],
+        organizing_principle="sustained_mood",
+        principle_rationale="test rationale",
         )
 
         return package

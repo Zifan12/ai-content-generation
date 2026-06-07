@@ -24,15 +24,25 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+OrganizingPrinciple = Literal[
+    "intimacy_zoom",
+    "escalating_wrongness",
+    "sustained_mood",
+    "facet_rotation",
+]
+
+
 class Shot(BaseModel):
     """
     One beat of the 3-shot montage — a still-first, keyframe-driven i2v clip.
 
-    A ContentPackage holds exactly three Shots in arc order (setup → turn →
-    payoff). Each Shot is rendered NOT as text-to-video (which renders impossible
-    subjects fake) but still-first: the renderer generates a photoreal STILL from
-    start_keyframe (+ mood_anchor appended), then animates it via image-to-video.
-    Two beat kinds, distinguished by end_keyframe:
+    A ContentPackage holds exactly three Shots in beat order (opening → middle →
+    closing) — three atmospheric vignettes of one subject unified by an
+    organizing_principle, NOT a causal story (no event spans a cut). Each Shot is
+    rendered NOT as text-to-video (which renders impossible subjects fake) but
+    still-first: the renderer generates a photoreal STILL from start_keyframe
+    (+ mood_anchor appended), then animates it via image-to-video. Two beat kinds,
+    distinguished by end_keyframe:
 
       - STILL / IDLE beat (end_keyframe is None) — one keyframe, animated with the
         small ambient move in `transition` (push-in, blink, shimmer) or held and
@@ -46,7 +56,7 @@ class Shot(BaseModel):
         apart instead of two mismatched shots that morph.
 
     mood_anchor is the writer's continuity lever: appended VERBATIM to every
-    keyframe so all three stills land in one grade. arc_role names the beat.
+    keyframe so all three stills land in one grade. beat_position names the slot.
 
     Attributes:
       start_keyframe: The photoreal FROZEN FRAME that opens this beat — camera
@@ -66,10 +76,10 @@ class Shot(BaseModel):
         at still generation — this is what locks the grade across the stills so a
         montage of differing scenes reads as one piece. Scenes may differ, mood may
         not.
-      arc_role: Which structural beat this shot is. Constrained to the three
-        montage roles so the writer cannot drift into ad-hoc labels: "setup"
-        (hook + the what-if framing), "turn" (the impossible thing happens /
-        escalates), "payoff" (the consequence / reveal that lands the premise).
+      beat_position: Which slot this shot fills in the montage. Position only, NOT
+        a story stage: "opening" (carries the 3-second scroll-stop hook — the
+        strongest image), "middle", "closing". The cohesion + escalation across the
+        three comes from the package's organizing_principle, not from a causal arc.
     """
 
     start_keyframe: str = Field(
@@ -85,8 +95,8 @@ class Shot(BaseModel):
     mood_anchor: str = Field(
         description="Palette + lighting + realism + uncanny register; identical across all 3 shots, appended to every keyframe."
     )
-    arc_role: Literal["setup", "turn", "payoff"] = Field(
-        description="Which beat this shot is: setup (hook/what-if), turn (escalation), payoff (reveal)."
+    beat_position: Literal["opening", "middle", "closing"] = Field(
+        description="Position in the montage: opening (carries the 3-sec hook), middle, closing. Position only — NOT a story stage."
     )
 
 
@@ -99,10 +109,17 @@ class ContentPackage(BaseModel):
     validate; optional fields carry None / empty defaults so absence is explicit.
 
     Attributes:
-      shots: The 3-shot montage, in arc order (setup → turn → payoff). Exactly
-        three — enforced at the schema level, not left to the prompt. Replaces the
-        retired single video_prompt: one static shot rendered bland video, so the
-        writer is now forced to develop the premise across three connected beats.
+      shots: The 3-shot vignette montage, in beat order (opening → middle →
+        closing). Exactly three — enforced at the schema level, not left to the
+        prompt. Replaces the retired single video_prompt: one static shot rendered
+        bland video, so the writer now spreads the premise across three connected
+        beats unified by organizing_principle (not a causal story).
+      organizing_principle: The closed-menu vignette cohesion principle the 3 beats
+        obey (intimacy_zoom / escalating_wrongness / sustained_mood /
+        facet_rotation). Picked from the premise; the anti-monotony guard made a
+        typed, evalable field rather than a hidden writer habit.
+      principle_rationale: One or two sentences justifying the principle pick from
+        THIS premise — surfaces the choice so cross-premise monotony is detectable.
       onscreen_text: Text overlays rendered on the video, in display order. Required
         — the writer must consciously address overlays (pass an empty list only if
         the video genuinely has none).
@@ -120,7 +137,13 @@ class ContentPackage(BaseModel):
     shots: list[Shot] = Field(
         min_length=3,
         max_length=3,
-        description="The 3-shot montage in arc order (setup, turn, payoff); exactly three.",
+        description="The 3-shot vignette montage in beat order (opening, middle, closing); exactly three.",
+    )
+    organizing_principle: OrganizingPrinciple = Field(
+        description="The chosen vignette cohesion principle the 3 beats obey. One of a closed menu; picked from the premise."
+    )
+    principle_rationale: str = Field(
+        description="Why this principle fits THIS premise. One or two sentences."
     )
     onscreen_text: list[str] = Field(
         description="On-screen text overlays in display order; empty list only if the video has none."
