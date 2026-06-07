@@ -17,7 +17,9 @@ import argparse
 import json
 import os
 import tempfile
+import threading
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -45,13 +47,19 @@ def run_archive(
     cap_usd: float,
     location: str = "US",
     sort_type: str = "RELEVANCE",
+    workers: int = 16,
+    progress_every: int = 50,
 ) -> dict[str, Any]:
     """
     Execute the archive loop over seeds. Returns a summary dict.
 
     Charges the budget on items returned per run, skips ids already in the
-    manifest, archives the rest, and records failures separately. Stops
-    launching new runs once the budget is exhausted.
+    manifest, and archives the rest concurrently. Each hashtag's items are
+    downloaded by a pool of ``workers`` threads — downloads are I/O-bound
+    (network + disk wait), so overlapping them fills the connection instead of
+    idling between sequential requests, the dominant speedup for this archive.
+    Failures are recorded separately. Stops launching new scrapes once the
+    budget cap is reached.
 
     Args:
         root: archive root path.
@@ -61,6 +69,8 @@ def run_archive(
         max_items: per-run item cap.
         cap_usd: local budget cap.
         location, sort_type: passed through to the actor.
+        workers: number of concurrent download threads per hashtag batch.
+        progress_every: print a progress line every N archived items (0 = off).
 
     Returns:
         Summary dict with archived/skipped/failed/items_returned/runs_executed/
@@ -71,7 +81,45 @@ def run_archive(
     manifest = ManifestStore(root)
     budget = BudgetTracker(root, cap_usd=cap_usd)
 
-    archived = skipped = failed = runs_executed = 0
+    counts = {"archived": 0, "skipped": 0, "failed": 0, "runs_executed": 0}
+    counts_lock = threading.Lock()
+
+    def _handle(raw: dict[str, Any], niche: str) -> None:
+        """Archive one raw item in a worker thread; update counts + manifest."""
+        video_id = str(raw.get("id") or "")
+        if not video_id:
+            return
+        # Atomic claim: only one worker archives a given id; dupes short-circuit.
+        if not manifest.reserve(video_id):
+            with counts_lock:
+                counts["skipped"] += 1
+            return
+        try:
+            ok, record = archive_item(root, raw, niche, downloader)
+        except Exception as exc:  # never let one item kill the pool
+            manifest.unreserve(video_id)
+            manifest.add_failure(
+                {"id": video_id, "niche": niche, "stage": "exception", "error": str(exc)}
+            )
+            with counts_lock:
+                counts["failed"] += 1
+            return
+        if ok:
+            manifest.add_success(record)
+            with counts_lock:
+                counts["archived"] += 1
+                n = counts["archived"]
+            if progress_every and n % progress_every == 0:
+                print(
+                    f"  ...{n} archived | spend ${budget.est_spend_usd:.2f} "
+                    f"| {niche}",
+                    flush=True,
+                )
+        else:
+            manifest.unreserve(video_id)
+            manifest.add_failure(record)
+            with counts_lock:
+                counts["failed"] += 1
 
     for seed in seeds:
         if budget.exhausted():
@@ -79,29 +127,24 @@ def run_archive(
         items = client.run_hashtag(
             seed.hashtag, max_items=max_items, location=location, sort_type=sort_type
         )
-        runs_executed += 1
+        counts["runs_executed"] += 1
         budget.charge(len(items))
+        print(
+            f"[{seed.niche}/{seed.hashtag}] returned {len(items)} "
+            f"| spend ${budget.est_spend_usd:.2f}",
+            flush=True,
+        )
 
-        for raw in items:
-            video_id = str(raw.get("id") or "")
-            if not video_id:
-                continue
-            if manifest.has(video_id):
-                skipped += 1
-                continue
-            ok, record = archive_item(root, raw, seed.niche, downloader)
-            if ok:
-                manifest.add_success(record)
-                archived += 1
-            else:
-                manifest.add_failure(record)
-                failed += 1
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(_handle, raw, seed.niche) for raw in items]
+            for fut in as_completed(futures):
+                fut.result()  # re-raise anything _handle failed to catch
 
     summary = {
-        "archived": archived,
-        "skipped": skipped,
-        "failed": failed,
-        "runs_executed": runs_executed,
+        "archived": counts["archived"],
+        "skipped": counts["skipped"],
+        "failed": counts["failed"],
+        "runs_executed": counts["runs_executed"],
         "items_returned": budget.items_returned,
         "est_spend_usd": round(budget.est_spend_usd, 4),
         "remaining_usd": round(budget.remaining(), 4),
@@ -135,6 +178,12 @@ def main() -> None:
         choices=["RELEVANCE", "MOST_LIKED", "DATE_POSTED"],
     )
     parser.add_argument("--niche", type=str, default=None)
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=16,
+        help="Concurrent download threads per hashtag batch (default 16).",
+    )
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -177,6 +226,7 @@ def main() -> None:
                 cap_usd=args.cap_usd,
                 location=args.location,
                 sort_type=args.sort_type,
+                workers=args.workers,
             )
             print("DRY RUN summary:", json.dumps(summary, indent=2))
         return
@@ -191,6 +241,7 @@ def main() -> None:
             cap_usd=args.cap_usd,
             location=args.location,
             sort_type=args.sort_type,
+            workers=args.workers,
         )
     except KeyboardInterrupt:
         print("Interrupted — manifest/budget persisted, re-run to resume.")
