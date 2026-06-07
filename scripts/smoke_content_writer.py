@@ -18,7 +18,11 @@ the first one's grouped mechanics, and asks the writer to generate around each
 premise.
 """
 
+import subprocess
+import sys
 from collections import Counter
+from datetime import datetime
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -41,7 +45,57 @@ PREMISES = [
 ]
 
 
+class _Tee:
+    """
+    Duplicate every write to two streams (live console + the record file).
+
+    The smoke prints to stdout for live eyeballing; wrapping sys.stdout in a _Tee
+    for the duration of the run also captures the EXACT same text to a timestamped
+    transcript so runs can be diffed against each other later (regression hunting).
+    Only write/flush are needed — print() touches nothing else.
+    """
+
+    def __init__(self, *streams):
+        self._streams = streams
+
+    def write(self, data):
+        for s in self._streams:
+            s.write(data)
+
+    def flush(self):
+        for s in self._streams:
+            s.flush()
+
+
+def _git_sha() -> str:
+    """
+    Return the current short git SHA, or "nogit" if unavailable.
+
+    Stamped into every transcript header so a saved smoke run is traceable to the
+    exact prompt/schema commit that produced it — a transcript you cannot tie to a
+    code version is uncomparable.
+    """
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"], text=True
+        ).strip()
+    except Exception:
+        return "nogit"
+
+
 def main() -> None:
+    # Open a timestamped, SHA-stamped transcript and tee all stdout into it.
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    sha = _git_sha()
+    record_path = Path("output/smoke_runs") / f"smoke_{ts}_{sha}.txt"
+    record_path.parent.mkdir(parents=True, exist_ok=True)
+    record_file = record_path.open("w", encoding="utf-8")
+    record_file.write(f"# smoke_content_writer run\n# timestamp: {ts}\n# git_sha: {sha}\n\n")
+    record_file.flush()
+
+    original_stdout = sys.stdout
+    sys.stdout = _Tee(original_stdout, record_file)
+
     db = SessionLocal()
     try:
         v3 = db.scalars(
@@ -137,6 +191,9 @@ def main() -> None:
 
     finally:
         db.close()
+        sys.stdout = original_stdout
+        record_file.close()
+        print(f"\n[record saved] {record_path}")
 
 
 if __name__ == "__main__":
