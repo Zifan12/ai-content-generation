@@ -199,3 +199,41 @@ seeds:
       - cinematicai
       - aimovie
       - aitrailer
+
+  # ============================================================
+  # REAL (non-AI) COUNTERPARTS (2026-06-08) — for AI-vs-real ablation.
+  # Goal: capture the REAL-dominant population of niches we also have in AI,
+  # so the Blueprint extractor / virality predictor learn universal mechanics
+  # (hooks, pacing, retention) not just AI-vs-AI. TikTok tags don't cleanly
+  # separate AI from real, so these BROAD niche tags are real-dominant with
+  # some AI mixed in — exactly the comparison population we want. Tags curated
+  # from best-hashtags (2026-06-08): dropped generic junk (fyp/art/love/
+  # instagram/single-letters) and off-niche drift (wedding/photography/mukbang).
+  # De-overlapped against all AI niches above (which use ai-qualified tags).
+  # ============================================================
+
+  # Real satisfying / ASMR — counterpart to ai_asmr + satisfying_ai.
+  - niche: real_satisfying
+    hashtags:
+      - satisfying
+      - satisfyingvideo
+      - oddlysatisfying
+      - asmr
+      - asmrsounds
+      - slime
+      - slimeasmr
+      - crunchyslime
+      - soapcutting
+      - kineticsand
+
+  # Real cinematic / short film — counterpart to ai_cinematic.
+  - niche: real_cinematic
+    hashtags:
+      - cinematic
+      - cinematography
+      - filmmaking
+      - shortfilm
+      - cinematicvideo
+      - colorgrading
+      - moodycinematic
+      - filmmaker
