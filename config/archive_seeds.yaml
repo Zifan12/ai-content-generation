@@ -136,3 +136,66 @@ seeds:
       - oddlysatisfyingai
       - glassasmr
       - aifood
+
+  # ============================================================
+  # EXPANSION PASS 2 (2026-06-07) — burn remaining ~$13 on NEW content.
+  # Research-validated (firecrawl, 2026-06-07): AI ASMR is THE dominant AI
+  # trend on TikTok; AI animals + viral AI "effect" trends (cakeify/squish/
+  # melt/inflate/glass-fruit) + cinematic Veo3 micro-movies all confirmed hot.
+  # De-overlapped against the 8 niches above AND against each other. Tags the
+  # satisfying_ai niche already owns (aiasmr/glassasmr/aifood/satisfyingai/
+  # oddlysatisfyingai) are NOT repeated here.
+  # ============================================================
+
+  # AI ASMR as its own deep niche — #1 cited AI trend (Veo3 synced-sound ASMR,
+  # glass-fruit cutting). Surreal/satisfying-adjacent → strengthens core.
+  - niche: ai_asmr
+    hashtags:
+      - glassfruit
+      - glassfruitcutting
+      - aiasmrvideo
+      - veo3asmr
+      - asmrai
+      - aieatingsounds
+      - asmrfoodeating
+      - aicrunch
+
+  # Viral AI "effect" trends — each is its own high-volume hashtag (objects
+  # cakeified / squished / melted / inflated / turned to glass). Uncanny-
+  # satisfying aesthetic, same family as surreal_hyperreal.
+  - niche: ai_effects
+    hashtags:
+      - cakeify
+      - squishy
+      - aisquish
+      - aimelting
+      - aiinflate
+      - inflateai
+      - aitransformation
+      - isitcakeai
+
+  # AI animals — viral distinct content (fruit→animal hybrids, impossible
+  # creatures, AI animal vlogs).
+  - niche: ai_animals
+    hashtags:
+      - aianimals
+      - aianimalvlog
+      - animalfusion
+      - aicreatures
+      - aihybridanimals
+      - fruitanimals
+      - aizoo
+      - aipets
+
+  # Cinematic AI micro-movies — top-3 winning style; Veo3 cinematic shorts.
+  # Premium-quality, surreal-adjacent.
+  - niche: ai_cinematic
+    hashtags:
+      - aicinematic
+      - aishortfilm
+      - aimicromovie
+      - veo3cinematic
+      - aifilmmaking
+      - cinematicai
+      - aimovie
+      - aitrailer
