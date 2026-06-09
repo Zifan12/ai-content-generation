@@ -19,7 +19,7 @@ from pydantic import ValidationError
 from src.evals.writer_judge import DimensionScore, PackageVerdict
 from src.evals.package_view import render_for_judge
 from tests.test_rubric_checks import baseline_package
-from src.evals.rubric_eval import judge_scorecard
+from src.evals.rubric_eval import judge_scorecard, principle_distribution
 
 def test_valid_score_constructs():
     """A score within 1-5, with all required fields present, builds cleanly."""
@@ -105,3 +105,20 @@ def test_judge_scorecard():
     flagged_dims = [s.dimension for s in low_scores]
     assert "vividness" in flagged_dims
     assert "convergence" not in flagged_dims
+
+
+def test_principle_distribution():
+    package1 = baseline_package()
+    package2 = baseline_package()
+    package3 = baseline_package()
+    package4 = baseline_package()
+
+    package1.organizing_principle = "intimacy_zoom"
+    package2.organizing_principle = "intimacy_zoom"
+    package3.organizing_principle = "intimacy_zoom"
+    package4.organizing_principle = "sustained_mood"
+
+    packages = [package1, package2, package3, package4]
+    dist = principle_distribution(packages)
+    assert dist["intimacy_zoom"] == 3
+    assert dist["sustained_mood"] == 1

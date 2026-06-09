@@ -14,7 +14,7 @@ from src.evals.rubric_checks import (
     escalating_wrongness_has_event_beat,
 )
 import statistics
-from collections import defaultdict
+from collections import defaultdict, Counter
 from src.evals.rubric import select, load
 from src.evals.writer_judge import PackageVerdict
 from src.schemas.generation import ContentPackage
@@ -65,6 +65,14 @@ def scorecard(packages: list[ContentPackage]) -> tuple:
     return rates, failures
 
 def judge_scorecard(verdicts: list[PackageVerdict]) -> tuple:
+    """
+    Aggregate LLM-judge verdicts across many packages.
+
+    Returns (means, low_scores): means maps dimension -> mean score (1-5)
+    across all verdicts; low_scores is the flat list of DimensionScore
+    receipts with score <= 2, kept whole so the judge's `reason` rides
+    along for failure inspection.
+    """
     tally = defaultdict(list)
     low_scores = []
 
@@ -79,3 +87,9 @@ def judge_scorecard(verdicts: list[PackageVerdict]) -> tuple:
         means[dim_str] = statistics.mean([d.score for d in dim_scores])
 
     return means, low_scores
+
+
+def principle_distribution(packages: list[ContentPackage]) -> dict:
+    
+    principles = [p.organizing_principle for p in packages]
+    return Counter(principles)
