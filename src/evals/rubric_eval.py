@@ -1,3 +1,10 @@
+"""
+Wire the v0 rubric criteria into a registry and aggregate them into a scorecard.
+
+`scorer` runs the selected criteria over one package; `scorecard` tallies many
+packages into per-criterion pass-rates plus the flat list of failure receipts.
+"""
+
 from src.evals.rubric_checks import (
     mood_anchor_identical,
     no_scale_comparison,
@@ -6,9 +13,10 @@ from src.evals.rubric_checks import (
     no_style_words_in_transition,
     escalating_wrongness_has_event_beat,
 )
-
+import statistics
 from collections import defaultdict
 from src.evals.rubric import select, load
+from src.evals.writer_judge import PackageVerdict
 from src.schemas.generation import ContentPackage
 
 registry = {
@@ -22,6 +30,7 @@ registry = {
 
 
 def scorer(package: ContentPackage) -> list:
+    """Run every criterion the selector picks for this package, returning their CheckResult receipts."""
     criterias = select(package, load())
 
     result = []
@@ -31,6 +40,12 @@ def scorer(package: ContentPackage) -> list:
     return result
 
 def scorecard(packages: list[ContentPackage]) -> tuple:
+    """
+    Aggregate criteria across many packages.
+
+    Returns (rates, failures): rates maps criterion_id -> pass-rate (0-1); failures
+    is the flat list of failing CheckResult receipts.
+    """
     tally = defaultdict(list)
     failures = []
 
@@ -49,3 +64,18 @@ def scorecard(packages: list[ContentPackage]) -> tuple:
 
     return rates, failures
 
+def judge_scorecard(verdicts: list[PackageVerdict]) -> tuple:
+    tally = defaultdict(list)
+    low_scores = []
+
+    for verdict in verdicts:
+        for dim_score in verdict.scores:
+            tally[dim_score.dimension].append(dim_score)
+            if dim_score.score <= 2:
+                low_scores.append(dim_score)
+
+    means = {}
+    for dim_str, dim_scores in tally.items():
+        means[dim_str] = statistics.mean([d.score for d in dim_scores])
+
+    return means, low_scores
