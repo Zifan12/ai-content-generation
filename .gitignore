@@ -36,6 +36,10 @@ apify/
 # Reference notes / guides (local-only)
 guides/
 
+# Research scratch — keep only the curated doctrine sheet
+resources/*
+!resources/doctrine_sheet.md
+
 # Claude Code
 .claude/
 CLAUDE.md
