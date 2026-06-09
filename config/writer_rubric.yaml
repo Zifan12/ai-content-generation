@@ -1,0 +1,65 @@
+# Writer rubric — v0 (code-check tier only).
+#
+# A DEFECT DETECTOR for the P3 vignette writer's TEXT plan (ContentPackage),
+# scored BEFORE any paid render. NOT a quality certifier — P3.5 real 7-day views
+# own "good". Each criterion here is a deterministic ("code") check: a pure
+# Python function over the schema, free + 100% reliable. Judgment-call criteria
+# (vantage, anti-causal, principle-fit) are the v1 LLM-judge tier and are NOT in
+# this file.
+#
+# Each criterion's `id` MUST match a function name in src/evals/rubric_checks.py
+# (the runner maps id -> function via a registry). Fields:
+#   id          — stable criterion id == the check function name.
+#   scope       — when the criterion applies:
+#                   universal   : always.
+#                   conditional : only when organizing_principle == applies_when.
+#                   event_beat  : only when any shot has end_keyframe set.
+#   applies_when — for conditional: the organizing_principle value that triggers it.
+#                  Omitted for universal/event_beat.
+#   check_type  — "code" for all v0 criteria (judge criteria arrive in v1).
+#   check       — one-line human description of the rule.
+#   severity    — blocker (a real defect) | warn (heuristic, false positives OK).
+#   source      — where the rule came from (doctrine / director corpus / finding).
+criteria:
+  - id: mood_anchor_identical
+    scope: universal
+    check_type: code
+    check: All three shots share a byte-identical mood_anchor (locks the grade).
+    severity: blocker
+    source: SYSTEM_PROMPT mood-anchor continuity doctrine
+
+  - id: no_scale_comparison
+    scope: universal
+    check_type: code
+    check: No keyframe/transition contains a literal size-comparison cliché.
+    severity: blocker
+    source: render finding (scale-ban leaks ~3x/run)
+
+  - id: no_quality_incantations
+    scope: universal
+    check_type: code
+    check: No text field carries dead "quality" words (8k, masterpiece, etc.).
+    severity: blocker
+    source: resources/image-video-director corpus (cargo-cult filler)
+
+  - id: no_palette_in_start_keyframe
+    scope: universal
+    check_type: code
+    check: start_keyframe carries no palette/grade vocab or hex codes (mood_anchor owns the grade).
+    severity: warn
+    source: still-first schema doctrine (grade lives in mood_anchor)
+
+  - id: no_style_words_in_transition
+    scope: universal
+    check_type: code
+    check: transition is motion-only — no style/aesthetic adjectives.
+    severity: warn
+    source: still-first schema doctrine (transition = one motion)
+
+  - id: escalating_wrongness_has_event_beat
+    scope: conditional
+    applies_when: escalating_wrongness
+    check_type: code
+    check: At least one shot has an end_keyframe (the principle must visibly advance).
+    severity: blocker
+    source: organizing_principle doctrine (escalating_wrongness needs an event)
