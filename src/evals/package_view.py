@@ -9,10 +9,6 @@ deliberate: assembling text is cheap/testable here; the paid LLM call lives ther
 The format below foregrounds premise + organizing_principle at the top (they
 condition the premise_fidelity and principle_execution dimensions) and emits one
 labeled block per shot so the three beats do not smear together.
-
-FORMAT TEMPLATES are provided (str.format-style). The render logic — reading the
-package fields, looping the shots, guarding the optional end_keyframe, filling and
-joining the templates — is the function body you write.
 """
 
 from src.schemas.generation import ContentPackage
@@ -41,16 +37,20 @@ Start keyframe: {start_keyframe}
 Mood anchor: {mood_anchor}
 """
 
-# Only emitted when shot.end_keyframe is not None (event beats). Your None-guard
-# decides whether this line appears.
+# Only emitted when shot.end_keyframe is not None (event beats).
 END_KEYFRAME_LINE = "End keyframe: {end_keyframe}\n"
 
 
 def render_for_judge(premise: str, package: ContentPackage) -> str:
+    """
+    Flatten a premise + ContentPackage into the judge-readable brief string.
 
+    Pure (no LLM): one labeled block per shot, end_keyframe line only on event
+    beats, joined into the foregrounded top template.
+    """
     blocks = []
     for i, shot in enumerate(package.shots, 1):
-        end_keyframe_line = END_KEYFRAME_LINE.format(end_keyframe=shot.end_keyframe) if shot.end_keyframe else ""
+        end_keyframe_line = END_KEYFRAME_LINE.format(end_keyframe=shot.end_keyframe) if shot.end_keyframe is not None else ""
         block = SHOT_BLOCK_TEMPLATE.format(
             index=i,
             beat_position=shot.beat_position,
@@ -61,7 +61,7 @@ def render_for_judge(premise: str, package: ContentPackage) -> str:
         )
         blocks.append(block)
     
-    shot_blocks = " ".join(blocks)
+    shot_blocks = "\n\n".join(blocks)
 
     return TOP_TEMPLATE.format(premise=premise, 
                         organizing_principle=package.organizing_principle,

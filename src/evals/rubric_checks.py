@@ -36,6 +36,7 @@ class CheckResult:
 
 
 def mood_anchor_identical(package: ContentPackage) -> CheckResult:
+    """Fail unless all three shots carry a byte-identical mood_anchor (the grade-lock invariant)."""
 
     s1, s2, s3 = package.shots[0].mood_anchor, package.shots[1].mood_anchor, package.shots[2].mood_anchor
         

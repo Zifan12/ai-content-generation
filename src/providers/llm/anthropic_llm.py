@@ -33,6 +33,7 @@ class AnthropicLLM:
         response_model: Type[T],
         system: str | None = None,
         max_tokens: int = 1024,
+        temperature: float | None = None,
     ) -> tuple[T, dict]:
         """
         Run model on prompt; return parsed Pydantic instance plus a raw-response
@@ -47,6 +48,10 @@ class AnthropicLLM:
             response_model: Pydantic BaseModel class to parse response into.
             system: Optional system prompt (instructions for the model).
             max_tokens: Max tokens to generate (default 1024).
+            temperature: Optional sampling temperature. When None (default) the
+                param is omitted from the API call. Only valid on models that
+                still accept sampling params (e.g. Sonnet); Opus 4.7+ removed
+                temperature/top_p/top_k and returns 400 if sent.
 
         Returns:
             Tuple of (parsed_model, raw_meta), where raw_meta is a JSON-serializable
@@ -62,6 +67,9 @@ class AnthropicLLM:
             kwargs = {"system": system_param}
         else:
             kwargs = {}
+
+        if temperature is not None:
+            kwargs["temperature"] = temperature
 
         response = self.client.messages.parse(
             model=self.model,
@@ -87,6 +95,7 @@ class AnthropicLLM:
               response_model: Type[T],
               system: str | None = None,
               max_tokens: int=1024,
+              temperature: float | None = None,
     ) -> T:
         """
         Run model on prompt; return Pydantic instance of `response_model`.
@@ -100,11 +109,13 @@ class AnthropicLLM:
             response_model: Pydantic BaseModel class to parse response into
             system: optional system prompt (instructions for the model)
             max_tokens: max tokens to generate (default 1024)
+            temperature: optional sampling temperature; None omits the param.
+                Opus 4.7+ rejects sampling params (400) — leave None there.
         
         Returns:
             Instance of response_model, guaranteed to match schema.
         """
-        return self.parse_with_raw(prompt, response_model, system, max_tokens)[0]
+        return self.parse_with_raw(prompt, response_model, system, max_tokens, temperature)[0]
 
         
         

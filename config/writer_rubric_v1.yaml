@@ -3,11 +3,8 @@
 # v1 LLM-judge rubric: 4 anchored judgment dimensions for the P3 writer.
 # Loaded by WriterJudge (Opus) -> scores each ContentPackage 1-5 per dimension.
 # Source of truth for the anchors = resources/doctrine_sheet.md (the taste anchor).
-#
-# SCAFFOLD: structure + draft questions are AI-written; the 12 ANCHOR SENTENCES
-# are YOURS to fill (they are the taste). Each anchor (1 / 3 / 5) must be a
-# concrete sentence describing what that score LOOKS like, ideally citing a
-# doctrine ✅/❌ example.
+# Each anchor (1 / 3 / 5) is a concrete sentence describing what that score LOOKS
+# like, citing a doctrine ✅/❌ example.
 #
 # ANCHOR-WRITING RULES (make-or-break — spec §7):
 #   * Keep `question` + anchors at the OUTCOME level ("is the prose specific?"),
@@ -25,7 +22,7 @@
 #     matter how fluent the execution.
 #
 # Anchor levels (Likert convention, not taste): 1 = fails the dimension,
-# 3 = partial / mixed, 5 = exemplary. Fill the "" strings below.
+# 3 = partial / mixed, 5 = exemplary.
 # ---------------------------------------------------------------------------
 
 dimensions:
