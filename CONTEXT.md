@@ -134,6 +134,12 @@ _Avoid_: "prompt" without qualifier — ambiguous between SYSTEM_PROMPT and enve
 The per-item user message sent on each extraction call. Built by `BlueprintExtractor._build_envelope` from `RawContentItem` metadata + optional transcript + niche label. Always changes between items by construction.
 _Avoid_: "user prompt", "input"
 
+## content-business test
+
+The P3.5 30-post publish run, dual-purposed as a time-boxed experiment judging whether the content channel has distribution traction (NOT revenue — too small to read early). Day-14 soft check; day-30 hard verdict, default **portfolio-only** unless a lean-in criterion fires (clear upward view trend, ≥1 ~50K+ breakout, or followers ≥500 and climbing). Verdict + numbers recorded in a learning note. Defined in `docs/superpowers/specs/2026-06-09-hybrid-monetization-strategy-design.md`; exit criteria live in PLAN.md Step 3.5.6.
+
+_Avoid_: "monetization test" — the test measures traction, not money.
+
 ## Deferred decisions (P5 agent layer)
 
 The following are NOT decided. Defer until P5 spec writing (post-P3.5). Decisions made earlier would be guesswork — context too thin.

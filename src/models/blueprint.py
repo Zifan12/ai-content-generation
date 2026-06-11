@@ -68,5 +68,5 @@ class BlueprintRecord(Base):
         DateTime(timezone=True), server_default=func.now()
     )
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
-    blueprint_data: Mapped[dict[str, Any]] = mapped_column(JSON) # Stored Blueprint Pydantic objects as JSON dict in SQLite/Postgres
+    blueprint_data: Mapped[dict[str, Any]] = mapped_column(JSON) # Stored Blueprint Pydantic objects as JSON dict in SQLite/Postgres: src/blueprints/schema.py 
 
