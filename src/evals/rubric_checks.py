@@ -34,25 +34,15 @@ class CheckResult:
     passed: bool
     reason: str
 
-
-def mood_anchor_identical(package: ContentPackage) -> CheckResult:
-    """Fail unless all three shots carry a byte-identical mood_anchor (the grade-lock invariant)."""
-
-    s1, s2, s3 = package.shots[0].mood_anchor, package.shots[1].mood_anchor, package.shots[2].mood_anchor
-        
-    if s1 == s2 == s3:
-        return CheckResult(criterion_id="mood_anchor_identical", passed=True, reason="all three mood_anchors identical")
-    return  CheckResult(criterion_id="mood_anchor_identical", passed=False, reason="all three mood_anchors differ")
-
-
 def no_scale_comparison(package: ContentPackage) -> CheckResult:
     """
-    Fail if any keyframe or transition text contains a literal size-comparison.
+    Fail if any keyframe or motion text contains a literal size-comparison.
 
     Scale clichés ("thick as a ship's mast", "size of a building") are a recurring
     writer tic that reads as fake. This catches the cheap, repeating phrasings
     cheaply; novel phrasings are the v1 judge's job. Scans every shot's
-    start_keyframe, end_keyframe (when present), and transition, case-insensitively.
+    start_keyframe (when present — only segment 1 has one), end_keyframe (when
+    present), and motion, case-insensitively.
     On the first banned phrase found, returns a failing receipt naming the phrase
     and the shot; if none match, passes.
     """
@@ -71,7 +61,7 @@ def no_scale_comparison(package: ContentPackage) -> CheckResult:
         "like a mountain",
     ]
     for i, shot in enumerate(package.shots, start=1):
-        fields = [shot.start_keyframe, shot.end_keyframe, shot.transition]
+        fields = [shot.start_keyframe, shot.end_keyframe, shot.motion]
         for text in fields:
             if text is None:
                 continue
@@ -96,9 +86,10 @@ def no_quality_incantations(package: ContentPackage) -> CheckResult:
 
     Words like "masterpiece", "8k", "breathtaking" are cargo-cult prompt filler —
     they do nothing for a modern model and read as AI slop. They leak into captions
-    and keyframes alike, so this scans every text surface: all three shots'
-    start_keyframe / end_keyframe / transition, plus the caption and (when present)
-    the voiceover. Matching is case-insensitive and WHOLE-WORD (regex word
+    and keyframes alike, so this scans every text surface present on each shot:
+    start_keyframe (segment 1 only), motion (always), and end_keyframe (when set),
+    plus the caption and (when present) the voiceover. Matching is case-insensitive
+    and WHOLE-WORD (regex word
     boundaries) so "8k" does not fire on "8kg" and "stunning" is not matched inside
     a longer token. Collects every distinct hit and, if any, returns a failing
     receipt listing them; otherwise passes.
@@ -117,8 +108,9 @@ def no_quality_incantations(package: ContentPackage) -> CheckResult:
     if package.voiceover is not None:
         texts.append(package.voiceover)
     for shot in package.shots:
-        texts.append(shot.start_keyframe)
-        texts.append(shot.transition)
+        if shot.start_keyframe is not None:
+            texts.append(shot.start_keyframe)
+        texts.append(shot.motion)
         if shot.end_keyframe is not None:
             texts.append(shot.end_keyframe)
 
@@ -137,17 +129,20 @@ def no_quality_incantations(package: ContentPackage) -> CheckResult:
     )
 
 
-def no_palette_in_start_keyframe(package: ContentPackage) -> CheckResult:
+def no_palette_in_keyframes(package: ContentPackage) -> CheckResult:
     """
-    Fail if any start_keyframe carries palette / grade vocabulary (severity: warn).
+    Fail if any generated keyframe carries palette / grade vocabulary (severity: warn).
 
     The grade lives in mood_anchor (appended verbatim to every keyframe to lock the
-    look); a start_keyframe that also names colors/grade double-specifies it and can
-    fight the anchor. This is a HEURISTIC — false positives are acceptable, so the
-    word list is intentionally loose and kept inline. Scans only the start_keyframe
-    of each shot (end_keyframe/transition are out of scope here), case-insensitively,
-    plus a regex for hex color codes (#RRGGBB). First hit returns a failing receipt
-    naming the shot and the offending token; otherwise passes.
+    look); a keyframe that also names colors/grade double-specifies it and can fight
+    the anchor. This is a HEURISTIC — false positives are acceptable, so the word
+    list is intentionally loose and kept inline. Scans both generated frames of each
+    shot — start_keyframe and end_keyframe — case-insensitively, skipping any that
+    are None (segments 2-3 inherit the prior clip's last frame and carry no
+    start_keyframe). Each present frame is run through the palette-word list plus a
+    regex for hex color codes (#RRGGBB). motion is out of scope here (covered by
+    no_style_words_in_motion). First hit returns a failing receipt naming the shot
+    and the offending token; otherwise passes.
     """
     palette_words = [
         "palette",
@@ -158,37 +153,41 @@ def no_palette_in_start_keyframe(package: ContentPackage) -> CheckResult:
     ]
     hex_pattern = re.compile(r"#[0-9a-fA-F]{6}\b")
     for i, shot in enumerate(package.shots, start=1):
-        lowered = shot.start_keyframe.lower()
-        for word in palette_words:
-            if word in lowered:
+        fields = [shot.start_keyframe, shot.end_keyframe]
+        for text in fields:
+            if text is None:
+                continue
+            lowered = text.lower()
+            for word in palette_words:
+                if word in lowered:
+                    return CheckResult(
+                        criterion_id="no_palette_in_keyframes",
+                        passed=False,
+                        reason=f"shot {i} keyframe carries palette vocab: {word!r}",
+                    )
+            hex_match = hex_pattern.search(text)
+            if hex_match is not None:
                 return CheckResult(
-                    criterion_id="no_palette_in_start_keyframe",
+                    criterion_id="no_palette_in_keyframes",
                     passed=False,
-                    reason=f"shot {i} start_keyframe carries palette vocab: {word!r}",
+                    reason=f"shot {i} keyframe carries hex color: {hex_match.group()!r}",
                 )
-        hex_match = hex_pattern.search(shot.start_keyframe)
-        if hex_match is not None:
-            return CheckResult(
-                criterion_id="no_palette_in_start_keyframe",
-                passed=False,
-                reason=f"shot {i} start_keyframe carries hex color: {hex_match.group()!r}",
-            )
     return CheckResult(
-        criterion_id="no_palette_in_start_keyframe",
+        criterion_id="no_palette_in_keyframes",
         passed=True,
-        reason="no palette vocabulary in any start_keyframe",
+        reason="no palette vocabulary in any keyframes",
     )
 
 
-def no_style_words_in_transition(package: ContentPackage) -> CheckResult:
+def no_style_words_in_motion(package: ContentPackage) -> CheckResult:
     """
-    Fail if any transition contains style / aesthetic words (severity: warn).
+    Fail if any motion field contains style / aesthetic words (severity: warn).
 
-    A transition describes ONE motion (push-in, drift, shimmer) — it should carry no
-    aesthetic adjectives; those belong in mood_anchor. "slow cinematic push-in"
+    A motion field describes ONE movement (push-in, drift, shimmer) — it should carry
+    no aesthetic adjectives; those belong in mood_anchor. "slow cinematic push-in"
     smuggles a look word into a motion field. HEURISTIC, false positives acceptable;
-    word list kept inline. Scans only each shot's transition, case-insensitively.
-    First hit returns a failing receipt naming the shot and the word; else passes.
+    word list kept inline. Scans only each shot's motion, case-insensitively. First
+    hit returns a failing receipt naming the shot and the word; else passes.
     """
     style_words = [
         "cinematic",
@@ -200,42 +199,46 @@ def no_style_words_in_transition(package: ContentPackage) -> CheckResult:
         "vibe",
     ]
     for i, shot in enumerate(package.shots, start=1):
-        lowered = shot.transition.lower()
+        lowered = shot.motion.lower()
         for word in style_words:
             if word in lowered:
                 return CheckResult(
-                    criterion_id="no_style_words_in_transition",
+                    criterion_id="no_style_words_in_motion",
                     passed=False,
-                    reason=f"shot {i} transition carries style word: {word!r}",
+                    reason=f"shot {i} motion carries style word: {word!r}",
                 )
     return CheckResult(
-        criterion_id="no_style_words_in_transition",
+        criterion_id="no_style_words_in_motion",
         passed=True,
         reason="no style words in any transition",
     )
 
 
-def escalating_wrongness_has_event_beat(package: ContentPackage) -> CheckResult:
+def device_requires_event_beat(package: ContentPackage) -> CheckResult:
     """
-    Fail if no shot has an end_keyframe set (conditional — escalating_wrongness only).
+    Fail if a change-device package promises a visible change but no shot delivers one
+    (severity: error).
 
-    The escalating_wrongness principle promises the wrongness visibly ADVANCES — that
-    needs at least one EVENT beat (a shot with both start_keyframe and end_keyframe,
-    so the renderer can interpolate the A->B change). A package that claims this
-    principle but gives only idle stills (every end_keyframe None) never escalates.
-    The selector only fires this criterion when organizing_principle ==
-    "escalating_wrongness"; the function itself just checks: does any shot carry a
-    non-None end_keyframe? Passes if yes, fails if none.
+    Two devices — transformation and time_compression — are change-devices: their
+    whole render mechanism IS the keyframe pair (a start frame and an end frame that
+    differ), so the model can interpolate the visible change between them. A package
+    on one of those devices that has no end_keyframe anywhere is incoherent: it claims
+    a change the render layer cannot produce. The event beat is the presence of at
+    least one end_keyframe. This check is only meaningful for the two change-devices;
+    the rubric's select() gates it so it runs solely for those (other devices never
+    reach here). Passes when at least one shot carries an end_keyframe; otherwise
+    returns a failing receipt naming the device.
     """
     has_event = any(shot.end_keyframe is not None for shot in package.shots)
     if has_event:
         return CheckResult(
-            criterion_id="escalating_wrongness_has_event_beat",
+            criterion_id="device_requires_event_beat",
             passed=True,
             reason="at least one shot has an end_keyframe (event beat present)",
         )
     return CheckResult(
-        criterion_id="escalating_wrongness_has_event_beat",
+        criterion_id="device_requires_event_beat",
         passed=False,
-        reason="no shot has an end_keyframe — escalating_wrongness has no event beat",
+        reason=f"device {package.device!r} promises a visible change but no segment has an end_keyframe",
     )
+

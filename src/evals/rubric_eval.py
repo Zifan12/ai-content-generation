@@ -6,12 +6,11 @@ packages into per-criterion pass-rates plus the flat list of failure receipts.
 """
 
 from src.evals.rubric_checks import (
-    mood_anchor_identical,
     no_scale_comparison,
     no_quality_incantations,
-    no_palette_in_start_keyframe,
-    no_style_words_in_transition,
-    escalating_wrongness_has_event_beat,
+    no_palette_in_keyframes,
+    no_style_words_in_motion,
+    device_requires_event_beat,
 )
 import statistics
 from collections import defaultdict, Counter
@@ -20,12 +19,11 @@ from src.evals.writer_judge import PackageVerdict
 from src.schemas.generation import ContentPackage
 
 registry = {
-    "mood_anchor_identical": mood_anchor_identical,
     "no_scale_comparison": no_scale_comparison,
     "no_quality_incantations": no_quality_incantations,
-    "no_palette_in_start_keyframe": no_palette_in_start_keyframe,
-    "no_style_words_in_transition": no_style_words_in_transition,
-    "escalating_wrongness_has_event_beat": escalating_wrongness_has_event_beat,
+    "no_palette_in_keyframes": no_palette_in_keyframes,
+    "no_style_words_in_motion": no_style_words_in_motion,
+    "device_requires_event_beat": device_requires_event_beat,
 }
 
 

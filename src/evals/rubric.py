@@ -13,13 +13,25 @@ def load():
 
 
 def select(package: ContentPackage, records: list) -> list[dict]:
-    """Keep the universal criteria plus conditional ones whose applies_when matches the package's organizing_principle."""
+    """
+    Select the rubric criteria that apply to a given package.
+
+    Always keeps every criterion whose scope is "universal". For "conditional"
+    criteria, keeps the ones whose applies_when matches the package's device. A
+    conditional criterion's applies_when may be a single device string OR a list of
+    devices (some rules apply to several change-devices at once — e.g. the event-beat
+    rule fires for both transformation and time_compression), so the match must treat
+    a scalar and a list uniformly. Returns the kept criterion records in input order.
+    """
     keepers = []
-    
+
     for record in records:
         if record["scope"] == "universal":
             keepers.append(record)
-        elif record["scope"] == "conditional" and record["applies_when"] == package.organizing_principle:
-            keepers.append(record)
-        
+        elif record["scope"] == "conditional":
+            applies_when = record["applies_when"]
+            allowed_devices = applies_when if isinstance(applies_when, list) else [applies_when]
+            if package.device in allowed_devices:
+                keepers.append(record)
+
     return keepers

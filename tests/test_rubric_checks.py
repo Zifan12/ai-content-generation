@@ -1,90 +1,77 @@
 """
-Tests for the deterministic ("code-check") rubric criteria (Task 1).
+Tests for the deterministic ("code-check") rubric criteria, chain grammar (Task 2).
 
 Each criterion is a pure function over a ContentPackage. Tests follow the
 baseline-then-mutate pattern: grab a fresh schema-valid package from
 `baseline_package()`, break exactly ONE field, and assert the check catches it
 (fail case) or leaves a clean package alone (pass case).
+
+Chain-shape notes (changed from the vignette version):
+  - Only SEGMENT 1 carries a start_keyframe; segments 2-3 inherit the previous
+    clip's last frame (start_keyframe is None and the schema validator REQUIRES
+    that). So any test that wants to plant a palette leak in a start_keyframe can
+    only mutate shots[0] — there is no other start_keyframe to break.
+  - mood_anchor is package-level now (one field), so the mood_anchor_identical
+    check is gone (drift impossible by construction) — its two tests are deleted.
+  - transition -> motion; organizing_principle -> device; the event-beat check is
+    now device_requires_event_beat, conditional on the change-devices.
 """
 
 from src.schemas.generation import ContentPackage, Shot
 from src.evals.rubric_checks import (
-    mood_anchor_identical,
     no_scale_comparison,
     no_quality_incantations,
-    no_palette_in_start_keyframe,
-    no_style_words_in_transition,
-    escalating_wrongness_has_event_beat,
+    no_palette_in_keyframes,
+    no_style_words_in_motion,
+    device_requires_event_beat,
 )
+
 
 def baseline_package() -> ContentPackage:
     """
-    Return a fresh, schema-valid ContentPackage that passes every v0 criterion.
+    Return a fresh, schema-valid chained ContentPackage that passes every check.
 
     A new object is built on every call so a test that mutates one field cannot
-    leak into the next test. The defaults are deliberately "clean": all three
-    shots share a byte-identical mood_anchor, no shot carries scale-comparison or
-    quality-incantation words, start_keyframes hold no palette vocabulary,
-    transitions are motion-only, and the organizing_principle is "sustained_mood"
-    (so the escalating_wrongness event-beat criterion does not apply). Mutate one
-    field per test to drive a single criterion to fail.
+    leak into the next. The defaults are deliberately "clean": segment 1 holds the
+    only start_keyframe (no palette vocab), segments 2-3 inherit (start_keyframe
+    None), every motion is movement-only, no field carries scale/quality words, and
+    the package mood_anchor is the single grade source.
+
+    DEVICE CHOICE (matters): device is "encounter", NOT transformation /
+    time_compression. The device_requires_event_beat check only fires for those two
+    change-devices; picking encounter keeps the baseline outside that conditional, so
+    the baseline passes cleanly and each test drives exactly one criterion.
     """
-    mood = "cold teal light, photoreal, faintly uncanny"
     shots = [
         Shot(
             start_keyframe="wide shot, harbor at dawn, fishing boats moored",
-            transition="slow push in over 5s",
-            mood_anchor=mood,
-            beat_position="opening",
+            motion="slow push in over 5s, ending as the lone mast fills the frame",
         ),
-        Shot(
-            start_keyframe="medium shot, gulls circling a lone mast",
-            transition="gentle drift left",
-            mood_anchor=mood,
-            beat_position="middle",
-        ),
-        Shot(
-            start_keyframe="close shot, water lapping the dock pilings",
-            transition="hold, faint shimmer on the water",
-            mood_anchor=mood,
-            beat_position="closing",
-        ),
+        Shot(motion="gulls scatter off the mast as the camera drifts left toward open water"),
+        Shot(motion="hold on the water, faint shimmer, settling into stillness"),
     ]
     return ContentPackage(
         shots=shots,
-        organizing_principle="sustained_mood",
-        principle_rationale="One quiet harbor, one mood, three framings of the same calm.",
+        device="encounter",
+        device_rationale="A second presence (the gulls) enters mid-drift; the take is the meeting.",
+        mood_anchor="cold teal light, photoreal, faintly uncanny",
         onscreen_text=[],
         caption="dawn at the harbor",
         hashtags=["#surreal", "#harbor"],
     )
 
 
-def test_mood_anchor_identical_fail():
-
-    package = baseline_package()
-    package.shots[2].mood_anchor = "B"
-    receipt = mood_anchor_identical(package)
-
-    assert receipt.passed is False
-
-def test_mood_anchor_identical_oass():
-
-    package = baseline_package()
-    receipt = mood_anchor_identical(package)
-
-    assert receipt.passed is True
-
 def test_no_scale_comparison_fail():
     package = baseline_package()
-    package.shots[2].start_keyframe = "the whale is as thick as"
+    package.shots[2].motion = "the whale rises, as thick as a ship's mast"
     receipt = no_scale_comparison(package)
 
     assert receipt.passed is False
 
+
 def test_no_scale_comparison_pass():
     package = baseline_package()
-    package.shots[2].start_keyframe = "the whale"
+    package.shots[2].motion = "the whale rises slowly"
     receipt = no_scale_comparison(package)
 
     assert receipt.passed is True
@@ -108,60 +95,83 @@ def test_no_quality_incantations_pass():
     assert receipt.passed is True
 
 
-def test_no_palette_in_start_keyframe_fail():
+def test_no_palette_in_keyframes_start_fail():
+    # Only segment 1 has a start_keyframe to leak palette into.
     package = baseline_package()
     package.shots[0].start_keyframe = "wide shot, deep teal and orange grade over the harbor"
-    receipt = no_palette_in_start_keyframe(package)
+    receipt = no_palette_in_keyframes(package)
 
     assert receipt.passed is False
-    assert "1" in receipt.reason
 
 
-def test_no_palette_in_start_keyframe_hex_fail():
+def test_no_palette_in_keyframes_hex_fail():
+    # TRAP MOVED: the old test mutated shots[1].start_keyframe — illegal now
+    # (segment 2 is an inheritor, start_keyframe must be None). A hex leak can only
+    # appear in a GENERATED frame: segment 1's start_keyframe or any end_keyframe.
+    # Plant it in segment 3's end_keyframe to also prove the scan covers end frames.
     package = baseline_package()
-    package.shots[1].start_keyframe = "gulls over a #1a2b3c sky"
-    receipt = no_palette_in_start_keyframe(package)
+    package.shots[2].end_keyframe = "the water settled under a #1a2b3c sky"
+    receipt = no_palette_in_keyframes(package)
 
     assert receipt.passed is False
     assert "#1a2b3c" in receipt.reason
 
 
-def test_no_palette_in_start_keyframe_pass():
+def test_no_palette_in_keyframes_scans_end_keyframes():
+    # New (plan Step 2.1): an end_keyframe carrying palette vocab must fail — the
+    # scan covers every GENERATED frame (opening still + end_keyframes), not just
+    # the opening still.
     package = baseline_package()
-    receipt = no_palette_in_start_keyframe(package)
+    package.shots[2].end_keyframe = "tunnel walls closed, saturated teal palette glow"
+    receipt = no_palette_in_keyframes(package)
+
+    assert receipt.passed is False
+
+
+def test_no_palette_in_keyframes_pass():
+    package = baseline_package()
+    receipt = no_palette_in_keyframes(package)
 
     assert receipt.passed is True
 
 
-def test_no_style_words_in_transition_fail():
+def test_no_style_words_in_motion_fail():
     package = baseline_package()
-    package.shots[0].transition = "slow cinematic push-in"
-    receipt = no_style_words_in_transition(package)
+    package.shots[0].motion = "slow cinematic push-in"
+    receipt = no_style_words_in_motion(package)
 
     assert receipt.passed is False
     assert "cinematic" in receipt.reason
 
 
-def test_no_style_words_in_transition_pass():
+def test_no_style_words_in_motion_pass():
     package = baseline_package()
-    package.shots[0].transition = "slow push-in over 5s"
-    receipt = no_style_words_in_transition(package)
+    package.shots[0].motion = "slow push-in over 5s"
+    receipt = no_style_words_in_motion(package)
 
     assert receipt.passed is True
 
 
-def test_escalating_wrongness_has_event_beat_fail():
+def test_device_requires_event_beat_fail():
+    # A change-device (transformation) with NO end_keyframe anywhere = the change
+    # never lands on screen. Must fail. device_rationale updated to match the device
+    # so the package is coherent.
     package = baseline_package()
+    package.device = "transformation"
+    package.device_rationale = "the premise is a becoming; the subject changes across the take"
     for shot in package.shots:
         shot.end_keyframe = None
-    receipt = escalating_wrongness_has_event_beat(package)
+    receipt = device_requires_event_beat(package)
 
     assert receipt.passed is False
+    assert "end_keyframe" in receipt.reason
 
 
-def test_escalating_wrongness_has_event_beat_pass():
+def test_device_requires_event_beat_pass():
     package = baseline_package()
-    package.shots[1].end_keyframe = "the tentacle now grips the hull"
-    receipt = escalating_wrongness_has_event_beat(package)
+    package.device = "transformation"
+    package.device_rationale = "the premise is a becoming; the subject changes across the take"
+    package.shots[1].end_keyframe = "the skin along the spine has split open"
+    receipt = device_requires_event_beat(package)
 
     assert receipt.passed is True

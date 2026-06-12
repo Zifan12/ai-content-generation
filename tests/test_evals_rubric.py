@@ -4,40 +4,41 @@ from src.evals.rubric_eval import scorer, scorecard
 
 def test_load():
     records = load()
-    assert len(records) == 6
+    assert len(records) == 5
 
 
-def test_select_sustained_mood_returns_universals_only():
-    # baseline_package() is sustained_mood: the lone conditional criterion
-    # (escalating_wrongness_has_event_beat) does NOT match, so only the 5
-    # universal criteria survive.
+def test_select_encounter_returns_universals_only():
+    # baseline_package() has device "encounter": the lone conditional criterion
+    # (device_requires_event_beat, applies_when transformation/time_compression)
+    # does NOT match, so only the 4 universal criteria survive.
     package = baseline_package()
+    records = load()
+
+    selected = select(package, records)
+
+    assert len(selected) == 4
+    ids = [record["id"] for record in selected]
+    assert "device_requires_event_beat" not in ids
+
+
+def test_select_change_device_includes_conditional():
+    # When the package's device matches the conditional's applies_when (a
+    # change-device: transformation / time_compression), the conditional
+    # criterion is kept alongside the 4 universals.
+    package = baseline_package()
+    package.device = "transformation"
     records = load()
 
     selected = select(package, records)
 
     assert len(selected) == 5
     ids = [record["id"] for record in selected]
-    assert "escalating_wrongness_has_event_beat" not in ids
-
-
-def test_select_escalating_wrongness_includes_conditional():
-    # When the package's organizing_principle matches the conditional's
-    # applies_when, the conditional criterion is kept alongside the 5 universals.
-    package = baseline_package()
-    package.organizing_principle = "escalating_wrongness"
-    records = load()
-
-    selected = select(package, records)
-
-    assert len(selected) == 6
-    ids = [record["id"] for record in selected]
-    assert "escalating_wrongness_has_event_beat" in ids
+    assert "device_requires_event_beat" in ids
 
 
 def test_scorer():
     result = scorer(baseline_package())
-    assert len(result) == 5
+    assert len(result) == 4
     assert all(r.passed for r in result)
 
 def test_scorecard():
@@ -50,6 +51,5 @@ def test_scorecard():
     rates, failures = scorecard(packages)
 
     assert rates["no_scale_comparison"] == 2 / 3
-    assert rates["mood_anchor_identical"] == 1
     assert len(failures) == 1
     assert failures[0].criterion_id == "no_scale_comparison"
