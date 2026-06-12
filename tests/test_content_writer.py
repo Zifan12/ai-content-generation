@@ -19,14 +19,16 @@ from src.models.transcript import Transcript
 from src.rag.schemas import RetrievalHit
 from src.generation.content_writer import build_envelope, _hydrate_hits, ContentWriter
 
-# A valid 3-shot montage for tests that just need a schema-valid ContentPackage.
-# Same mood_anchor across all three mirrors the real montage rule (mood is the glue);
-# beat_position marks each shot's slot in the montage (opening/middle/closing) —
-# position only, NOT a setup->turn->payoff story stage.
+# A valid 3-segment chain for tests that just need a schema-valid ContentPackage.
+# Chain shape (design §4): ONLY segment 1 carries start_keyframe (the one generated
+# opening still); segments 2-3 inherit their start frame from the previous clip's last
+# frame, so start_keyframe is None there (and the chain-contract validator REQUIRES it
+# to be). mood_anchor is now package-level, not per-shot. Every segment has `motion`;
+# end_keyframe stays optional (set when the segment must reach a specific visual state).
 VALID_SHOTS = [
-    Shot(start_keyframe="wide shot, harbor at dawn", transition="slow push in",mood_anchor="cold teal, photoreal", beat_position="opening"),
-    Shot(start_keyframe="kraken tentacle breaches", transition="fast grab", mood_anchor="cold teal, photoreal", beat_position="middle", end_keyframe="kraken grabs the ship"),
-    Shot(start_keyframe="crowd flees the dock", transition="crowd running", mood_anchor="cold teal, photoreal", beat_position="closing", end_keyframe="crowd running away"),
+    Shot(start_keyframe="wide shot, harbor at dawn", motion="slow push in"),
+    Shot(motion="tentacle sweeps up and grabs", end_keyframe="kraken grips the ship"),
+    Shot(motion="crowd scatters off the dock", end_keyframe="dock emptied, ship dragged under"),
 ]
 
 @pytest.fixture
@@ -45,8 +47,9 @@ def test_content_package_validates_minimal():
         onscreen_text=["test", "test", "test"],
         caption="test123",
         hashtags=["test1", "test2"],
-        organizing_principle="sustained_mood",
-        principle_rationale="test rationale",
+        device="wrongness_creep",
+        device_rationale="test rationale",
+        mood_anchor="cold teal, photoreal",
     )
 
     assert package.grounding_hit_ids == []
@@ -59,8 +62,9 @@ def test_content_package_rejects_missing_shots():
         onscreen_text=["test", "test", "test"],
         caption="test123",
         hashtags=["test1", "test2"],
-        organizing_principle="sustained_mood",
-        principle_rationale="test rationale",
+        device="wrongness_creep",
+        device_rationale="test rationale",
+        mood_anchor="cold teal, photoreal",
     )
 
 def test_content_package_rejects_wrong_shot_count():
@@ -72,87 +76,132 @@ def test_content_package_rejects_wrong_shot_count():
             onscreen_text=["test"],
             caption="test123",
             hashtags=["test1"],
-            organizing_principle="sustained_mood",
-            principle_rationale="test rationale",
+            device="wrongness_creep",
+            device_rationale="test rationale",
+            mood_anchor="cold teal, photoreal",
         )
 
 
-def test_content_package_accepts_valid_organizing_principle():
-    # A valid closed-menu principle + a rationale must validate. Pins the happy
-    # path for the new vignette-cohesion field.
+def test_content_package_accepts_valid_device():
+    # A valid closed-menu device + a rationale must validate. Pins the happy path
+    # for the creative-device field (replaces organizing_principle).
     package = ContentPackage(
         shots=VALID_SHOTS,
         onscreen_text=["test"],
         caption="test123",
         hashtags=["test1"],
-        organizing_principle="intimacy_zoom",
-        principle_rationale="premise is one subject, so zoom in.",
+        device="scale_traversal",
+        device_rationale="premise is one colossal subject, so travel past it.",
+        mood_anchor="cold teal, photoreal",
     )
-    assert package.organizing_principle == "intimacy_zoom"
+    assert package.device == "scale_traversal"
 
 
-def test_content_package_rejects_invalid_organizing_principle():
-    # The menu is CLOSED — an off-menu value (here a smuggled-in story word) must
-    # raise, which is what makes cross-premise monotony detectable + the field
-    # evalable.
+def test_content_package_rejects_invalid_device():
+    # The menu is CLOSED — an off-menu value (here a retired vignette principle)
+    # must raise, which is what makes cross-run monotony detectable via
+    # device_distribution + the field evalable.
     with pytest.raises(ValidationError):
         ContentPackage(
             shots=VALID_SHOTS,
             onscreen_text=["test"],
             caption="test123",
             hashtags=["test1"],
-            organizing_principle="plot_twist",
-            principle_rationale="test rationale",
+            device="sustained_mood",
+            device_rationale="test rationale",
+            mood_anchor="cold teal, photoreal",
         )
 
 
-def test_content_package_requires_principle_rationale():
-    # principle_rationale is REQUIRED (no default) — the writer must justify the
-    # pick, not silently default to a habit. Omitting it must raise.
+def test_content_package_requires_device_rationale():
+    # device_rationale is REQUIRED (no default) — the writer must justify the pick,
+    # not silently default to a habit. Omitting it must raise.
     with pytest.raises(ValidationError):
         ContentPackage(
             shots=VALID_SHOTS,
             onscreen_text=["test"],
             caption="test123",
             hashtags=["test1"],
-            organizing_principle="sustained_mood",
-        )
-
-
-def test_shot_no_start_keyframe():
-    # start_keyframe is required (every beat opens on a frame). Supply every OTHER
-    # field so the ONLY reason construction fails is the missing start_keyframe —
-    # isolates the field under test.
-    with pytest.raises(ValidationError):
-        Shot(
-            transition="slow push in",
+            device="wrongness_creep",
             mood_anchor="cold teal, photoreal",
-            beat_position="opening",
         )
 
 
-def test_shot_no_transition():
-    # transition is required (every beat moves). Everything else present, so the
-    # raise pins to the absent transition alone.
+def test_content_package_requires_mood_anchor():
+    # mood_anchor moved up to package level (one grade for the continuous take) and
+    # is REQUIRED — the take has no grade-lock without it. Omitting it must raise.
     with pytest.raises(ValidationError):
-        Shot(
-            start_keyframe="wide shot, harbor at dawn",
-            mood_anchor="cold teal, photoreal",
-            beat_position="opening",
+        ContentPackage(
+            shots=VALID_SHOTS,
+            onscreen_text=["test"],
+            caption="test123",
+            hashtags=["test1"],
+            device="wrongness_creep",
+            device_rationale="test rationale",
         )
+
+
+def test_shot_no_motion():
+    # motion is required (every segment moves). Everything else is optional now, so
+    # an empty Shot() must raise solely on the absent motion.
+    with pytest.raises(ValidationError):
+        Shot()
+
+
+def test_shot_start_keyframe_optional():
+    # start_keyframe is now OPTIONAL on Shot itself (segments 2-3 inherit their start
+    # frame). A motion-only Shot must construct and default start_keyframe to None.
+    # The opener-requires-it rule lives at the PACKAGE level (chain-contract
+    # validator), not on Shot — see test_content_package_rejects_opener_without_start_keyframe.
+    shot = Shot(motion="slow push in")
+    assert shot.start_keyframe is None
 
 
 def test_shot_end_keyframe_optional():
-    # end_keyframe is the still-vs-event switch: omitting it must SUCCEED (a still
-    # beat with no end-state to reach) and default to None. No pytest.raises here —
-    # this asserts the optional path directly, not just via the VALID_SHOTS fixture.
-    shot = Shot(
-        start_keyframe="wide shot, harbor at dawn",
-        transition="slow push in",
-        mood_anchor="cold teal, photoreal",
-        beat_position="opening",
-    )
+    # end_keyframe is the idle-vs-event switch: omitting it must SUCCEED (a segment
+    # with no end-state to reach) and default to None.
+    shot = Shot(start_keyframe="wide shot, harbor at dawn", motion="slow push in")
     assert shot.end_keyframe is None
+
+
+# --- NET-NEW: chain-contract validator tests (NOT a rename — new behavior in
+# ContentPackage._check_chain_contract). These pin the two structural invariants the
+# field types alone cannot express. If you want the TDD rep, rewrite these yourself.
+
+def _shots_with(start_keyframes):
+    # Build 3 shots from a list of 3 start_keyframe values (None = inheritor). motion
+    # is always present so the ONLY thing under test is the start_keyframe placement.
+    return [Shot(start_keyframe=sk, motion="some move") for sk in start_keyframes]
+
+
+def test_content_package_rejects_opener_without_start_keyframe():
+    # Segment 1 with no start_keyframe = nothing to render the opening still from.
+    # The validator must reject even though each Shot is individually valid.
+    with pytest.raises(ValidationError):
+        ContentPackage(
+            shots=_shots_with([None, None, None]),
+            onscreen_text=["test"],
+            caption="test123",
+            hashtags=["test1"],
+            device="wrongness_creep",
+            device_rationale="test rationale",
+            mood_anchor="cold teal, photoreal",
+        )
+
+
+def test_content_package_rejects_inheritor_with_start_keyframe():
+    # An inheriting segment (2 or 3) that carries its own start_keyframe = the writer
+    # re-rolled the world mid-chain, breaking continuity. Must reject.
+    with pytest.raises(ValidationError):
+        ContentPackage(
+            shots=_shots_with(["opening still", "smuggled re-roll", None]),
+            onscreen_text=["test"],
+            caption="test123",
+            hashtags=["test1"],
+            device="wrongness_creep",
+            device_rationale="test rationale",
+            mood_anchor="cold teal, photoreal",
+        )
 
 
 def test_build_envelope_includes_target_and_winners():
@@ -278,8 +327,9 @@ class FakeLLM():
         caption="test123",
         hashtags=["test1", "test2"],
         grounding_hit_ids=[],
-        organizing_principle="sustained_mood",
-        principle_rationale="test rationale",
+        device="wrongness_creep",
+        device_rationale="test rationale",
+        mood_anchor="cold teal, photoreal",
         )
 
         return package
