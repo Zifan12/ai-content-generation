@@ -42,19 +42,21 @@ You receive three things:
 </inputs>
 
 <task>
-Produce one complete content package for a single ~12-15 second vertical video,
-built as a VIGNETTE MONTAGE: three separate ~5-second atmospheric beats of ONE
-subject, cut together, unified by a single organizing principle. The video is NOT
-a story and NOT one continuous take. The three beats do not tell a plot — they
-show three facets / moments / intensities of the same uncanny subject, held
-together by tone and by the principle you choose below.
+Produce one complete content package for a single ~15 second vertical video,
+built as a CHAINED CONTINUOUS TAKE: one photoreal opening still, animated and
+extended through three ~5-second motion segments, each segment beginning on the
+exact final frame of the previous one. There are NO cuts and NO teleports — the
+camera and world flow unbroken for the full duration. The viewer experiences ONE
+continuous developing moment, not a montage.
 
 Two failures you are replacing at once:
-  - The BLAND single held shot (nothing develops) — three distinct beats fix this.
-  - The ACTION-NARRATIVE trap (beat 1 sets up an event, beat 2 is the event, beat
-    3 is the aftermath). That demands the viewer see cause→effect ACROSS a hard
-    cut, which a montage cannot deliver — the event falls into the cut and the
-    video reads as disconnected. Do NOT write a plot. Write atmosphere.
+  - The STATIC VIGNETTE ("the ant corpse"): three pretty postcards where nothing
+    develops. In a continuous take, stasis is death — every segment must advance
+    the same experience.
+  - The DISCONTINUITY trap: segments written as independent scenes (new location,
+    new subject, new framing) cannot chain — segment N+1 literally starts on
+    segment N's last frame, so each motion must END somewhere the next motion can
+    BEGIN. No scene-jumping.
 </task>
 
 <grounding_rule>
@@ -71,140 +73,105 @@ is the goal.
 <fields>
 Fill every field.
 
-<organizing_principle>
-FIRST, before writing any shot, choose ONE organizing principle from this CLOSED
-menu. The principle decides how the three vignette beats cohere WITHOUT a plot.
+<device>
+FIRST, before writing any segment, choose ONE creative device from this CLOSED
+menu. The device is what makes THIS premise's continuous take gripping — the
+treatment, not the topic. Route by premise type, in this order:
 
-CRITICAL: "intimacy_zoom" is the LAST-RESORT FALLBACK, not the default. Almost any
-premise CAN be rationalized as "move the camera closer on the interesting thing" —
-that is exactly why it is a trap. Reaching for zoom every time produces a channel
-of identical wide→detail→eye videos. So you must RULE OUT the other three first,
-in this order, and only land on intimacy_zoom if none apply:
+  1. "life as X" / creature / be-the-thing premise → "embodiment": the viewer IS
+     the thing. Render the world from inside its perspective — its height, its
+     speed, its senses. The journey is what IT experiences.
 
-  1. Is the premise a TRANSFORMATION or CORRUPTION — something BECOMING something
-     else, or a familiar thing going wrong (a human becoming an angel, a normal
-     room decaying, a face changing)?  → "escalating_wrongness": ordinary → off →
-     nightmare/awe. This is the ONLY principle that MAY use a single event beat
-     (an end_keyframe) at the closing, for the change completing on screen.
+  2. becoming / corruption premise (something turning into something else) →
+     "transformation": the subject visibly changes across the take; the change IS
+     the video. Use end_keyframes to land the change steps on screen.
 
-  2. Is the premise a PLACE / WORLD / "POV you are somewhere", where the point is
-     to BE there and nothing needs to happen (dreamcore, liminal, a sacred or eerie
-     location, found-footage of a space)?  → "sustained_mood": three near-identical
-     CALM beats, micro-variation only (light shifts, a slow drift). Lowest energy
-     and, in this niche, the MOST reliable performer. When in doubt between this and
-     zoom for a place premise, choose sustained_mood.
+  3. colossal subject / monument / single overwhelming thing → "scale_traversal":
+     the camera travels along or past it; its size DAWNS progressively. The
+     viewer never gets the comfortable wide — the thing keeps not ending.
+     (Vertical descent/ascent premises are this device too.)
 
-  3. Is the premise a TOUR / SHOWCASE — "life as X", "a day as Y", or otherwise
-     asking to see several different aspects of one world?  → "facet_rotation":
-     three INDEPENDENT angles/aspects, no spatial or intensity ladder, each beat
-     stands alone.
+  4. subject + second presence (meeting, threat, pursuit) → "encounter": mid-
+     journey another agent enters; the rest of the take is the meeting's tension
+     — approach, contact, reaction. (Pursuit variant: the presence chases; the
+     camera flees.)
 
-  4. ONLY if none of 1-3 fit — the premise is a SINGLE monolithic subject whose
-     entire power is its incomprehensible scale, with no transformation, no world
-     to dwell in, and no facets to tour (a colossal creature, a single monument)
-     →  "intimacy_zoom": same subject, camera closer each beat, dread through
-     proximity. If you pick this, your rationale must say WHY 1-3 were ruled out.
+  5. misdirection-capable premise (what you see is not what it is) → "reveal":
+     the continuous move recontextualizes the frame — the viewer believes X until
+     the camera keeps going and X becomes Y. ONE realization, placed late.
+     (Slow-approach variant: the whole take closes on one dreaded point; arrival
+     is the payoff.)
 
-THEN write principle_rationale: one or two sentences naming the principle AND, when
-you chose intimacy_zoom, why the other three did not fit. A fluent justification for
-zoom is not enough — the test is whether a transformation/place/tour premise was
-correctly routed away from zoom. This is how cross-premise monotony is caught.
-</organizing_principle>
+  6. place / liminal / world premise where the POINT is being there →
+     "wrongness_creep": the WORLD degrades around the moving camera — each
+     segment the environment is wronger than the last. The successor of the old
+     sustained_mood: same premises, but development is now mandatory.
 
-<shots>
-Exactly THREE shots, in beat order. The video is NOT text-to-video (which renders
-impossible subjects fake). Each shot is rendered STILL-FIRST: a photoreal still is
-generated from its start_keyframe, then animated to a ~5-second clip by
-image-to-video. Diffusion stills sell impossible subjects as real; the animation
-only has to move an already-real frame.
+  7. same-place-time-passes premise → "time_compression": one continuous path
+     while time accelerates around it (day to night, seasons, decay). Use
+     end_keyframes to land the time states.
 
-Each shot's beat_position is its slot only — "opening", "middle", "closing" — NOT
-a story stage. Regardless of principle, the OPENING beat carries the 3-second
-scroll-stop hook: it must be the strongest, clearest image of the three and land
-on its own with sound off. The other two sustain, not "resolve" — there is no plot
-to resolve.
+ANTI-DEFAULT RULES: embodiment and wrongness_creep are the two trap-defaults —
+almost any premise CAN be rationalized as "be there in POV" or "make it get
+weirder". If you pick either, device_rationale must name which OTHER devices you
+ruled out and why. A transformation premise routed to embodiment is a routing
+failure even if fluently executed.
 
-Shape the three beats by the organizing_principle you chose:
-  - intimacy_zoom → opening = wide context, middle = a telling detail, closing =
-    extreme close-up. Same subject, the camera closer each beat.
-  - escalating_wrongness → opening = near-plausible, middle = clearly off, closing
-    = nightmare. The closing MAY be a single event beat (one end_keyframe) if a
-    transformation needs to complete on screen.
-  - sustained_mood → three near-equal calm beats of the same place/subject; vary
-    only framing and micro-motion, never the energy. Almost nothing happens — that
-    is correct, not a failure.
-  - facet_rotation → three independent angles/aspects of the subject, no spatial or
-    intensity ladder. Each beat stands alone; only the subject and mood connect them.
+THEN write device_rationale: one or two sentences naming the device and, for the
+two trap-defaults, the rule-outs.
+</device>
 
-Each shot has three prompt fields: a frozen start_keyframe (the still), a
-transition (the one motion that animates it), and — only for the rare event beat —
-an end_keyframe. No target model is fixed yet, so keep all three portable.
+<segments>
+Exactly THREE segments (the three `shots` entries), in chain order. Render
+mechanics you are writing for: a photoreal still is generated from segment 1's
+start_keyframe (the mood_anchor is appended at render); it is animated ~5s by
+segment 1's motion; the clip's LAST FRAME becomes segment 2's start image
+automatically; and so on. You only ever describe ONE image — everything after it
+is motion.
 
-START_KEYFRAME — the photoreal frozen frame the beat opens on. This is an IMAGE
-prompt, not a video prompt: describe a single frozen instant, never a movement.
-  - Lead with the camera: a named shot type (wide, medium, close-up, extreme
-    close-up, over-the-shoulder). VARY the shot type across the three beats — do
-    not frame three wides. Distinct framings make the montage read as motion; three
-    identical wides read as static. (intimacy_zoom makes this variation literal —
-    wide → detail → ECU; the other principles still vary framing, just not on a
-    zoom ladder.)
-  - Then the subject and its action FROZEN at one instant — a peak pose held still,
-    not a motion. Motion words ("erupting", "running", "shattering") produce a
-    motion-blurred, smeared still; freeze the instant instead ("tentacle reared at
-    its apex, water suspended mid-fall"). Movement belongs ONLY in transition.
-  - Name the lighting source and direction. Do NOT put the palette here — the
-    palette lives in mood_anchor (appended at render) so the three stills share one
-    grade. Keep start_keyframe about framing, subject, and light only.
-  - Favor authentic-capture cues (natural grain, practical light) over polish. Do
-    NOT use quality incantations ("masterpiece", "8K", "ultra-detailed",
-    "breathtaking") — they push toward the fake "AI look".
-  - Express scale with adjectives ONLY (colossal, monumental, towering, dwarfing
-    the frame). NEVER measure it against a real thing — not by size ("the size of
-    a school bus", "as big as a house"), and not by any dimension ("wider than a
-    cathedral", "taller than a lighthouse", "longer than a train"). The test: if
-    you named a real-world object, building, animal, or landmark to compare
-    against, you broke the rule. The image model reads the named thing as content
-    to spawn — "eye the size of a bus" fuses an actual bus to the eye, "trunk
-    wider than a cathedral" spawns a cathedral behind the tree. State the
-    magnitude with adjectives, never a thing to measure against.
-  - Vertical 9:16, short-form.
+SEGMENT 1 — the only start_keyframe. This frozen frame is the 3-second
+scroll-stop hook AND the world's establishing DNA (everything downstream
+inherits its subject, framing and light). Make it the strongest single image of
+the take. Lead with the camera (named shot type / POV), then the subject frozen
+at one instant, then the lighting source and direction. No palette words — the
+mood_anchor owns the grade. No motion words — movement belongs in motion fields.
+Express scale with adjectives ONLY (colossal, monumental, towering); never
+measure against a named real thing — the image model spawns the comparison
+("eye the size of a bus" fuses a bus into the frame). Vertical 9:16.
+Segments 2 and 3 must leave start_keyframe null — they begin on the previous
+clip's final frame automatically.
 
-TRANSITION — the ONE movement that animates the still over ~5 seconds. Pure motion,
-no style or palette words (those are already fixed by the still and mood_anchor).
-One move only — never stack moves.
-  - Still/idle beat: one small ambient move (slow push-in, pupil dilates, surface
-    shimmer, hair drifts in the wind).
-  - Event beat: the single A→B action the animator interpolates between the start
-    and end keyframes ("the tentacle descends and closes around the hull").
+MOTION (all three segments) — the one continuous movement animating that
+segment over ~5s. Pure motion, no style or palette words. One move only.
+SEAM RULE: end each motion with the action that OPENS the next segment's motion
+— the chain inherits momentum across the handoff, never a stall. Segment 3's
+motion ends the take deliberately (arrival, completion, or hold into black) —
+no hanging action.
 
-END_KEYFRAME — fill this ONLY for an event beat; leave it null otherwise. Use an
-event beat only when two things must visibly INTERACT, or the clip must reach a
-specific new end-state that animating a single still cannot invent (a tentacle
-gripping a boat, a hand catching a falling object). Most beats are NOT events: a
-beat that merely SHOWS something (the giant eye, the burning sky) is a still
-carried by the cut. Most vignettes have NO event beat at all — only
-escalating_wrongness typically needs one, at the closing, for a single
-transformation. Overusing them costs realism and money, and an event that spans a
-cut reintroduces the action-narrative trap. When in doubt, leave end_keyframe null.
-  - Write end_keyframe as the start_keyframe a moment LATER, with ONLY the action
-    advanced — same subject identity, same camera, same world. It is produced by
-    editing the start still, so describe a MINIMAL delta, not a new shot.
-  - Changing more than the action (a different angle, a different subject, a new
-    location) makes the start→end pair MORPH instead of move. Keep everything
-    identical except the one thing that acts.
+DEVELOPMENT RULE: across the three motions, the experience must ADVANCE — the
+journey progresses, the change proceeds, the wrongness deepens. If the three
+motions could be shuffled without the viewer noticing, you wrote postcards, not
+a take. Cause→effect WITHIN the take is legal and expected — this is one
+unbroken moment, bounded: one developing moment, not a 3-act plot. No dialogue
+scenes, no resolution obligation.
 
-MOOD-ANCHOR RULE — the montage glue. Write ONE mood_anchor describing the palette
-+ lighting + realism level + uncanny register, then repeat it VERBATIM as the
-mood_anchor of all three shots. It is appended to every start_keyframe (and
-end_keyframe) at render, so identical wording is what locks the three stills into
-one grade and makes them read as a single video. The three scenes MAY differ (this
-is a montage, not one continuous location) — but the TONE must not. Do not vary it
-shot to shot; copy it exactly.
-</shots>
+END_KEYFRAME (optional, any segment) — a target frame when the segment must
+REACH a specific visual state (a transformation step, a time state, an
+interaction completing). Written as the segment's start state moments later
+with ONLY the action advanced — same world, same camera; it is produced by
+image-editing the inherited frame, so describe a minimal delta. Most segments
+don't need one; transformation and time_compression almost always need at least
+one. mood_anchor is appended to end_keyframes at render too.
+
+MOOD_ANCHOR (one per package) — palette + lighting + realism level + uncanny
+register. Appended at render to the opening still and every end_keyframe. Favor
+authentic-capture cues (natural grain, practical light); never quality
+incantations ("masterpiece", "8K", "breathtaking").
+</segments>
 
 <onscreen_text>
 The text overlays, in display order. Lead with a scroll-stopping hook overlay on
-SHOT 1 — it carries the first-3-seconds hook. Keep each string short and punchy.
+SEGMENT 1 — it carries the first-3-seconds hook. Keep each string short and punchy.
 Return an empty list only if the video genuinely has no overlays.
 </onscreen_text>
 
@@ -226,8 +193,9 @@ spoken track" by design — do not invent narration to fill the field.
 
 <rationale>
 One or two sentences naming which mechanics you pulled from the winners, how you
-transferred them onto the premise, and how the three beats cohere under the chosen
-organizing_principle (NOT as a story). For debugging and eval.
+transferred them onto the premise, and how the three segments develop the take
+under the chosen device (one continuous experience, not a montage). For debugging
+and eval.
 </rationale>
 
 <grounding_hit_ids>
@@ -240,19 +208,18 @@ Do not populate this; the system sets provenance itself.
   - Use the target Blueprint's mechanics and aesthetic; honor its niche.
   - Originality is mandatory — no reused topics or phrasings from the source
     examples; the premise is the only topic.
-  - Pick exactly ONE organizing_principle from the closed menu and write all three
-    beats to obey it; justify the pick in principle_rationale.
-  - Exactly three shots; the three mood_anchor strings must be identical.
-  - The three beats are NOT a story. No cause→effect may span a cut. A viewer must
-    never need to have seen what happened BETWEEN two beats. If beat N's meaning
-    depends on an event the viewer did not see, you wrote an action-narrative —
-    rewrite it as three independent atmospheric beats of the subject.
-  - Each shot is ONE frozen still animated by ONE motion over ~5 seconds; the three
-    cohere by principle + shared mood, not by plot. Use an end_keyframe only for a
-    genuine on-screen interaction / new end-state — most beats are stills carried
-    by the cut.
-  - Write for vertical short-form; assume sound-on, but design the hook to land
-    even when muted.
+  - Pick exactly ONE device from the closed menu; justify it in device_rationale
+    (with rule-outs if it is a trap-default).
+  - Exactly three segments. Only segment 1 has a start_keyframe. The take is
+    continuous: no cuts, no teleports, no new scenes — each motion ends where
+    the next begins (seam rule).
+  - The take must DEVELOP. A static take where the three motions are
+    interchangeable is the named failure. Cause→effect within the take is
+    required, bounded to one developing moment — not a 3-act plot.
+  - Use an end_keyframe only when the segment must reach a specific new state;
+    describe it as a minimal delta on the inherited frame.
+  - Write for vertical short-form; assume sound-on, but segment 1's opening
+    frame + first motion must hook even when muted.
 </constraints>
 """
 
@@ -351,9 +318,9 @@ class ContentWriter:
 
         Args:
             premise: The user's "what if X were real" concept seed — the idea the
-                writer develops across the 3-shot montage. v1 hand-feeds it so the
-                test isolates structure from concept-invention; auto-generating the
-                premise is v2.
+                writer develops across the 3-segment chained take. v1 hand-feeds it
+                so the test isolates structure from concept-invention; auto-generating
+                the premise is v2.
 
         Raises:
             ValueError: if hits is empty — generation must be grounded.
