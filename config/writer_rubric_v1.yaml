@@ -1,78 +1,43 @@
 # config/writer_rubric_v1.yaml
 # ---------------------------------------------------------------------------
-# v1 LLM-judge rubric: 4 anchored judgment dimensions for the P3 writer.
-# Loaded by WriterJudge (Opus) -> scores each ContentPackage 1-5 per dimension.
-# Source of truth for the anchors = resources/doctrine_sheet.md (the taste anchor).
-# Each anchor (1 / 3 / 5) is a concrete sentence describing what that score LOOKS
-# like, citing a doctrine ✅/❌ example.
+# v1 LLM-judge rubric for the CHAINED-CONTINUITY writer (journey doctrine).
+# 4 anchored dimensions, scored 1-5 by WriterJudge (Opus).
+# Re-derived 2026-06-10 against the chain spec — the old vignette-era anchors
+# (anti-causal) are inverted: development is now REQUIRED.
 #
-# ANCHOR-WRITING RULES (make-or-break — spec §7):
-#   * Keep `question` + anchors at the OUTCOME level ("is the prose specific?"),
-#     NOT the INSTRUCTION level ("did the writer include sensory words?").
-#     Instruction-level just re-checks conformance — that is the v0 regex trap.
-#   * vividness = PROSE SPECIFICITY, not scene energy. A calm sustained_mood beat
-#     where "almost nothing happens" can still score 5. Spell this out so the
-#     judge never punishes low energy.
-#   * principle_execution anchors MUST encode the SELECTION CAP: a 5 requires the
-#     organizing_principle was APPROPRIATE for the premise AND well-executed. If
-#     the premise clearly called for a different principle (per the writer's
-#     routing tree, src/generation/content_writer.py:84-106 — transformation→
-#     escalating_wrongness, place→sustained_mood, tour→facet_rotation, and
-#     intimacy_zoom is LAST-RESORT only), the anchor text CAPS the score at 2 no
-#     matter how fluent the execution.
-#
-# Anchor levels (Likert convention, not taste): 1 = fails the dimension,
-# 3 = partial / mixed, 5 = exemplary.
+# ANCHOR RULES (unchanged):
+#   * Outcome level, not instruction level.
+#   * vividness = PROSE SPECIFICITY, not energy.
+#   * device_execution carries the SELECTION CAP: wrong device for the premise
+#     caps at 2 regardless of fluency (routing tree:
+#     src/generation/content_writer.py <device> block).
 # ---------------------------------------------------------------------------
 
 dimensions:
   - id: premise_fidelity
-    # Draft question (editable): does the package realize the premise's actual
-    # subject and intent — the right thing, recognizably — rather than drifting
-    # to an adjacent or generic subject?
-    # Doctrine feed: F1 (subject consistency). Kit coverage is THIN here — most
-    # of this dimension's taste must come from you, not the sheet.
     question: "Does the package realize the premise's actual subject and intent — recognizably the thing asked for — rather than drifting to an adjacent or generic subject?"
     anchors:
-      1: "Renders a different or generic subject than the premise names — the specific thing asked for is absent, swapped for a stock version, or unrecognizable across the three beats."
-      3: "The right subject is present but drifts — recognizable in some beats, generic or identity-inconsistent in others (the look shifts shot-to-shot, or the premise's specific intent is diluted to a generic version)."
-      5: "Every beat is unmistakably the premise's subject and intent — one stable identity held across all three beats, the specific thing asked for, no drift or generic substitution."
+      1: "Renders a different or generic subject than the premise names — the specific thing asked for is absent, swapped for a stock version, or abandoned partway through the take."
+      3: "The right subject is present but diluted — the premise's specific intent fades across the take, or the world drifts generic between the opening frame and the final segment."
+      5: "The whole take is unmistakably the premise's subject and intent — the opening frame establishes the specific thing asked for and every segment stays inside that world."
 
-  - id: convergence
-    # Draft question (editable): do the three beats build into one coherent piece
-    # (an arc, or a deliberately held mood) rather than three unrelated shots?
-    # Doctrine feed: C1 (establish→turn→release), C2 (causal link), C3 (beats
-    # resolve / explicit endpoint). NOTE: "coherent" includes a held mood —
-    # sustained_mood's three near-identical calm beats ARE convergence, not a
-    # failure to build.
-    question: "Do the three beats build into one coherent piece — an arc, or a deliberately held mood — rather than three unrelated shots side by side?"
+  - id: development
+    question: "Does the continuous take DEVELOP — each segment advancing one same experience toward somewhere — rather than holding a static state or splintering into disconnected scenes?"
     anchors:
-      1: "Three disconnected shots — no arc and no shared mood; reordering them changes nothing, and at least one beat has a stalled, hanging action that never resolves."
-      3: "Loosely connected — a weak through-line or mood, but a beat or two feels arbitrary, or the arc does not land (a turn with no setup, or a mood that wobbles in energy)."
-      5: "One coherent piece — either a clear establish-turn-release arc with causal links between beats, OR a deliberately held single mood (sustained_mood's near-identical calm beats count fully here); every beat resolves, none hangs."
+      1: "Static or splintered — the three motions are interchangeable postcards (nothing advances; shuffling them changes nothing), OR a segment opens somewhere the previous motion could not have delivered it (a hidden cut / teleport breaking the chain)."
+      3: "Advances but stutters — a real through-line exists, yet one segment stalls (marks time without advancing) or a seam jars (a motion ends in a state the next motion ignores)."
+      5: "One unbroken developing moment — every motion advances the same experience, every seam hands off momentum (each motion ends where the next begins), and the final segment lands a deliberate ending; the take reads as one journey, not three clips."
 
-  - id: principle_execution
-    # Draft question (editable): did the package execute its chosen
-    # organizing_principle well AND was that principle the appropriate choice
-    # for this premise?
-    # Doctrine feed: P1 (one move / 1-2 actions), P2 (coherent aesthetic).
-    # >>> SELECTION CAP applies here (see header rule). A wrong-principle pick
-    #     caps at 2 even if executed fluently. <<<
-    question: "Did the package execute its chosen organizing_principle well AND was that principle the appropriate choice for this premise?"
+  - id: device_execution
+    question: "Did the package execute its chosen device well AND was that device the appropriate routing for this premise?"
     anchors:
-      1: "Wrong principle for the premise — e.g. intimacy_zoom on a transformation premise that needed escalating_wrongness; a wrong pick caps at 2 or below no matter how fluent the prose. Also covers a fitting principle botched badly (stacked camera moves, contradictory look)."
-      3: "Appropriate principle, but sloppy execution — clutter, more than one camera move in a beat, or a contradictory aesthetic that cancels (like '8mm grain' plus '4K ultra-sharp')."
-      5: "Appropriate principle for the premise AND disciplined execution — one camera move per beat, 1-2 key actions, a single coherent aesthetic; if intimacy_zoom, the rationale earns it by ruling out the other three principles first."
+      1: "Wrong device for the premise — e.g. a becoming-premise routed to embodiment instead of transformation, or a trap-default (embodiment / wrongness_creep) chosen with no rule-out; a wrong pick caps at 2 no matter how fluent. Also covers a fitting device botched (the device's signature never appears on screen)."
+      3: "Appropriate device, sloppy execution — the device's signature is present but diluted (a transformation whose change mostly happens off-screen between segments; an encounter whose second presence barely registers; a reveal telegraphed in segment 1)."
+      5: "Appropriate device AND disciplined execution — the device's signature carries the take (the change lands on screen via end_keyframes; the reveal recontextualizes late; the scale keeps dawning), and a trap-default pick earns itself with explicit rule-outs."
 
   - id: vividness
-    # Draft question (editable): does the keyframe prose use specific, concrete
-    # sensory detail (subject, light, texture, body) — INDEPENDENT of how much
-    # action there is?
-    # Doctrine feed: V1 (emotion externalized), V2 (specific verbs), V3 (named
-    # light source), V4 (tactile detail), V5 (impossible grounded in physics).
-    # >>> Define vividness as PROSE SPECIFICITY, not energy (see header rule). <<<
-    question: "Does the keyframe prose use specific, concrete sensory detail (subject, light, texture, body) — independent of how much action there is?"
+    question: "Does the keyframe and motion prose use specific, concrete sensory detail (subject, light, texture, body) — independent of how much action there is?"
     anchors:
-      1: "Prose leans on abstract vibe-words that name a feeling but give the renderer nothing to draw — like 'dramatic lighting', 'she looks sad', or 'epic scene'."
-      3: "A mix — some concrete detail (a named light source or one tactile element) but still padded with generic verbs or mood-words; the frame is only partly drawable from the words."
-      5: "Concrete throughout — specific verbs not generic ones, a named light source not a mood-word, at least one tactile detail (steam, sweat, fabric), emotion shown in the body not stated; the frame is fully drawable from words alone, even when the beat is calm."
+      1: "Prose leans on abstract vibe-words that name a feeling but give the renderer nothing to draw — 'dramatic lighting', 'it gets scarier', 'epic chase'."
+      3: "A mix — the opening frame is concrete (named light source, one tactile element) but the motions go generic ('moves forward', 'things change'), or vice versa; only part of the take is drawable from the words."
+      5: "Concrete throughout — specific verbs, a named light source, tactile detail in the opening frame AND motions that name exactly what moves and how ('mandibles lock over the crystal', not 'a fight happens'); the whole take is drawable from words alone, even when calm."

@@ -60,26 +60,26 @@ def _fake_verdicts() -> list[PackageVerdict]:
     judge_scorecard aggregation without an LLM.
 
     vividness scores across the three verdicts are 2, 4, 3  -> mean 3.0
-    convergence scores are 5, 5, 5                          -> mean 5.0
+    development scores are 5, 5, 5                           -> mean 5.0
     The vividness=2 in the first verdict is the planted failure (<= 2).
     """
     return [
         PackageVerdict(
             scores=[
                 DimensionScore(dimension="vividness", score=2, reason="generic prose"),
-                DimensionScore(dimension="convergence", score=5, reason="beats converge"),
+                DimensionScore(dimension="development", score=5, reason="take advances"),
             ]
         ),
         PackageVerdict(
             scores=[
                 DimensionScore(dimension="vividness", score=4, reason="specific imagery"),
-                DimensionScore(dimension="convergence", score=5, reason="beats converge"),
+                DimensionScore(dimension="development", score=5, reason="take advances"),
             ]
         ),
         PackageVerdict(
             scores=[
                 DimensionScore(dimension="vividness", score=3, reason="some texture"),
-                DimensionScore(dimension="convergence", score=5, reason="beats converge"),
+                DimensionScore(dimension="development", score=5, reason="take advances"),
             ]
         ),
     ]
@@ -100,11 +100,11 @@ def test_render_for_judge_includes_premise_and_shots():
 def test_judge_scorecard():
     verdicts = _fake_verdicts()
     means, low_scores = judge_scorecard(verdicts)
-    assert means["vividness"] == 3.0 
-    assert means["convergence"] == 5.0
+    assert means["vividness"] == 3.0
+    assert means["development"] == 5.0
     flagged_dims = [s.dimension for s in low_scores]
     assert "vividness" in flagged_dims
-    assert "convergence" not in flagged_dims
+    assert "development" not in flagged_dims
 
 
 def test_device_distribution():
