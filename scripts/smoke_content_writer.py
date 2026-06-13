@@ -5,8 +5,8 @@ Runs write() once per premise in PREMISES (4 stratified what-if premises, one
 per axis: creature / environment / transformation / scale) against real DB rows
 + a real Sonnet call each, and prints a human-readable arc dump per premise for
 eyeballing against the 4-failure rubric. Not an eval, not a gate — just "does it
-produce coherent montages across premises, and where does it fail". Delete after
-use.
+produce coherent chained takes across premises, and where does it fail". Delete
+after use.
 
 Stratifying across 4 premises (not 1) is deliberate: a single premise cannot
 reveal whether the writer overfits one template — only a spread exposes
@@ -146,46 +146,51 @@ def main() -> None:
 
         writer = ContentWriter()
 
-        chosen_principles: list[str] = []
+        chosen_devices: list[str] = []
+
+        slot_labels = ("OPENING", "MIDDLE", "CLOSING")
 
         for premise in PREMISES:
             package = writer.write(candidate, hits, db, premise)
-            chosen_principles.append(package.organizing_principle)
+            chosen_devices.append(package.device)
 
-            # Human-readable arc dump — surface only the fields the 4-failure
-            # rubric needs (3 labeled shots + the shared mood-anchor + overlays
-            # + caption). Skip braces/hashtags/grounding_ids/rationale: noise for
-            # the read. mood_anchor is contracted identical across shots, so it
-            # prints once.
+            # Human-readable arc dump — surface only the fields the rubric needs
+            # (3 labeled chained segments + the package mood-anchor + overlays +
+            # caption). Skip braces/hashtags/grounding_ids/rationale: noise for the
+            # read. mood_anchor is package-level (one grade for the whole take), so
+            # it prints once.
             print("=" * 70)
             print(f"PREMISE: {premise}")
-            print(f"PRINCIPLE: {package.organizing_principle}  —  {package.principle_rationale}")
-            print(f"MOOD-ANCHOR: {package.shots[0].mood_anchor}")
+            print(f"DEVICE: {package.device}  —  {package.device_rationale}")
+            print(f"MOOD-ANCHOR: {package.mood_anchor}")
             print("-" * 70)
-            for shot in package.shots:
-                # end_keyframe printed even when absent (as a marker) so the read
-                # shows which beats are events vs stills at a glance.
-                end = shot.end_keyframe if shot.end_keyframe is not None else "— (still beat)"
-                print(f"[{shot.beat_position.upper()}]")
-                print(f"  START:  {shot.start_keyframe}")
-                print(f"  MOTION: {shot.transition}")
+            for slot, shot in zip(slot_labels, package.shots):
+                # start_keyframe prints only on segment 1 (the only generated still);
+                # segments 2-3 inherit the prior clip's last frame. end_keyframe
+                # printed even when absent (as a marker) so the read shows which
+                # segments reach a target state vs ride pure motion.
+                start = shot.start_keyframe if shot.start_keyframe is not None else "— (inherits prior clip's last frame)"
+                end = shot.end_keyframe if shot.end_keyframe is not None else "— (no end-state)"
+                print(f"[{slot}]")
+                print(f"  START:  {start}")
+                print(f"  MOTION: {shot.motion}")
                 print(f"  END:    {end}\n")
             print(f"OVERLAYS: {package.onscreen_text}")
             print(f"CAPTION:  {package.caption}")
             print("=" * 70 + "\n")
 
-        # Cross-premise principle-variety check — the anti-monotony guard being
+        # Cross-premise device-variety check — the anti-monotony guard being
         # exercised. A single premise cannot reveal a template; only the spread can.
-        # If all 4 premises collapse to one principle, the writer is defaulting to a
+        # If all 4 premises collapse to one device, the writer is defaulting to a
         # habit instead of letting the premise drive the pick — that is the monotony
-        # failure (finding #4) resurfacing, so shout it. This is a printed diagnostic
-        # for the human, not an assertion.
-        distinct = set(chosen_principles)
+        # failure resurfacing, so shout it. This is a printed diagnostic for the
+        # human, not an assertion.
+        distinct = set(chosen_devices)
         print("#" * 70)
-        print(f"PRINCIPLE PICKS (in premise order): {chosen_principles}")
-        print(f"DISTINCT PRINCIPLES: {sorted(distinct)}  ({len(distinct)} of {len(chosen_principles)})")
+        print(f"DEVICE PICKS (in premise order): {chosen_devices}")
+        print(f"DISTINCT DEVICES: {sorted(distinct)}  ({len(distinct)} of {len(chosen_devices)})")
         if len(distinct) == 1:
-            print(">>> MONOTONY WARNING: all premises chose the same principle. "
+            print(">>> MONOTONY WARNING: all premises chose the same device. "
                   "The pick is not tracking the premise — iterate the prompt.")
         print("#" * 70)
 

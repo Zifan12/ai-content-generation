@@ -23,27 +23,29 @@ def _render(package: ContentPackage) -> str:
     """
     Render a ContentPackage to a flat string for the pairwise judge.
 
-    The organizing_principle + rationale lead (how the beats are meant to cohere),
-    then the 3-shot vignette montage in beat order (opening → middle → closing):
-    each shot emits its start_keyframe (the still) then its transition (the motion),
-    plus its end_keyframe when the beat is an event (a still beat has none). Fields
-    stay grouped by shot so the judge reads each beat's frame + motion together, not
-    all frames then all motions. After the shots come the overlays, caption,
-    hashtags, and optional voiceover. mood_anchor is omitted (identical across shots
-    — no comparative signal for the judge).
+    The device + rationale lead (the creative treatment driving the take), then the
+    3 chained segments in chain order (opening → middle → closing): segment 1 emits
+    its start_keyframe (the only generated still) then its motion; segments 2-3 have
+    no start_keyframe (they inherit the previous clip's last frame), so they emit
+    only motion, plus an end_keyframe when the segment must reach a specific state.
+    Fields stay grouped by segment so the judge reads each segment's frame + motion
+    together, not all frames then all motions. After the segments come the overlays,
+    caption, hashtags, and optional voiceover. mood_anchor is omitted (package-level,
+    one grade for the whole take — no comparative signal for the judge).
     """
 
     parts = []
 
-    # The organizing principle leads — it tells the judge how the three vignette
-    # beats are meant to cohere (zoom / wrongness / mood / facets), so the beats are
-    # read against their own intent rather than as a (non-existent) plot.
-    parts.append(f"organizing_principle: {package.organizing_principle}")
-    parts.append(f"principle_rationale: {package.principle_rationale}")
+    # The device leads — it tells the judge the creative treatment the take is built
+    # on (embodiment / transformation / reveal / ...), so the segments are read
+    # against their own intent rather than as a generic montage.
+    parts.append(f"device: {package.device}")
+    parts.append(f"device_rationale: {package.device_rationale}")
 
     for shot in package.shots:
-        parts.append(shot.start_keyframe)
-        parts.append(shot.transition)
+        if shot.start_keyframe is not None:
+            parts.append(shot.start_keyframe)
+        parts.append(shot.motion)
         if shot.end_keyframe is not None:
             parts.append(shot.end_keyframe)
 

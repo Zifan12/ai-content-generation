@@ -26,7 +26,7 @@ MODES
   --judge          v1 LLM-judge tier: score each package on the 4 anchored
                    rubric dimensions via WriterJudge (Opus), then print the
                    mean-score scorecard, low-score receipts, and the
-                   principle_distribution monotony readout. Combine with
+                   device_distribution monotony readout. Combine with
                    --rescore to judge a saved smoke dump (pay judge calls only,
                    not generation). NOT compatible with --all: golden targets
                    carry no premise, and the judge needs premise + package.
@@ -64,7 +64,7 @@ from src.providers.llm.anthropic_llm import AnthropicLLM  # noqa: E402
 from src.schemas.generation import ContentPackage  # noqa: E402
 from src.generation.content_writer import SYSTEM_PROMPT, build_naked_envelope  # noqa: E402
 from src.miner.schemas import BlueprintCandidate, MinerEvidence  # noqa: E402
-from src.evals.rubric_eval import scorecard, judge_scorecard, principle_distribution  # noqa: E402
+from src.evals.rubric_eval import scorecard, judge_scorecard, device_distribution  # noqa: E402
 from src.evals.writer_judge import WriterJudge, PackageVerdict  # noqa: E402
 from src.evals.package_view import render_for_judge  # noqa: E402
 
@@ -77,8 +77,8 @@ MAX_TOKENS = 2048
 
 # Four stratified what-if premises, one per axis (creature / environment /
 # transformation / scale) — the same spread scripts.smoke_content_writer uses, so
-# the scorecard sees varied structures (different organizing_principles), not one
-# template repeated. A single premise cannot reveal cross-premise mechanical habits.
+# the scorecard sees varied structures (different devices), not one template
+# repeated. A single premise cannot reveal cross-premise mechanical habits.
 PREMISES = [
     "Footage of Kraken appearing in the pacific ocean",
     "POV: Someone exploring and found the Yggdrasil",
@@ -290,8 +290,8 @@ def dump_verdicts(
 def print_judge_scorecard(means: dict, low_scores: list, distribution: dict) -> None:
     """
     Print the v1 judge scorecard: per-dimension mean scores (worst first), every
-    low-score receipt with the judge's reason, and the organizing_principle
-    distribution (the run-level monotony alarm the per-package judge cannot see).
+    low-score receipt with the judge's reason, and the device distribution (the
+    run-level monotony alarm the per-package judge cannot see).
     """
     print("\n" + "=" * 70)
     print("RUBRIC v1 JUDGE SCORECARD (Opus, anchored 1-5)")
@@ -307,9 +307,9 @@ def print_judge_scorecard(means: dict, low_scores: list, distribution: dict) -> 
         for ds in low_scores:
             print(f"  [{ds.dimension} = {ds.score}] {ds.reason}")
 
-    print("\nORGANIZING-PRINCIPLE DISTRIBUTION (monotony check):")
-    for principle, count in sorted(distribution.items(), key=lambda kv: -kv[1]):
-        print(f"  {count}x  {principle}")
+    print("\nDEVICE DISTRIBUTION (monotony check):")
+    for device, count in sorted(distribution.items(), key=lambda kv: -kv[1]):
+        print(f"  {count}x  {device}")
     print("=" * 70)
 
 
@@ -336,7 +336,7 @@ def main() -> None:
             verdict_path = dump_verdicts(packages, PREMISES, verdicts, source=args.rescore)
             print(f"\n[verdicts saved] {verdict_path}")
             means, low_scores = judge_scorecard(verdicts)
-            print_judge_scorecard(means, low_scores, principle_distribution(packages))
+            print_judge_scorecard(means, low_scores, device_distribution(packages))
             return
         print(f"Re-scoring {len(packages)} packages from {args.rescore} (no LLM calls).")
         rates, failures = scorecard(packages)
@@ -365,7 +365,7 @@ def main() -> None:
         verdict_path = dump_verdicts(packages, PREMISES, verdicts, source=str(dump_path))
         print(f"\n[verdicts saved] {verdict_path}")
         means, low_scores = judge_scorecard(verdicts)
-        print_judge_scorecard(means, low_scores, principle_distribution(packages))
+        print_judge_scorecard(means, low_scores, device_distribution(packages))
         return
 
     rates, failures = scorecard(packages)

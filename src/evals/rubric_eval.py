@@ -87,7 +87,14 @@ def judge_scorecard(verdicts: list[PackageVerdict]) -> tuple:
     return means, low_scores
 
 
-def principle_distribution(packages: list[ContentPackage]) -> dict:
-    
-    principles = [p.organizing_principle for p in packages]
-    return Counter(principles)
+def device_distribution(packages: list[ContentPackage]) -> dict:
+    """
+    Tally the chosen device across many packages — the run-level monotony alarm.
+
+    Each package carries exactly one `device` (the closed 7-menu pick); counting
+    them across a run surfaces the failure no per-package check can see: the writer
+    collapsing every premise onto one device (the trap-default habit). Returns a
+    Counter mapping device -> number of packages that chose it.
+    """
+    devices = [p.device for p in packages]
+    return Counter(devices)
