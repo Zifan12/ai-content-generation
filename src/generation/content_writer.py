@@ -143,6 +143,9 @@ clip's final frame automatically.
 
 MOTION (all three segments) — the one continuous movement animating that
 segment over ~5s. Pure motion, no style or palette words. One move only.
+If a motion is fast, name the ONE element that moves fast — never the frame as a
+whole; an unqualified "fast" makes the renderer accelerate everything at once and
+the segment jitters.
 SEAM RULE: end each motion with the action that OPENS the next segment's motion
 — the chain inherits momentum across the handoff, never a stall. Segment 3's
 motion ends the take deliberately (arrival, completion, or hold into black) —
@@ -163,10 +166,12 @@ image-editing the inherited frame, so describe a minimal delta. Most segments
 don't need one; transformation and time_compression almost always need at least
 one. mood_anchor is appended to end_keyframes at render too.
 
-MOOD_ANCHOR (one per package) — palette + lighting + realism level + uncanny
-register. Appended at render to the opening still and every end_keyframe. Favor
-authentic-capture cues (natural grain, practical light); never quality
-incantations ("masterpiece", "8K", "breathtaking").
+MOOD_ANCHOR (one per package) — palette, lighting, realism level, and uncanny
+register. Lighting carries the most quality signal of any element here, so make
+it concrete: name the source, its direction, and its quality (hard/soft,
+warm/cold), not just a named grade. Appended at render to the opening still and
+every end_keyframe. Favor authentic-capture cues (natural grain, practical
+light); never quality incantations ("masterpiece", "8K", "breathtaking").
 </segments>
 
 <onscreen_text>
@@ -220,6 +225,11 @@ Do not populate this; the system sets provenance itself.
     describe it as a minimal delta on the inherited frame.
   - Write for vertical short-form; assume sound-on, but segment 1's opening
     frame + first motion must hook even when muted.
+  - Write what is visibly on screen. A word that names a feeling instead of a
+    visible thing gives the renderer nothing to draw, so it guesses — and guesses
+    wrong. Cut empty adjectives (epic, amazing, beautiful, stunning) from every
+    keyframe and motion; replace each with the concrete subject, light, or action
+    it was standing in for.
 </constraints>
 """
 
