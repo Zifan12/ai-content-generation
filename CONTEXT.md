@@ -16,6 +16,45 @@ Two tiers:
 - **Universal mechanics** — niche-agnostic fields (hook type, pacing, loop quality, etc.)
 - **Niche-conditional** — fields that depend on `niche_label`, plus free-text `aesthetic_descriptors: list[str]` and free-string `niche_label: str` metadata.
 
+## Content Writer (P3)
+
+The generation-side counterpart to the Blueprint extractor: turns a target
+BlueprintCandidate + RAG-retrieved viral neighbors into a validated ContentPackage
+(`src/generation/content_writer.py`, schema `src/schemas/generation.py`).
+
+Paradigm = **chained continuity** (design 2026-06-10): one video is ONE continuous ~15s
+take built as one photoreal opening still animated through three ~5s motion segments,
+each segment beginning on the previous clip's extracted last frame — no cuts, no
+teleports. Replaces the retired vignette-montage paradigm (independent stills, "no
+cause→effect across a cut"), which the 2026-06-10 render taste test falsified.
+
+Key fields: a **device** (closed 7-menu — embodiment, transformation, scale_traversal,
+encounter, reveal, wrongness_creep, time_compression — routed from the premise; replaces
+the old organizing_principle); per-segment **motion**; segment 1's **start_keyframe** (the
+only generated still); optional per-segment **end_keyframe** (for devices that must land a
+visual state on screen, e.g. transformation); one package-level **mood_anchor** (palette +
+lighting + realism, appended verbatim at render to every generated frame). The chain
+contract (opener carries start_keyframe, inheritors must not) is enforced by a Pydantic
+model_validator, not the prompt.
+
+## Writer eval (rubric v1)
+
+Two-tier evaluation of writer output (`src/evals/`, driver `scripts/run_rubric_eval.py`):
+
+- **Code-checks (free):** deterministic per-package rules — no_scale_comparison,
+  no_quality_incantations, no_palette_in_keyframes, no_style_words_in_motion,
+  device_requires_event_beat (transformation/time_compression must carry an end_keyframe).
+- **LLM judge (paid, Opus):** 4 anchored 1-5 dimensions in `config/writer_rubric_v1.yaml`
+  — premise_fidelity, development (inverted for the chain: development is now MANDATORY),
+  device_execution (carries the device-routing cap), vividness.
+
+Status (2026-06-14, Task 7 e2e verified): pipeline runs end-to-end on the chain grammar —
+4/4 premises route to distinct devices, 5/5 code-checks pass, paid judge runs clean.
+KNOWN GAP: the v1 judge scored all packages 5.00/5.00 with honest but undiscriminating
+verdicts (anchors top out at "correct"; test set had no trap premises). Judge calibration
++ a negative-control probe are DEFERRED to a dedicated calibration plan. See
+`docs/learnings/2026-06-08-rubric-v1.md` Finding 2.
+
 ## Niche
 
 A named bundle of seed hashtags + keywords used for scraping a content category. Stored as a row in the `niches` table with fields: `name`, `keywords`, `hashtag_seeds`, `is_active`. Attached as a free-string `niche_label` on extracted Blueprints for filtering and retrieval.
