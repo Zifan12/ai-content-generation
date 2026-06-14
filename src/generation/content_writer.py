@@ -19,6 +19,14 @@ from src.schemas.generation import ContentPackage
 from src.miner.schemas import BlueprintCandidate
 from src.providers.llm.anthropic_llm import AnthropicLLM
 
+# A full chained-continuity ContentPackage is large — 3 segments each with
+# keyframe(s) + motion prose, plus device_rationale, mood_anchor, overlays,
+# caption, hashtags, optional voiceover, rationale. The shared LLM default
+# (1024) truncates it mid-JSON; the longest case (a transformation with an
+# end_keyframe on every segment) needs real headroom. Writer-owned so raising
+# it never touches the judge or extractor, which share the same parse() default.
+WRITER_MAX_TOKENS = 8192
+
 SYSTEM_PROMPT = """\
 <role>
 You are a short-form vertical-video creative director for TikTok. You turn a
@@ -342,7 +350,7 @@ class ContentWriter:
         hydrate_hits = _hydrate_hits(hits, db)
         envelope = build_envelope(candidate, hydrate_hits, premise)
 
-        package = self.llm.parse(envelope, ContentPackage, system=SYSTEM_PROMPT)
+        package = self.llm.parse(envelope, ContentPackage, system=SYSTEM_PROMPT, max_tokens=WRITER_MAX_TOKENS)
 
         package.grounding_hit_ids = [h.content_item_id for h in hits]
 
