@@ -67,6 +67,7 @@ from src.miner.schemas import BlueprintCandidate, MinerEvidence  # noqa: E402
 from src.evals.rubric_eval import scorecard, judge_scorecard, device_distribution  # noqa: E402
 from src.evals.writer_judge import WriterJudge, PackageVerdict  # noqa: E402
 from src.evals.package_view import render_for_judge  # noqa: E402
+from src.evals.judge_fixture import load_judge_fixtures  # noqa: E402
 
 WRITER_MODEL = "claude-sonnet-4-6"
 GOLDEN_PATH = Path("data/golden/generation_targets.jsonl")
@@ -322,6 +323,9 @@ def main() -> None:
     parser.add_argument("--judge", action="store_true",
                         help="v1 LLM-judge tier: one PAID Opus call per package; "
                              "combine with --rescore to skip generation cost")
+    parser.add_argument("--fixtures", metavar="PATH",
+                        help="judge a {premise, package} fixture JSONL (premise rides in the row, "
+                             "not the hardcoded PREMISES list); PAID Opus, one call per row")
     args = parser.parse_args()
 
     if args.judge and args.all:
@@ -341,6 +345,18 @@ def main() -> None:
         print(f"Re-scoring {len(packages)} packages from {args.rescore} (no LLM calls).")
         rates, failures = scorecard(packages)
         print_scorecard(rates, failures)
+        return
+
+    if args.fixtures:
+        pairs = load_judge_fixtures(Path(args.fixtures))
+        premises, packages = zip(*pairs)
+        print(f"Judging {len(packages)} fixture(s) from {args.fixtures} "
+              f"({len(packages)} PAID Opus call(s); premise rides in each row).")
+        verdicts = judge_packages(packages, premises)
+        verdict_path = dump_verdicts(packages, premises, verdicts, source=args.fixtures)
+        print(f"\n[verdicts saved] {verdict_path}")
+        means, low_scores = judge_scorecard(verdicts)
+        print_judge_scorecard(means, low_scores, device_distribution(packages))
         return
 
     llm = AnthropicLLM(model=WRITER_MODEL)
