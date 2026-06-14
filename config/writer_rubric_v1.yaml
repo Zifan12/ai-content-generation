@@ -38,6 +38,6 @@ dimensions:
   - id: vividness
     question: "Does the keyframe and motion prose use specific, concrete sensory detail (subject, light, texture, body) — independent of how much action there is?"
     anchors:
-      1: "Prose leans on abstract vibe-words that name a feeling but give the renderer nothing to draw — 'dramatic lighting', 'it gets scarier', 'epic chase'."
+      1: "Prose leans on abstract vibe-words that name a feeling but give the renderer nothing to draw — 'dramatic lighting', 'it gets scarier', 'epic chase' — or describes speed/chaos without naming the single element that moves ('fast chaotic motion', 'everything moving fast')."
       3: "A mix — the opening frame is concrete (named light source, one tactile element) but the motions go generic ('moves forward', 'things change'), or vice versa; only part of the take is drawable from the words."
       5: "Concrete throughout — specific verbs, a named light source, tactile detail in the opening frame AND motions that name exactly what moves and how ('mandibles lock over the crystal', not 'a fight happens'); the whole take is drawable from words alone, even when calm."
