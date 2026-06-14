@@ -85,17 +85,14 @@ def _fake_verdicts() -> list[PackageVerdict]:
     ]
 
 
-def test_render_for_judge_includes_premise_and_shots():
-    """Every field a dimension needs to grade must survive into the brief: premise, organizing_principle, each start_keyframe."""
+def test_render_for_judge_chain_structure():
     package = baseline_package()
-    premise = "HYDRA"
-    render_text = render_for_judge(premise, package)
+    brief = render_for_judge("tests", package)
 
-    assert "HYDRA" in render_text
-    assert package.organizing_principle in render_text
-    assert all(s.start_keyframe in render_text for s in package.shots)
-
-
+    assert brief.count("MOOD ANCHOR:") == 1
+    assert "--- SEGMENT 2" in brief
+    assert "(starts on segment 1's final frame)" in brief
+    assert brief.count("Start keyframe:") == 1
 
 def test_judge_scorecard():
     verdicts = _fake_verdicts()
