@@ -48,12 +48,19 @@ Two-tier evaluation of writer output (`src/evals/`, driver `scripts/run_rubric_e
   — premise_fidelity, development (inverted for the chain: development is now MANDATORY),
   device_execution (carries the device-routing cap), vividness.
 
-Status (2026-06-14, Task 7 e2e verified): pipeline runs end-to-end on the chain grammar —
-4/4 premises route to distinct devices, 5/5 code-checks pass, paid judge runs clean.
-KNOWN GAP: the v1 judge scored all packages 5.00/5.00 with honest but undiscriminating
-verdicts (anchors top out at "correct"; test set had no trap premises). Judge calibration
-+ a negative-control probe are DEFERRED to a dedicated calibration plan. See
-`docs/learnings/2026-06-08-rubric-v1.md` Finding 2.
+A third tier exists for negative-control testing — the **floor probe**: a hand-authored
+bad fixture (`data/golden/writer_floor_static.jsonl`, local-only) fed via
+`run_rubric_eval --fixtures` and locked by a gated pytest (`tests/test_judge_floor.py`,
+runs only under `RUN_PAID_EVALS=1`). The fixture is structurally legal + code-check-clean
+but semantically empty; the judge must score it low on the dims it sabotages
+(development ≤ 2, vividness ≤ 2). Proves the judge can detect bad work, not just confirm good.
+
+Status (2026-06-14): pipeline runs e2e on the chain grammar (4/4 premises route to distinct
+devices, 5/5 code-checks pass, paid judge runs clean). The earlier all-5.00 no-discrimination
+gap is now HALF-closed: the floor probe confirmed the judge CAN discriminate (bad fixture →
+development=1, vividness=2). The CEILING half — no gradient to rank good-vs-great among
+competent packages — is still open, deferred to a dedicated calibration plan. See
+`docs/learnings/2026-06-08-rubric-v1.md` Findings 2-3.
 
 ## Niche
 
