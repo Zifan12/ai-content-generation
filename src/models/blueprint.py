@@ -68,5 +68,6 @@ class BlueprintRecord(Base):
         DateTime(timezone=True), server_default=func.now()
     )
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
-    blueprint_data: Mapped[dict[str, Any]] = mapped_column(JSON) # Stored Blueprint Pydantic objects as JSON dict in SQLite/Postgres: src/blueprints/schema.py 
+    blueprint_data: Mapped[dict[str, Any]] = mapped_column(JSON) # Stored Blueprint Pydantic objects as JSON dict in SQLite/Postgres: src/blueprints/schema.py
+    outcome_view_percentile: Mapped[float | None] = mapped_column(Float, nullable=True) # P3.5 closed-loop label: self-relative day-7 view percentile of generated videos conditioned on this blueprint (null until compute_percentiles runs). Feeds P4.
 
