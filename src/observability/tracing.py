@@ -28,7 +28,7 @@ def traced(
     Handles async + sync. Nested calls auto-parent via contextvar.
     """
     def decorator(fn):
-        return observe(name=name, capture_input=capture_input, capture_output=capture_output)(fn)
+        return observe(name=name, capture_input=capture_input, capture_output=capture_output, as_type=kind)(fn)
     return decorator
 
 def get_current_span():

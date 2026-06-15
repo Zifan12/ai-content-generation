@@ -11,7 +11,7 @@ Track every shipped feature that fails, what was tried, and what fixed it.
 
 ### BUG-001 - traced() drops the `kind` arg → LLM calls log as spans, not generations
 - Date opened: 2026-06-14
-- Status: open
+- Status: closed
 - Feature: Langfuse observability (`src/observability/tracing.py`), affects EVERY `@traced` LLM call (extractor, writer, judge)
 - Environment: Langfuse US cloud (live — `get_client().auth_check()` returns True with config/.env keys)
 - Error/behavior: `traced(name=..., kind="generation")` accepts `kind` but never forwards it.
@@ -25,11 +25,24 @@ Track every shipped feature that fails, what was tried, and what fixed it.
 2. Open the Langfuse dashboard, find the `anthropic_llm.parse` observation.
 3. Check whether it is typed GENERATION and whether token/cache fields are populated.
 - Attempted fixes:
-1. (none yet — logged, deferred per scope; surfaced during the judge-floor-probe feature 2026-06-14)
-- Root cause: SUSPECTED — `kind` plumbed into `traced()` but not passed to `langfuse.observe`.
-  Needs (a) dashboard confirm the fields are actually absent, AND (b) check the langfuse SDK
-  `observe()` signature actually takes a `kind`/`as_type` param before patching.
-- Final fix: TBD
-- Date fixed:
-- Validation evidence: TBD
+1. (logged 2026-06-14, deferred per scope; surfaced during the judge-floor-probe feature)
+2. (2026-06-14) Confirmed via context7 that the langfuse Python v3/v4 SDK `observe()` takes
+   `as_type` (NOT `kind`, NOT `type`); valid values include "generation". Forwarded the
+   decorator's `kind` arg through as `observe(..., as_type=kind)` on line 31. Default
+   `kind="span"` is accepted by langfuse (verified by import smoke-test, no error).
+- Root cause: CONFIRMED — `kind` was plumbed into `traced()` but never passed to
+  `langfuse.observe`. The SDK param is named `as_type`, so even a literal passthrough of
+  `kind=` would have raised TypeError; the rename was required.
+- Final fix: `src/observability/tracing.py:31` — `observe(name=..., capture_input=...,
+  capture_output=..., as_type=kind)`.
+- Date fixed: 2026-06-14
+- Validation evidence: 3 back-to-back floor-probe runs (`run_rubric_eval --fixtures ...`),
+  dashboard JSON read on each `anthropic_llm.parse` observation:
+  - `"type": "GENERATION"` (was logging as span before) ✅
+  - token fields now present: `usage_input_tokens`, `usage_output_tokens` ✅
+  - cache lifecycle captured end-to-end — run 1 (cold): `cache_read=0, cache_write=2032`;
+    run 2 (warm, +8min): `cache_read=2032, cache_write=0`; run 3 (warm, +17s):
+    `cache_read=2032, input_tokens=1` (full rubric prefix served from cache).
+  Closes the long-carried Opus-4.8 cache question: prompt caching IS live; warm read = 2032.
+  Full pytest suite still green (237 passed, 1 skipped) — no regression from the signature change.
 
