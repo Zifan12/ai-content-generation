@@ -115,7 +115,8 @@ def build_envelope(winners: list[RawContentItem], candidate: BlueprintCandidate)
 
     for i, winner in enumerate(winners, 1):
         description = winner.description if winner.description else "n/a"
-        hashtags = ", ".join(winner.hashtags) if winner.hashtags else "n/a"
+        tags = [tag for tag in (winner.hashtags or []) if tag]
+        hashtags = ", ".join(tags) if tags else "n/a"
 
         lines = [
             f"Winner {i} — a real video that went viral in this niche:",
