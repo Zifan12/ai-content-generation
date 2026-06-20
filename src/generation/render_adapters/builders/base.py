@@ -6,6 +6,13 @@ wants shot-beats + an Audio line, Hailuo wants restrained physics-verbs), so
 there is one concrete builder per model — but the RenderAdapter depends on this
 ABC, not the concretes, so Veo and Hailuo are interchangeable behind the same
 two-method interface.
+
+Builders own their dialect-flattening: most models store flat string dialect
+values (Veo), but some store nested structures (Hailuo's ``physics_keywords``
+is a dict of lists), and the right way to render those into an LLM brief
+differs per model. Keeping each builder's logic separate lets each flatten its
+own dialect correctly instead of forcing one shared helper to handle every
+shape.
 """
 
 from abc import ABC, abstractmethod

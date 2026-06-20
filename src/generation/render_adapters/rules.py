@@ -68,6 +68,17 @@ class RenderRules:
         """
         return self.data["models"][cli_id]
 
+    def still_dialect(self) -> dict:
+        """Return the still/image-prompt dialect block.
+
+        The opening still is an IMAGE-model prompt, not a video-model one, so it
+        obeys a separate set of rules (directive-stack order, camera-kit,
+        authentic-imperfection, composition traps) held under the top-level
+        ``still_dialect`` key — distinct from any video model's ``dialect`` block.
+        Returns the mapping of named still-rule keys to their rule strings.
+        """
+        return self.data["still_dialect"]
+
     def global_constraints(self) -> list[str]:
         """Return every always-append constraint string as one flat list.
 

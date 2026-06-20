@@ -44,6 +44,7 @@ models:
         fire:  [flame flickers, smoke trails, combustion]
         cloth: [fabric folds, weight, silk ripples]
         gravity: [angular momentum, accurate gravity, knee absorption]
+        material: [wood shavings, wax pooling, Maillard reaction]   # methodology/13 §3 L109
       anti_pattern: "Do NOT pile 'beautiful epic dramatic cool effects' — Hailuo drowns. Name the physical event instead."
 
   veo3_1:
@@ -64,7 +65,13 @@ models:
       light_rule: "Name concrete sources ('overcast sky', 'neon sign') NOT 'dramatic lighting' — gives physical light logic, stabilizes shadows."
       audio_rule: "Veo improvises sound if omitted. Always include an Audio: line. Wordless product -> 'Audio: faint ambient room tone, near silence, no music.'"
       beats_vs_timestamps: "Prefer shot-numbered beats (Shot 1/2/3) over [00:00-00:03] timestamps. NOT because timecodes break Veo — Veo accepts them (a real param). methodology/03 (model-generic) cautions that FORCING precise per-segment duration is less reliable and prefers ordered beats. So shot-beats = safer craft default, not a hard ban. (Verified 2026-06-19: earlier 'corrupts output' wording overstated the source.) Separate, stronger finding: word-only prompts can't pin an impossible END state on Veo — see ratings note + escalation."
+      dialogue_rule: "methodology/12 §L29-31: put dialogue on its own line with a 'Dialogue:' prefix (separate from the Audio: line), so Veo's native audio aligns it precisely."
+      dialogue_length_rule: "methodology/12 §L76 (8-second rule): keep dialogue to one or two punchy lines — about what fits in ~8s. A full paragraph makes characters speak unnaturally fast."
+      audio_specificity_rule: "methodology/12 §L101-106: name the exact sounds, not 'ambient sounds'. ✅ 'roaring V8 engines, sloshing water, gravel impacts' — ❌ 'Audio: ambient sounds'."
+      character_first_rule: "methodology/12 §L96: describe WHO before what they do — lead with named/aged/clothed subject ('a mid-30s woman with short dark hair and a navy coat walks…'), not 'a woman speaks while walking'."
       cli_negatives: "No negative_prompt param on Higgsfield veo3_1 (verified). Fold exclusions into positive motion phrasing."
+    notes:   # human-facing audit notes — NOT prompt material; builders read `dialect`, never `notes`
+      cli_negatives_conflict: "⚠️ UNRESOLVED (2026-06-20): three guides — image-video-director/01 (registry, L175), /03 (L75), /05 (L26) — all say Veo 3.1 natively SUPPORTS negativePrompt (comma-separated descriptors, NOT 'no/don't'). The dialect.cli_negatives line claims Higgsfield's veo3_1 has none. Both can hold (Higgsfield may not expose the native param), but 'verified' is unconfirmed against the CLI. ACTION: run `higgsfield model get veo3_1`, then resolve — keep positive-folding if absent, else add the comma-descriptor form. Do NOT trust either side until render-checked."
 
   kling3_0:
     cli_id: kling3_0
@@ -136,6 +143,32 @@ i2v_rule:
   why: "Restating image contents (palette, scene, style already in the still) REDUCES motion quality and causes unexpected results."
 
 # ---------------------------------------------------------------------------
+# STILL DIALECT — governs the OPENING still (the i2v seed frame), NOT the video
+# models above. The still is an IMAGE-model prompt and obeys image-model rules.
+# source: image-video-director/02-image-prompting + 04-visual-vocabulary.
+# Highest-value block for surreal_hyperreal: the photoreal opening still is the
+# scroll-stop hook, and the anti-AI-look 'authentic imperfection' rule is what
+# keeps it from reading as obviously generated.
+# ---------------------------------------------------------------------------
+still_dialect:
+  directive_stack_order: "Subject + identity FIRST, then hard constraints (framing, spatial layout), then the aesthetic/look layer. Earlier elements get more weight."   # 02 §directive-stack L6
+  spatial_map: "Write composition as a literal spatial map (foreground/midground/background, left/right, centered, negative space) — forces layout instead of letting the model invent one."   # 02 L8
+  camera_kit: "Add a compact camera-kit capsule (lens, aperture, light direction, texture cues), e.g. '50mm lens, f/1.8, soft overcast daylight'; reuse it verbatim across a series to lock style."   # 02 §camera-kit L12
+  authentic_imperfection: "Anti-AI-look (load-bearing for surreal_hyperreal): request slight underexposure, natural grain, visible pores, fabric wear, environmental dust, uneven practical light. DROP 'perfect / flawless / ultra-detailed / 4K / masterpiece' — those pull toward the uncanny stock-photo look."   # 02 L76 + 04 L90
+  light_naming: "Name the physical light source ('overcast sky', 'neon sign', 'window side-light at golden hour'), not 'dramatic lighting' — gives the model physical light logic."   # 04 L20
+  composition_traps: "Do NOT write the phrase 'rule of thirds' (renders literal grid lines) — place elements directly ('subject on right third'). Avoid 'cut off' (risks literal interpretation)."   # 04 L104,102
+
+# ---------------------------------------------------------------------------
+# MOTION CRAFT — universal rules for the i2v MOTION prompt (all video models),
+# on top of each model's dialect block. source: image-video-director/03.
+# ---------------------------------------------------------------------------
+motion_craft:
+  one_move_one_action: "ONE camera move + ONE subject action per shot. Stacking moves ('dolly + pan + zoom + crane') produces floaty, game-like camera."   # 03 §camera L9,13
+  action_as_beats: "Express the action as countable beats ('four steps to the window, pause, pull the curtain in the final second'), not vague verbs ('walks across the room') — vague action makes the model guess pace and drift."   # 03 L14-16
+  emotion_is_visible: "Carry mood through lighting/palette/micro-performance (eye-line, breath, posture, tight jaw), NOT the words 'sad'/'epic'. Every emotional word must pair with something the camera can see."   # 03 §color-script L91
+  anti_intensifiers: ["stunning", "breathtaking", "ultra-detailed", "masterpiece", "best quality", "8K"]   # 04 L94 + 05 L9 — wasted words across all modern models
+
+# ---------------------------------------------------------------------------
 # GLOBAL CONSTRAINTS — append to every prompt unless the shot needs the excluded
 # element. source: methodology/06-约束词清单. Phrase as positive/'do' for models
 # without negative fields (most Higgsfield video models).
@@ -151,6 +184,12 @@ global_constraints:
     - "motion continuous and natural, not stiff"
   style_consistency:
     - "hold [STYLE] throughout, no style drift, consistent color grade"
+  subject_uniqueness:   # methodology/06 §防止双胞胎 L34-40 — append only on multi-subject shots
+    - "no duplicate or cloned figures, no twin/doppelganger effect"
+    - "each person distinct in build, clothing and accessories"
+  audio_cleanliness:    # methodology/06 §音频干净度 L51-55 — append only when the shot has audio
+    - "audio natural with no truncation or clipping noise"
+    - "audio fades out cleanly at the end, no abrupt cut"
 
 # ----------------------------------------------------------------------Yeah-----
 # CONTRADICTIONS — never co-emit; they cancel and waste the slot.
@@ -161,6 +200,20 @@ contradictions:
   - [cinematic, documentary_handheld]  # styles pull against each other if both forced
   - [slow_motion, high_speed_action]
   - { rule: "max 2 named artist/style refs", reason: ">2 -> model picks one at random" }
+
+# ---------------------------------------------------------------------------
+# SPECIAL-CHAR ENCODING — typed delimiters for audio/dialogue/subtitle inside a
+# prompt. source: methodology/07. LOW PRIORITY for surreal_hyperreal (wordless /
+# English-first); relevant mainly to Chinese-dialogue models (Kling/即梦/Wan).
+# Recorded so it's not lost; a builder only needs it once it writes dialogue.
+# ---------------------------------------------------------------------------
+special_chars:
+  music: "( )"          # 背景音乐 — e.g. (slow jazz piano in the background)
+  sfx: "< >"            # 音效 — e.g. <distant dog barking>
+  dialogue: "{ }"      # 台词 — e.g. {long time no see}; tag foreign lang: 用英语说{...}
+  subtitle: "【 】"     # 字幕 — e.g. 【Chapter 2: Reunion】
+  language_rule: "Keep dialogue in ONE language (no CN/EN mix except proper nouns); tag foreign-language lines with the spoken language."
+  homophone_fix: "For mispronounced rare/polyphonic Chinese characters, substitute a same-sound common character (鳞→吃, 萋→凄). Mitigation only, not a full fix."
 
 # ---------------------------------------------------------------------------
 # ESCALATION — when plain text can't force an effect (esp. impossible physics /
@@ -186,5 +239,5 @@ escalation:
 open_questions:
   - "Does minimax_hailuo hold the impossible 'edges stay full' pool where Veo failed? (untested — next render)"
   - "Does keyframe_start_end fix Veo's impossible-end-state failure? (untested)"
-  - "Per-model Higgsfield credit costs for the routing table (only Veo ~22cr/8s confirmed)."
+  - "Per-model Higgsfield credit costs for the routing table (only Veo ~22cr/8s confirmed on Higgsfield). NOTE: image-video-director/01 gives NATIVE-API per-second pricing — Kling ~$0.029/s (cheapest), Grok $0.05/s, Sora $0.30-0.50/s — but these are provider list prices, NOT Higgsfield credit costs; still need `higgsfield model get` per model to map to credits."
   - "Higgsfield-native models (cinematic_studio_*, soul_*) not yet mapped to routing — may beat generic models for surreal_hyperreal."
