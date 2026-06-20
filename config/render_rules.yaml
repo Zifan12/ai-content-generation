@@ -1,0 +1,190 @@
+# render_rules.yaml
+#
+# Render-layer knowledge distilled from ai_video_resources/ guides and
+# constrained to models the Higgsfield CLI actually exposes (verified via
+# `higgsfield model list`, 2026-06-18). This is the machine-readable spec the
+# RenderAdapter (src/, not yet built) consumes to: (1) ROUTE a shot to a model
+# by motion/premise type, and (2) BUILD a model-native prompt from a writer
+# shot-plan segment.
+#
+# Every block is tagged with its `source:` doc so rules are auditable, not
+# invented. When a guide and a render disagree, the render wins — append an
+# `evidence:` note rather than silently overriding the guide.
+#
+# Layering: this file is the SOURCE OF TRUTH for render routing/dialect.
+# The methodology docs in ai_video_resources/ remain the cited reference;
+# do NOT copy their prose here — transcribe only the executable rules.
+
+meta:
+  schema_version: 0
+  verified_against_higgsfield: "2026-06-18"
+  source_root: "ai_video_resources/"
+  # Models present in the guides but NOT exposed by Higgsfield CLI — do not
+  # route to these even though the guides praise them:
+  unavailable_in_higgsfield: [pika_2_5, runway_gen4_aleph, sora_2, hunyuan_1_5, jimeng_3_0]
+
+# ---------------------------------------------------------------------------
+# MODELS — only Higgsfield-available video models. Ratings 1-5 sourced from
+# methodology/13 + image-video-director/06. `cli_id` is the exact
+# `higgsfield generate create <cli_id>` job-set type.
+# ---------------------------------------------------------------------------
+models:
+
+  minimax_hailuo:
+    cli_id: minimax_hailuo
+    display: "Minimax Hailuo 02"
+    source: "methodology/13 §3"   # NOT image-video-director/06 — that doc omits Hailuo (verified 2026-06-19, see INDEX L107)
+    ratings: { physics: 5, audio: 1, consistency: 3, cinematic: 4, max_seconds: 10 }
+    best_for: [impossible_physics, fluid_motion, fire_smoke, cloth, gravity, real_motion]
+    dialect:
+      style: "Director's AI — wants a restrained SCRIPT, not piled-up visual adjectives."
+      structure: "[1-2 subjects, clear] [clear temporal action] [terse scene] [emphasize ONE physical detail]"
+      physics_keywords:   # methodology/13 §3 table — cash the impossible into physical verbs
+        fluid: [water spray, fluid dynamics, surface tension]
+        fire:  [flame flickers, smoke trails, combustion]
+        cloth: [fabric folds, weight, silk ripples]
+        gravity: [angular momentum, accurate gravity, knee absorption]
+      anti_pattern: "Do NOT pile 'beautiful epic dramatic cool effects' — Hailuo drowns. Name the physical event instead."
+
+  veo3_1:
+    cli_id: veo3_1
+    display: "Google Veo 3.1"
+    source: "methodology/12 + 06 video selection"
+    ratings: { physics: 3, audio: 5, consistency: 3, cinematic: 3, max_seconds: 8 }   # extendable to ~60 via chaining
+    best_for: [dialogue, multi_voice, precise_audio_sync, native_vertical, timestamped_pacing]
+    variants: [veo3_1_lite]   # cheaper/faster Veo; route to it only after pulling real specs via `higgsfield model get`
+    # NOTE: Veo physics is only 3/5 — do NOT default impossible-physics shots here.
+    # evidence 2026-06-18: 3 word-only Veo renders of impossible "edges-stay-full" pool
+    # drain all held edges mid-clip then drained by the END. Word phrasing (timestamps
+    # AND shot-beats AND "holds level throughout") cannot pin an impossible END state on
+    # Veo. -> impossible end-states require keyframe escalation OR a physics-stronger model.
+    dialect:
+      style: "Storyboard thinking. 100-150 words optimal. Frame -> action -> (dialogue) -> Audio."
+      structure: "[Shot framing + motion]. [Subject]. [Action sequence]. [Style/light/mood]. Audio: [layered sound]."
+      light_rule: "Name concrete sources ('overcast sky', 'neon sign') NOT 'dramatic lighting' — gives physical light logic, stabilizes shadows."
+      audio_rule: "Veo improvises sound if omitted. Always include an Audio: line. Wordless product -> 'Audio: faint ambient room tone, near silence, no music.'"
+      beats_vs_timestamps: "Prefer shot-numbered beats (Shot 1/2/3) over [00:00-00:03] timestamps. NOT because timecodes break Veo — Veo accepts them (a real param). methodology/03 (model-generic) cautions that FORCING precise per-segment duration is less reliable and prefers ordered beats. So shot-beats = safer craft default, not a hard ban. (Verified 2026-06-19: earlier 'corrupts output' wording overstated the source.) Separate, stronger finding: word-only prompts can't pin an impossible END state on Veo — see ratings note + escalation."
+      cli_negatives: "No negative_prompt param on Higgsfield veo3_1 (verified). Fold exclusions into positive motion phrasing."
+
+  kling3_0:
+    cli_id: kling3_0
+    display: "Kling v3.0"
+    source: "methodology/18 + 09 + 06"
+    ratings: { physics: 4, audio: 4, consistency: 5, cinematic: 3, max_seconds: 15 }
+    best_for: [multi_shot, character_consistency, shot_reverse_shot, transformation, chinese_dialogue]
+    variants: [kling3_0_turbo, kling3_0_motion_control, kling2_6]
+    dialect:
+      style: "Coverage grammar + multi-shot structure (up to 6 shots / 15s). @-reference syntax. cfg_scale tunable."
+      cfg_scale: "Higher = stricter prompt adherence; lower = more improvisation."
+      consistency_rule: "Strongest cross-shot consistency. Reuse identity/anchor strings VERBATIM across shots."
+
+  seedance_2_0:
+    cli_id: seedance_2_0
+    display: "Seedance 2.0"
+    source: "methodology/15 + 19 + 06"
+    ratings: { physics: 3, audio: 4, consistency: 4, cinematic: 4, max_seconds: 20 }
+    best_for: [narrative_arc, multi_shot_story, transformation, multimodal_reference]
+    variants: [seedance1_5]
+    dialect:
+      style: "'Shot 1 / Shot 2' narrative structure with intro-development-climax. Directorial thinking. @-referenced assets."
+      beat_sheet: "Best for complete story arcs in one clip (~20s). Add one 'imperfection beat' for momentum."
+
+  wan2_7:
+    cli_id: wan2_7
+    display: "Wan 2.7"
+    source: "methodology/13 §5"   # NOT image-video-director/06 — that doc omits Wan (verified 2026-06-19, see INDEX L107)
+    ratings: { physics: 3, audio: 5, consistency: 3, cinematic: 3, max_seconds: 15 }
+    best_for: [digital_human, lip_sync, talking_head, broadcast]
+    variants: [wan2_6]
+    dialect:
+      style: "Entity + Scene + Motion + Sound. Sound: layer is its soul (voice auto-lip-syncs + sfx + bgm simultaneously)."
+
+  grok_video_v15:
+    cli_id: grok_video_v15
+    display: "Grok Video 1.5"
+    source: "06 video selection (Grok Imagine)"
+    ratings: { physics: 3, audio: 3, consistency: 3, cinematic: 2, max_seconds: 15 }
+    best_for: [fast_cheap_social, scale]
+    dialect:
+      style: "Declarative prompts, synchronized audio. 720p cap — cheap/fast, lower fidelity."
+
+# ---------------------------------------------------------------------------
+# ROUTING — premise / motion type -> ranked model preference (Higgsfield-only).
+# RenderAdapter picks the first available; falls through on failure.
+# source: methodology/13 + 10 decision trees, image-video-director/06,
+# intersected with higgsfield model list.
+# ---------------------------------------------------------------------------
+routing:
+  impossible_physics: [minimax_hailuo, seedance_2_0, veo3_1]   # NOT veo-first: Veo physics 3/5, fails impossible end-states (2026-06-18 evidence)
+  fluid_motion:       [minimax_hailuo, veo3_1, seedance_2_0]   # water/fire/smoke — Hailuo is physics king
+  transformation:     [seedance_2_0, kling3_0]                 # melt/morph/grow — Pika unavailable, Seedance/Kling next
+  multi_shot_story:   [seedance_2_0, kling3_0]
+  character_consistency: [kling3_0, seedance_2_0]              # Kling strongest cross-shot
+  dialogue:           [veo3_1, wan2_7, kling3_0]
+  lip_sync_talking_head: [wan2_7, veo3_1]
+  fast_cheap:         [grok_video_v15, veo3_1]   # grok = cheapest 720p; veo3_1 as quality fallback (veo3_1_lite is a veo3_1 variant, not yet spec'd)
+  default:            [veo3_1, kling3_0]
+
+# ---------------------------------------------------------------------------
+# IMAGE-TO-VIDEO rule — applies to ALL models when starting from a still.
+# source: image-video-director/05-misconceptions + 03-video-prompting §I2V,
+# methodology/13 §4 (Hunyuan/Kling i2v iron law).
+# ---------------------------------------------------------------------------
+i2v_rule:
+  principle: "The input image IS the visual prompt. Do NOT re-describe its contents."
+  prompt_focus_only: [camera_movement_and_framing, subject_motion_and_action, timing_and_pacing, audio_events]
+  why: "Restating image contents (palette, scene, style already in the still) REDUCES motion quality and causes unexpected results."
+
+# ---------------------------------------------------------------------------
+# GLOBAL CONSTRAINTS — append to every prompt unless the shot needs the excluded
+# element. source: methodology/06-约束词清单. Phrase as positive/'do' for models
+# without negative fields (most Higgsfield video models).
+# ---------------------------------------------------------------------------
+global_constraints:
+  always_append:
+    - "locked camera, fixed position, no shake, no sudden zoom"
+    - "no clipping, no stutter, no flicker"
+    - "no watermark, no logo, no on-screen text or subtitles"
+  stability:
+    - "facial features stable and undistorted"
+    - "body proportions stable and undistorted"
+    - "motion continuous and natural, not stiff"
+  style_consistency:
+    - "hold [STYLE] throughout, no style drift, consistent color grade"
+
+# ----------------------------------------------------------------------Yeah-----
+# CONTRADICTIONS — never co-emit; they cancel and waste the slot.
+# source: methodology/06 矛盾约束清单.
+# ---------------------------------------------------------------------------
+contradictions:
+  - [film_grain, ultra_sharp]          # grain IS blur+grain, fights 4K/ultra-sharp
+  - [cinematic, documentary_handheld]  # styles pull against each other if both forced
+  - [slow_motion, high_speed_action]
+  - { rule: "max 2 named artist/style refs", reason: ">2 -> model picks one at random" }
+
+# ---------------------------------------------------------------------------
+# ESCALATION — when plain text can't force an effect (esp. impossible physics /
+# specific end-states). source: methodology/08 避坑12问 #8 + 03/05 keyframing.
+# Ordered cheapest -> strongest.
+# ---------------------------------------------------------------------------
+escalation:
+  - lever: keyframe_start_end
+    when: "text-only render won't pin a specific END state (e.g. impossible 'edges stay full' frozen moment)"
+    how: "Generate an END still showing the target final state; feed start-image + end-image, prompt only the transition. Higgsfield: --start-image / --end-image. Best on veo3_1, seedance_2_0, kling3_0 (+ Pika Pikaframes, unavailable)."
+    cost_note: "+1 still (~6cr) over plain i2v."
+  - lever: reference_video
+    when: "a specific effect/motion logic still won't render from text or keyframes"
+    how: "Provide a reference clip of the target motion; tell the model what to COPY (motion/camera, not style). Seedance @-video, Kling Omni video_url."
+  - lever: switch_model
+    when: "the model's prior fundamentally fights the premise (e.g. Veo realism prior vs impossible physics)"
+    how: "Re-route per `routing:` to a model whose strength matches (impossible physics -> minimax_hailuo)."
+
+# ---------------------------------------------------------------------------
+# OPEN / UNVERIFIED — rules from guides not yet confirmed by our own renders.
+# Promote to the blocks above once a manual render gives evidence.
+# ---------------------------------------------------------------------------
+open_questions:
+  - "Does minimax_hailuo hold the impossible 'edges stay full' pool where Veo failed? (untested — next render)"
+  - "Does keyframe_start_end fix Veo's impossible-end-state failure? (untested)"
+  - "Per-model Higgsfield credit costs for the routing table (only Veo ~22cr/8s confirmed)."
+  - "Higgsfield-native models (cinematic_studio_*, soul_*) not yet mapped to routing — may beat generic models for surreal_hyperreal."
