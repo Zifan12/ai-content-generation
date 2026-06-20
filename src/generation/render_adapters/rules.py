@@ -6,7 +6,15 @@ reads rules through a RenderRules instance rather than re-parsing the YAML, so
 the file stays the one source of truth (no rule is ever hardcoded in code).
 """
 
+from pathlib import Path
+
 import yaml
+
+# config/render_rules.yaml lives at the repo root; anchor to this file rather
+# than the process CWD so RenderRules() loads correctly from any entry point
+# (tests, scripts, notebooks, FastAPI startup). render_adapters -> generation
+# -> src -> repo root is four parents up.
+_RULES_PATH = Path(__file__).resolve().parents[3] / "config" / "render_rules.yaml"
 
 
 class RenderRules:
@@ -21,16 +29,17 @@ class RenderRules:
     def __init__(self):
         """Load config/render_rules.yaml into ``self.data``.
 
-        Opens the rules file relative to the process working directory and
-        parses it with ``yaml.safe_load``. The parsed mapping (top-level keys
-        ``models``, ``routing``, ``global_constraints``, etc.) is stored on
-        ``self.data`` for the accessor methods to read.
+        Opens the rules file at ``_RULES_PATH`` (anchored to this module's
+        location, not the process working directory) and parses it with
+        ``yaml.safe_load``. The parsed mapping (top-level keys ``models``,
+        ``routing``, ``global_constraints``, etc.) is stored on ``self.data``
+        for the accessor methods to read.
 
         Raises:
             FileNotFoundError: if config/render_rules.yaml is missing.
             yaml.YAMLError: if the file is not valid YAML.
         """
-        with open("config/render_rules.yaml", encoding="utf-8") as f:
+        with open(_RULES_PATH, encoding="utf-8") as f:
             self.data = yaml.safe_load(f)
 
     def route(self, tag: str) -> list[str]:

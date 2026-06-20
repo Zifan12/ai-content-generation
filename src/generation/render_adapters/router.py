@@ -16,21 +16,28 @@ def pick_model(tag: str, rules: RenderRules, available: set[str] | None = None) 
     ``available=None`` means "assume everything is available" and returns the
     top-ranked model unconditionally — the common, unconstrained call.
 
-    NOTE: if ``available`` excludes every routed model, the loop finds no match
-    and this falls through to return None (despite the str annotation). No
-    caller currently hits that path; it is a candidate for a loud failure if
-    over-restrictive availability sets become a real case.
+    Raises:
+        ValueError: if ``available`` is a set that excludes every model routed
+            for ``tag`` — there is no renderable choice to return. This is a
+            caller-side error (the caller chose the restriction), so it fails
+            loudly here, naming the tag, the routed list and the available set,
+            rather than returning ``None`` and surfacing a cryptic error
+            downstream when the missing model id is used.
     """
     list_of_models = rules.route(tag)
 
     if available is None:
         return list_of_models[0]
-    else:
-        for model in list_of_models:
-            if model in available:
-                return model
-            
-    
+
+    for model in list_of_models:
+        if model in available:
+            return model
+
+    raise ValueError(
+        f"No model routed for tag {tag!r} is available: "
+        f"routed {list_of_models!r}, available {available!r}."
+    )
+
 def classify_motion(shot: Shot, device: Device) -> str:
     """Classify a shot's motion text into a routing tag.
 
@@ -57,10 +64,17 @@ def classify_motion(shot: Shot, device: Device) -> str:
     """
     motion = shot.motion.lower()
 
-    impossible_words = ["edges stay", "impossible", "defy", "no-drain"]
+    # Triggers are surface substrings matched with ``in``. Two rules keep that
+    # cheap check honest: (1) inflected forms are listed explicitly rather than
+    # stemmed, so "defies"/"defying" match (bare "defy" is not a substring of
+    # them); (2) words that embed in unrelated host words are tightened into
+    # phrases, so they fire on the real signal only — "grows into"/"grows from"
+    # (transformation) does not match "camera grows closer" (a move), and
+    # "speaks"/"says" (dialogue) do not match "voiceover".
+    impossible_words = ["edges stay", "impossible", "defy", "defies", "defying", "no-drain"]
     fluid_words = ["water", "drain", "liquid", "fluid"]
-    transformation_words = ["melt", "morph", "transform", "grow"]
-    dialogue_words = ["speak", "voice", "dialogue"]
+    transformation_words = ["melt", "morph", "transform", "grows into", "grows from"]
+    dialogue_words = ["speaks", "says", "dialogue"]
 
     if any(word in motion for word in impossible_words):
         return "impossible_physics"
