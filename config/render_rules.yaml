@@ -36,6 +36,15 @@ models:
     source: "methodology/13 §3"   # NOT image-video-director/06 — that doc omits Hailuo (verified 2026-06-19, see INDEX L107)
     ratings: { physics: 5, audio: 1, consistency: 3, cinematic: 4, max_seconds: 10 }
     best_for: [impossible_physics, fluid_motion, fire_smoke, cloth, gravity, real_motion]
+    io_mode: pass_image_via_cli   # 2026-06-21 (own CLI test): ALWAYS pass --image to Hailuo via the Higgsfield CLI; text-only t2v FAILS here. Root cause NOT fully isolated (and moot for us — see below): (a) likely CLI bug — `--resolution` rejects its own listed values (512/768/1080), so with no image to set dimensions t2v falls back to an invalid 1024×1024 square and the render fails silently; (b) the base `minimax` variant ALSO hard-requires an image ("One of 'input_image' or 'input_image_end' must be provided"). i2v works because the 9:16 input image sets valid dims (output 768×1376). The official MODELS.md marks --image OPTIONAL, so the model itself may support t2v — UNCONFIRMED, do NOT claim the docs are wrong. MOOT for us: we are still-first, always have a seed image. PIPELINE/EXECUTOR IMPACT: the adapter only DECLARES jobs (no rendered still URL at build time); the executor must render the opening still FIRST, then inject it as --image into the Hailuo motion job at submit time.
+    # evidence 2026-06-21 (OWN render, CLI i2v) — RESOLVES open_question #1: Hailuo HELD the impossible
+    # "edges stay full" pool drain through to the final frame (10s) where Veo failed 3×. Seeded with a
+    # brimming-full-pool nano_banana_2 still + motion prompt "drain at center, edges stay full". The center
+    # hollowed into a deep vortex/funnel while the rim water stayed at the coping lip to the end — the
+    # gravity-defying state HELD, photoreal stable, camera locked, no melt/mush. Confirms physics:5 and the
+    # impossible_physics → minimax_hailuo route. Clip: render_taste_test/task8_hailuo_i2v/02_hailuo_drain.mp4.
+    # Caveat: rendered as a whirlpool funnel (a valid reading of the prompt); the load-bearing impossible
+    # constraint — rim full while center drains — is exactly what held.
     dialect:
       style: "Director's AI — wants a restrained SCRIPT, not piled-up visual adjectives."
       structure: "[1-2 subjects, clear] [clear temporal action] [terse scene] [emphasize ONE physical detail]"
@@ -259,7 +268,8 @@ escalation:
 # Promote to the blocks above once a manual render gives evidence.
 # ---------------------------------------------------------------------------
 open_questions:
-  - "Does minimax_hailuo hold the impossible 'edges stay full' pool where Veo failed? (untested — next render)"
+  # RESOLVED 2026-06-21 (CONFIRMED, own CLI i2v render): minimax_hailuo HOLDS the impossible 'edges stay
+  # full' pool drain to the final frame — see the minimax_hailuo `evidence` note above. Veo failed 3×.
   - "Does keyframe_start_end fix Veo's impossible-end-state failure? (untested)"
   - "Per-model Higgsfield credit costs for the routing table (only Veo ~22cr/8s confirmed on Higgsfield). NOTE: image-video-director/01 gives NATIVE-API per-second pricing — Kling ~$0.029/s (cheapest), Grok $0.05/s, Sora $0.30-0.50/s — but these are provider list prices, NOT Higgsfield credit costs; still need `higgsfield model get` per model to map to credits."
   - "Higgsfield-native models (cinematic_studio_*, soul_*) not yet mapped to routing — may beat generic models for surreal_hyperreal."
