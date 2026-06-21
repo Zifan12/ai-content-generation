@@ -79,16 +79,37 @@ class RenderRules:
         """
         return self.data["still_dialect"]
 
-    def global_constraints(self) -> list[str]:
-        """Return every always-append constraint string as one flat list.
+    def global_constraints(self, kind: str, style: str) -> list[str]:
+        """Return the constraint strings that apply to a given prompt ``kind``.
 
-        The ``global_constraints`` block groups constraints under sub-keys
-        (``always_append``, ``stability``, ``style_consistency``, ...), each a
-        list of strings. This flattens across *all* of those sub-lists by
-        iterating ``.values()`` — so a new constraint category added to the
-        YAML is picked up automatically and nothing is silently dropped.
+        The ``global_constraints`` block groups constraints under named buckets
+        (``always_append``, ``stability``, ``style_consistency``,
+        ``audio_cleanliness``, ...). Each bucket is a mapping of
+        ``{kinds: [...], rules: [...]}``, where ``kinds`` declares which prompt
+        types the bucket applies to (``still``, ``motion``, or both) and
+        ``rules`` is the list of constraint strings.
+
+        A bucket is included only if ``kind`` is in its ``kinds`` list — so
+        still prompts pick up ``style_consistency`` while motion prompts pick up
+        ``audio_cleanliness``, and neither leaks into the other (the i2v rule:
+        a motion prompt must not restate the still's look). Any new bucket added
+        to the YAML is scoped automatically by its own ``kinds`` declaration.
+
+        The literal ``[STYLE]`` placeholder in any rule string is replaced with
+        ``style`` (the shot's concrete style/mood anchor) before the rule is
+        returned. Motion call-sites that carry no style language pass
+        ``style=""``, leaving any ``[STYLE]`` token to collapse to empty.
         """
-        return [item for bucket in self.data["global_constraints"].values() for item in bucket]
+
+        output = []
+        for bucket in self.data["global_constraints"].values():
+            if kind not in bucket["kinds"]:
+                continue
+
+            for rule in bucket["rules"]:
+                output.append(rule.replace("[STYLE]", style))
+
+        return output
 
     def max_seconds(self, cli_id: str) -> int:
         """Return the maximum single-clip duration (seconds) for a model.

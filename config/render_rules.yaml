@@ -169,27 +169,49 @@ motion_craft:
   anti_intensifiers: ["stunning", "breathtaking", "ultra-detailed", "masterpiece", "best quality", "8K"]   # 04 L94 + 05 L9 — wasted words across all modern models
 
 # ---------------------------------------------------------------------------
-# GLOBAL CONSTRAINTS — append to every prompt unless the shot needs the excluded
+# GLOBAL CONSTRAINTS — append to a prompt unless the shot needs the excluded
 # element. source: methodology/06-约束词清单. Phrase as positive/'do' for models
 # without negative fields (most Higgsfield video models).
+#
+# Each bucket declares `kinds:` — which prompt type(s) it applies to — so the
+# accessor returns the right SUBSET per prompt kind (still vs motion). This
+# encodes the i2v rule (image-video-director/03 L110-116 + 05-misconceptions):
+# the motion (i2v) prompt is motion/camera/timing/audio ONLY and must NOT
+# restate the still's look, so `style_consistency` is `kinds: [still]` — it
+# describes the grade the still already carries. Everything else is
+# `kinds: [still, motion]`. A bucket with no `kinds:` is treated as both.
+#
+# `style_consistency` holds the `[STYLE]` placeholder — the builder substitutes
+# the package mood_anchor for it at build time (only the still prompt does this,
+# since style_consistency is still-only).
 # ---------------------------------------------------------------------------
 global_constraints:
   always_append:
-    - "locked camera, fixed position, no shake, no sudden zoom"
-    - "no clipping, no stutter, no flicker"
-    - "no watermark, no logo, no on-screen text or subtitles"
+    kinds: [still, motion]
+    rules:
+      - "locked camera, fixed position, no shake, no sudden zoom"
+      - "no clipping, no stutter, no flicker"
+      - "no watermark, no logo, no on-screen text or subtitles"
   stability:
-    - "facial features stable and undistorted"
-    - "body proportions stable and undistorted"
-    - "motion continuous and natural, not stiff"
+    kinds: [still, motion]
+    rules:
+      - "facial features stable and undistorted"
+      - "body proportions stable and undistorted"
+      - "motion continuous and natural, not stiff"
   style_consistency:
-    - "hold [STYLE] throughout, no style drift, consistent color grade"
-  subject_uniqueness:   # methodology/06 §防止双胞胎 L34-40 — append only on multi-subject shots
-    - "no duplicate or cloned figures, no twin/doppelganger effect"
-    - "each person distinct in build, clothing and accessories"
-  audio_cleanliness:    # methodology/06 §音频干净度 L51-55 — append only when the shot has audio
-    - "audio natural with no truncation or clipping noise"
-    - "audio fades out cleanly at the end, no abrupt cut"
+    kinds: [still]   # i2v rule: motion prompt must NOT restate the look (still carries the grade)
+    rules:
+      - "hold [STYLE] throughout, no style drift, consistent color grade"
+  subject_uniqueness:   # methodology/06 §防止双胞胎 L34-40 — ideally multi-subject only; left on for both in v1 (no clean multi_subject signal — see plan Task 6.7)
+    kinds: [still, motion]
+    rules:
+      - "no duplicate or cloned figures, no twin/doppelganger effect"
+      - "each person distinct in build, clothing and accessories"
+  audio_cleanliness:    # methodology/06 §音频干净度 L51-55 — ideally audio-only; motion-only since stills are silent
+    kinds: [motion]
+    rules:
+      - "audio natural with no truncation or clipping noise"
+      - "audio fades out cleanly at the end, no abrupt cut"
 
 # ----------------------------------------------------------------------Yeah-----
 # CONTRADICTIONS — never co-emit; they cancel and waste the slot.

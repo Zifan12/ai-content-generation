@@ -2,7 +2,7 @@
 
 Concrete PromptBuilder for Google Veo 3.1 (cli_id ``veo3_1``). The builder does
 NOT carry Veo's dialect rules itself — it reads them at runtime from a
-``RenderRules`` instance (``rules.model(cli_id)["dialect"]`` + ``rules.global_constraints()``),
+``RenderRules`` instance (``rules.model(cli_id)["dialect"]`` + ``rules.global_constraints(kind, style)``),
 so config/render_rules.yaml stays the single source of truth. The builder's job
 is plumbing: fold the yaml-sourced dialect + constraints into an LLM "brief" and
 ask the injected LLM to write the Veo-native prose.
@@ -58,7 +58,7 @@ class VeoBuilder(PromptBuilder):
             f"Still-prompt rules:\n{still_rules}\n"
             f"Frozen opening frame to depict: {shot.start_keyframe}\n"
             f"Palette / lighting / realism / uncanny register: {mood_anchor}\n"
-            f"Global constraints: {'; '.join(self.rules.global_constraints())}"
+            f"Global constraints: {'; '.join(self.rules.global_constraints(kind='still', style=mood_anchor))}"
         )
         return self.llm.parse(brief, _RenderPrompt, max_tokens=600).prompt
 
@@ -74,6 +74,6 @@ class VeoBuilder(PromptBuilder):
             "the style — describe ONLY motion, camera, pacing, and audio.\n"
             f"Veo dialect rules:\n{self._dialect_lines(model_cli_id)}\n"
             f"Motion to animate over ~5s: {shot.motion}\n"
-            f"Global constraints: {'; '.join(self.rules.global_constraints())}"
+            f"Global constraints: {'; '.join(self.rules.global_constraints(kind='motion', style=''))}"
         )
         return self.llm.parse(brief, _RenderPrompt, max_tokens=600).prompt

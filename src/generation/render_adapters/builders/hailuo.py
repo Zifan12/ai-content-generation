@@ -3,7 +3,7 @@
 Concrete PromptBuilder for Minimax Hailuo 02 (cli_id ``minimax_hailuo``). Like
 VeoBuilder, the dialect rules live in config/render_rules.yaml, not in Python —
 the builder reads ``rules.model("minimax_hailuo")["dialect"]`` +
-``rules.global_constraints()`` at runtime and folds them into an LLM "brief".
+``rules.global_constraints(kind, style)`` at runtime and folds them into an LLM "brief".
 
 Hailuo's dialect differs from Veo's in shape, not just content: its
 ``physics_keywords`` value is a NESTED dict (category -> list of physics verbs,
@@ -86,7 +86,7 @@ class HailuoBuilder(PromptBuilder):
             f"Still-prompt rules:\n{still_rules}\n"
             f"Frozen opening frame to depict: {shot.start_keyframe}\n"
             f"Palette / lighting / realism / uncanny register: {mood_anchor}\n"
-            f"Global constraints: {'; '.join(self.rules.global_constraints())}"
+            f"Global constraints: {'; '.join(self.rules.global_constraints(kind='still', style=mood_anchor))}"
         )
         return self.llm.parse(brief, _RenderPrompt, max_tokens=600).prompt
 
@@ -103,6 +103,6 @@ class HailuoBuilder(PromptBuilder):
             "already holds the style — describe ONLY motion, camera, pacing, and audio.\n"
             f"Hailuo dialect rules:\n{self._dialect_lines(model_cli_id)}\n"
             f"Motion to animate over ~5s: {shot.motion}\n"
-            f"Global constraints: {'; '.join(self.rules.global_constraints())}"
+            f"Global constraints: {'; '.join(self.rules.global_constraints(kind='motion', style=''))}"
         )
         return self.llm.parse(brief, _RenderPrompt, max_tokens=600).prompt
