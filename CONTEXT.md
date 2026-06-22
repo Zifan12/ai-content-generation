@@ -18,26 +18,58 @@ Two tiers:
 
 ## Content Writer (P3)
 
-The generation-side counterpart to the Blueprint extractor: turns a target
-BlueprintCandidate + RAG-retrieved viral neighbors into a validated ContentPackage
-(`src/generation/content_writer.py`, schema `src/schemas/generation.py`).
+The generation-side counterpart to the Blueprint extractor: turns a **premise**
+(+ optional RAG-retrieved viral neighbors for style/lane grounding) into a validated
+ContentPackage (`src/generation/content_writer.py`, schema `src/schemas/generation.py`).
 
-Paradigm = **chained continuity** (design 2026-06-10): one video is ONE continuous ~15s
-take built as one photoreal opening still animated through three ~5s motion segments,
-each segment beginning on the previous clip's extracted last frame — no cuts, no
-teleports. Replaces the retired vignette-montage paradigm (independent stills, "no
-cause→effect across a cut"), which the 2026-06-10 render taste test falsified.
+Paradigm = **single-shot believable micro-narrative** (locked 2026-06-22, "Option A";
+supersedes the 2026-06-10 chained-continuity / 3-shot paradigm, which manufactured
+incoherent "3 strangers" slop). One video = ONE continuous take (~8s, vertical 9:16,
+photoreal, `surreal_hyperreal`) in which a small dramatic thing happens and PAYS OFF —
+a "wait, is this real?!" found-footage moment, NOT a wordless impossible tableau and NOT
+a montage. No cuts, no last-frame handoff, no stitch. Content lane is a market-resolved
+bet (the structure is well-founded; the eye-gate is the floor, the P3.5 market the ceiling).
 
-Key fields: a **device** (closed 7-menu — embodiment, transformation, scale_traversal,
-encounter, reveal, wrongness_creep, time_compression — routed from the premise; replaces
-the old organizing_principle); per-segment **motion**; segment 1's **start_keyframe** (the
-only generated still); optional per-segment **end_keyframe** (for devices that must land a
-visual state on screen, e.g. transformation); one package-level **mood_anchor** (palette +
-lighting + realism, appended verbatim at render to every generated frame). The chain
-contract (opener carries start_keyframe, inheritors must not) is enforced by a Pydantic
-model_validator, not the prompt.
+**One-pass, model-aware:** a single LLM call. The writer is fed the routed model's dialect
+(DATA from `config/render_rules.yaml`, not per-model code) and writes the final
+**model-native** prompts directly — there is no separate prompt-builder layer (the old
+`builders/` classes are deleted). v1 routes to one default model (`veo3_1`, Veo 3.1 high);
+a premise-classifying router is deferred.
+
+Key fields (single-shot `ContentPackage`): one **`shot`** (a `Shot` carrying `start_keyframe`
+= the one photoreal opening still, subject-first, no palette; `motion` = the continuous move
+that builds to the payoff, including an **`Audio:` line** of concrete diegetic sound; optional
+`end_keyframe`); **`model_cli_id`** (the motion model the prompts target); **`premise`**
+(provenance, code-set); **`mood_anchor`** (palette + lighting + realism, appended at render to
+the still); **`onscreen_text`** (the one text-hook line — a MANUAL post overlay at upload, since
+the model can't render text reliably); `caption`; `hashtags`; `voiceover` (rare diegetic
+dialogue → model `Dialogue:` line, default None). The old `device` 7-menu, `device_rationale`,
+and the chain-contract `model_validator` are all removed.
+
+_Avoid_: "chained continuity", "segment", "3-shot", "handoff", "device menu" — retired 2026-06-22.
+
+## Executor
+
+The render runner (`src/generation/executor.py`, new in the single-shot rebuild) — the piece
+previously only *declared*, never built. Consumes the adapter's two `RenderJob`s and actually
+produces a clip: run the still job (`nano_banana_2`) via the Higgsfield CLI → feed its result
+image as the `--image` of the motion (i2v) job (`veo3_1`) → wait → download. `dry_run` returns
+cost only (no spend); states credit cost before any paid call; `ffprobe`s the downloaded clip to
+confirm the native audio stream (`emits_audio` per model in `render_rules.yaml`). Single-shot ⇒
+no stitch step.
+
+_Avoid_: calling this the "render adapter" — the adapter only *declares* jobs; the executor *runs* them.
 
 ## Writer eval (rubric v1)
+
+**Status (2026-06-22): PARKED behind the single-shot rebuild.** Built for the retired 3-shot
+chain writer; its code-checks (`no_palette_in_keyframes`, `device_requires_event_beat`, …) and
+judge dims (`development`-mandatory, `device_execution`) assume the chain grammar that no longer
+exists. Left in place (`src/evals/`, `config/writer_rubric*.yaml`) — **not deleted, not run** —
+as a possible future "not-broken" lint. The live judge of the single-shot product is the human
+**eye-gate** (4-point: idea / believable / not-broken / better = post-worthy floor) + the **P3.5
+market** (7-day views = virality ceiling). The description below is retained for that future
+repurpose.
 
 Two-tier evaluation of writer output (`src/evals/`, driver `scripts/run_rubric_eval.py`):
 
