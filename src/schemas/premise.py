@@ -1,52 +1,48 @@
 """
-Pydantic contracts for the grounded premise generator (ideation front-end).
+Pydantic contracts for the imagination premise generator (ideation front-end).
 
-The premise generator shows an LLM the top-performing videos for a niche (their
-descriptions + hashtags) and asks it to propose fresh premises that reuse a proven
-viral MECHANIC but use a brand-new SUBJECT — never a direct copy. These models are
-the validated shape that LLM call must return (via AnthropicLLM.parse).
+The premise generator asks an LLM to propose fresh one-line premises — believable
+dramatic micro-events a viewer might ask "is this real?!" about. No archive grounding
+in v1: the user reads a slate of ten and eye-filters the best one to feed the writer.
 
-Premise is one proposed idea; PremiseSet wraps exactly five of them — the user reads
-the set and picks one to feed into the writer.
+These models are the validated shape that LLM call must return (via AnthropicLLM.parse).
+
+Premise is one proposed idea; PremiseSet wraps exactly ten of them.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Premise(BaseModel):
     """
-    One proposed, data-grounded content premise.
+    One proposed content premise from pure imagination.
 
     Fields:
-      premise: the one-line content idea / subject ("a man's reflection ages while he
-        doesn't"). This is the WHAT the writer will develop into a video.
-      winning_mechanics: the LLM's stated reason — which proven viral pattern from the
-        retrieved winners this premise reuses (e.g. "inescapable-loop dread"). Free-text
-        on purpose: there is no validated taxonomy of premise-level mechanics yet (the
-        Blueprint enums are a different, lower-level abstraction and will themselves grow
-        once the 72K archive is extracted), so the LLM names the pattern in its own words
-        and we discover the vocabulary from its outputs.
-      copies_nothing: a justification (NOT a bool) explaining how this premise's subject
-        differs from every winner it drew on. A bool would be a rubber stamp the model
-        always sets true; forcing it to articulate the divergence makes it actually
-        diverge, and gives a human something to audit.
+      premise: the one-line content idea — a thing happening, shootable in one ~8s take
+        ("a man's coffee stream freezes mid-pour in a normal kitchen"). This is the WHAT
+        the writer will develop into a video.
+      why_arresting: optional creative note on why this premise stops the scroll. NOT a
+        grounding claim — no reference to archive winners or viral mechanics.
 
-    min_length on each field is only a junk filter (reject empty/trivial strings); real
-    quality control lives in the generator's system prompt, not here.
+    min_length on premise is only a junk filter (reject empty/trivial strings); real
+    quality control lives in the generator's system prompt and the human eye-gate.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     premise: str = Field(min_length=10)
-    winning_mechanics: str = Field(min_length=10)
-    copies_nothing: str = Field(min_length=10)
+    why_arresting: str | None = None
 
 
 class PremiseSet(BaseModel):
     """
-    Exactly five proposed premises — the full output of one generation call.
+    Exactly ten proposed premises — the full output of one generation call.
 
-    The list is length-locked to 5 (min_length == max_length): the user is meant to read
-    a fixed slate and pick one. If the LLM returns 4 or 6, validation fails at parse time
-    and the caller can retry, rather than silently accepting a short or bloated set.
+    The list is length-locked to 10 (min_length == max_length): the user reads a fixed
+    slate and picks one. If the LLM returns 9 or 11, validation fails at parse time and
+    the caller can retry, rather than silently accepting a short or bloated set.
     """
 
-    premises: list[Premise] = Field(min_length=5, max_length=5)
+    model_config = ConfigDict(extra="forbid")
+
+    premises: list[Premise] = Field(min_length=10, max_length=10)
