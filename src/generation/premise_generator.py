@@ -1,149 +1,121 @@
-import json
-
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-from src.models.trend import RawContentItem
-from src.models.niche import Niche
 from src.schemas.premise import PremiseSet
-from src.miner.schemas import BlueprintCandidate
 from src.providers.llm.anthropic_llm import AnthropicLLM
 
 SYSTEM_PROMPT = """\
 <role>
-You are an ideation lead for a short-form vertical-video studio. You read what
-already went viral in one niche and propose the NEXT batch of ideas to make —
-fresh subjects built on the proven engines, never reruns of what already won.
+You are an ideation lead for a short-form vertical-video studio. Your job is to
+invent the NEXT batch of single-shot video premises from imagination — not from any
+archive, not by remixing what already went viral. You are the muse; the data is
+someone else's job. The best ideas come from a vivid mind's eye, not from a feed.
 </role>
 
-<inputs>
-You receive two things:
-1. A slate of real TikTok videos that recently went viral in this niche. Each is
-   given by its on-screen description, its hashtags, and its view count. This is
-   the EVIDENCE — proof of what earned attention, not a catalog to copy.
-2. A mechanics recipe: the recurring combination of viral devices the miner found
-   clustering across these winners. This is the abstract ENGINE the slate shares.
-</inputs>
+<product>
+Every premise you write becomes ONE continuous ~8-second vertical clip:
+photorealistic, in the surreal_hyperreal niche — footage that looks one-hundred
+percent real yet shows something that cannot quite be. The register is found-footage
+/ caught-on-camera: the kind of clip a stranger films by accident and can't explain.
+The clip carries native sound. The reaction you are aiming for is a gut "wait...
+is this real?!" — believable enough to doubt, impossible enough to share.
+</product>
 
-<task>
-First, INFER THE MECHANIC behind the winners — the repeatable engine, stated
-abstractly, independent of any one video's subject. In this niche the engines
-look like: uncanny-domestic (an ordinary home scene tilted into the impossible),
-inescapable-loop (a moment that cannot resolve and keeps returning),
-liminal-breach (a familiar space opening onto somewhere it should not),
-perceptual-doubt (the eye is shown something it cannot trust). Name the engine in
-your own words — these are examples, not a fixed list.
+<what_a_premise_is>
+A premise is ONE line: a concrete thing that HAPPENS and PAYS OFF inside a single
+take. A small dramatic micro-event with a BEAT — an ordinary setup, then a turn that
+makes the viewer distrust their own eyes. It must be shootable as one moving shot,
+no cuts.
 
-Then PROPOSE EXACTLY FIVE fresh premises. Each one reuses a proven engine but runs
-it on a BRAND-NEW SUBJECT the winners never touched. A premise is one line: the
-single WHAT a video will be built around ("a man's reflection keeps aging while he
-does not"). It is a subject and a situation, not a script.
-</task>
+These show the SHAPE, not subjects to reuse:
+- "A man pours coffee and the falling stream freezes solid in mid-air before it
+  reaches the cup."
+- "A jogger stops at the crosswalk but her shadow keeps running across the road."
+- "A fisherman reels in his line and the whole surface of the lake tilts up with it."
+Each is a thing that occurs and resolves on camera in seconds — setup, then turn.
+</what_a_premise_is>
 
-<grounding_rule>
-This is the rule the whole job turns on: STEAL THE ENGINE, NEVER THE SUBJECT. If a
-winner got views from a melting staircase, you may reuse its liminal-breach engine
-— but your premise must be a different thing entirely (a doorway, a tide, a face),
-never another staircase. Reusing a winner's subject, setting, or specific image is
-failure. Transferring its abstract engine onto an unrelated subject is the entire
-point. When in doubt, ask: "could a viewer who saw the winner recognize my premise
-as the same video?" If yes, you copied — discard it and move further.
-</grounding_rule>
+<avoid>
+Two retired anchors — do NOT regress to either:
+1. The STATIC ANOMALY. A premise is not a frozen impossible tableau ("a house that
+   is slightly too tall," "a second moon in the sky"). Nothing develops in a
+   tableau. Demand a beat: something must change, move, or be revealed DURING the
+   shot.
+2. The SILENT-VISUAL rule. The old doctrine forbade sound and on-screen text. That
+   is dead. A premise may turn on a sound (a wrong noise, a snap, a far-off voice),
+   and the finished video will carry a text hook — but you do NOT write that sound
+   cue or that text here. You supply only the WHAT that happens on camera.
 
-<format>
-This niche is SILENT-VISUAL surreal_hyperreal: photoreal footage of impossible or
-uncanny things, carried entirely by the image. No dialogue, no voiceover, no
-narration, no text-on-screen gag. The premise must land MUTED — the wrongness has
-to be SEEN, not said. A premise that only works if someone explains it is wrong for
-this niche. Favor premises that are photorealistic in texture but impossible in
-fact: the uncanny lives in the gap between "looks completely real" and "cannot be
-real".
-</format>
+Also avoid: vibes in place of events ("liminal dread"), scripted dialogue,
+multi-scene stories, and anything that needs more than one continuous shot to read.
+</avoid>
 
 <output>
-Return exactly five premises. For each, fill all three fields:
-  premise: the one-line subject + situation. Concrete, specific, shootable. Not a
-    vibe ("liminal dread") — a thing happening ("an empty playground swing keeps
-    moving as the others stop").
-  winning_mechanics: name the engine this premise echoes, abstractly, and say which
-    winner(s) on the slate run that same engine. This forces you to ground the idea
-    in real evidence, not invent in a vacuum.
-  copies_nothing: justify how this premise's SUBJECT differs from every winner it
-    drew on. Do not assert "it's original" — articulate the divergence (different
-    object, different setting, different reveal). If you cannot name a concrete
-    difference, the premise is too close; replace it.
-
-Five distinct subjects, distinct from each other and from every winner. No two of
-your five may share the same subject with a different coat of paint.
+Return the requested number of premises. Each must be DISTINCT from the others —
+different subject, setting, and turn; no two are the same idea with a fresh coat of
+paint. For each, fill:
+  premise: the one-line event — concrete, specific, and shootable in one ~8s take.
+    A thing happening, not a vibe.
+  why_arresting: OPTIONAL — one line on why it stops the scroll. A creative note,
+    never a claim about past winners, view counts, or "mechanics".
+Do NOT write the caption, the on-screen hook text, or the camera/render prompt —
+those are the writer's job downstream. You supply only the idea.
 </output>
 """
 
-def _top_winners(db: Session, niche: str, k) -> list[RawContentItem]:
-    
-    stmt = (
-        select(RawContentItem)
-        .join(Niche, RawContentItem.niche_id == Niche.id)
-        .where(Niche.name == niche)
-        .order_by(RawContentItem.views.desc())
-        .limit(k)
-    )
-
-    return list(db.execute(stmt).scalars().all())
-
-def build_envelope(winners: list[RawContentItem], candidate: BlueprintCandidate) -> str:
-    """
-    Compose the user-message string for one premise-generation call.
-
-    This is a pure formatter: it lays the per-call payload on screen exactly as the
-    SYSTEM_PROMPT's <inputs> block promises the model — a slate of real winners and a
-    mechanics recipe. No DB access, no LLM call, no side effects.
-
-    Args:
-        winners: the top-by-views RawContentItem rows for this niche (from
-            _top_winners). Each contributes a labeled block carrying its description,
-            hashtags, and view count — the EVIDENCE the model grounds fresh premises on.
-        candidate: the miner's ranked mechanic combo; its blueprint_template (the
-            signal-only field dict) is serialized as the abstract mechanics RECIPE.
-
-    Returns:
-        A single string: the recipe first, then one labeled block per winner. Joined
-        with blank lines so the model reads it as distinct sections.
-    """
-    parts = []
-
-    recipe = json.dumps(candidate.blueprint_template)
-    parts.append(f"Mechanics recipe (the recurring engine across these winners):\n{recipe}")
-
-    for i, winner in enumerate(winners, 1):
-        description = winner.description if winner.description else "n/a"
-        tags = [tag for tag in (winner.hashtags or []) if tag]
-        hashtags = ", ".join(tags) if tags else "n/a"
-
-        lines = [
-            f"Winner {i} — a real video that went viral in this niche:",
-            f"Description: {description}",
-            f"Hashtags: {hashtags}",
-            f"Views: {winner.views:,}",
-        ]
-        parts.append("\n".join(lines))
-
-    return "\n\n".join(parts)
+MAX_TOKENS = 4096
 
 
 class PremiseGenerator:
+    """
+    Imagination premise generator (ideation front-end, v1).
+
+    Asks an LLM for a fresh slate of single-shot video premises from pure imagination
+    — no archive grounding, no DB. The user reads the slate and eye-filters the best
+    one to hand to the writer.
+    """
 
     def __init__(self, llm: AnthropicLLM | None = None):
-        
-            self.llm = llm or AnthropicLLM(model="claude-sonnet-4-6")
+        """
+        Args:
+            llm: structured-output client; defaults to AnthropicLLM on
+                claude-sonnet-4-6. Inject a fake in tests to avoid a real API call.
+        """
+        self.llm = llm or AnthropicLLM(model="claude-sonnet-4-6")
 
-    def generate(self, candidate: BlueprintCandidate, db: Session, niche: str, k: int=5) -> PremiseSet:
-         
-        winners = _top_winners(db, niche, k)
+    def generate(self, *, n: int = 10) -> PremiseSet:
+        """
+        Produce a slate of n imagination premises.
 
-        if not winners:
-            raise ValueError
+        Sends SYSTEM_PROMPT (the standing brief) plus a short work-order user message
+        carrying the requested count, and parses the reply into a PremiseSet.
 
-        envelope = build_envelope(winners, candidate)
+        The PremiseSet schema only enforces a non-empty list (length is caller-driven),
+        and the native structured-output parse does no client-side retry — so this
+        method is the one place the exact-count invariant is enforced.
 
-        premises = self.llm.parse(envelope, PremiseSet, system=SYSTEM_PROMPT, max_tokens=4096)
-         
-        return premises
+        Args:
+            n: how many premises to request. Defaults to 10.
+
+        Returns:
+            A PremiseSet of exactly n premises.
+
+        Raises:
+            ValueError: if the model returns a number of premises other than n.
+        """
+        work_order = (
+            f"Generate {n} distinct single-shot video premises now. "
+            f"Return exactly {n} — no more, no fewer — each with a different "
+            f"subject, setting, and turn."
+        )
+
+        result = self.llm.parse(
+            work_order,
+            PremiseSet,
+            system=SYSTEM_PROMPT,
+            max_tokens=MAX_TOKENS,
+        )
+
+        if len(result.premises) != n:
+            raise ValueError(
+                f"Premise generator asked for {n} premises but got {len(result.premises)}."
+            )
+
+        return result

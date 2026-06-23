@@ -11,23 +11,19 @@ def _premise(n: int = 0) -> Premise:
     return Premise(premise=f"Schema-test premise number {n} for validation.")
 
 
-def _ten_premises() -> list[Premise]:
-    return [_premise(i) for i in range(10)]
+def _n_premises(count: int) -> list[Premise]:
+    return [_premise(i) for i in range(count)]
 
 
-def test_premise_set_of_ten_validates():
-    premise_set = PremiseSet(premises=_ten_premises())
-    assert len(premise_set.premises) == 10
+def test_premise_set_accepts_variable_n():
+    for n in (1, 3, 10):
+        premise_set = PremiseSet(premises=_n_premises(n))
+        assert len(premise_set.premises) == n
 
 
-def test_premise_set_of_nine_raises():
+def test_premise_set_empty_raises():
     with pytest.raises(ValidationError):
-        PremiseSet(premises=_ten_premises()[:9])
-
-
-def test_premise_set_of_eleven_raises():
-    with pytest.raises(ValidationError):
-        PremiseSet(premises=_ten_premises() + [_premise(99)])
+        PremiseSet(premises=[])
 
 
 def test_premise_requires_only_premise():
