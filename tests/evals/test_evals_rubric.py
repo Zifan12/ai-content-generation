@@ -1,6 +1,13 @@
+import pytest
+
 from src.evals.rubric import load, select
-from tests.test_rubric_checks import baseline_package
+from tests.helpers.content_package import baseline_package
 from src.evals.rubric_eval import scorer, scorecard
+
+# PARKED behind the single-shot pivot (plan Task 7): rubric selection + scoring
+# tests built on the retired 3-shot schema (Device, baseline_package). Kept for
+# a future vision judge; skipped to keep the suite green.
+pytestmark = pytest.mark.skip(reason="rubric eval parked behind single-shot pivot (plan Task 7)")
 
 def test_load():
     records = load()

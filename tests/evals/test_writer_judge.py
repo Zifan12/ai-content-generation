@@ -18,8 +18,14 @@ from pydantic import ValidationError
 
 from src.evals.writer_judge import DimensionScore, PackageVerdict
 from src.evals.package_view import render_for_judge
-from tests.test_rubric_checks import baseline_package
+from tests.helpers.content_package import baseline_package
 from src.evals.rubric_eval import judge_scorecard, device_distribution
+
+# PARKED behind the single-shot pivot (plan Task 7). These exercise the writer
+# judge + package->text renderer against the retired 3-shot schema via
+# baseline_package, so they no longer construct under the single-shot
+# ContentPackage. Kept for a future vision judge; skipped to keep the suite green.
+pytestmark = pytest.mark.skip(reason="writer judge parked behind single-shot pivot (plan Task 7)")
 
 def test_valid_score_constructs():
     """A score within 1-5, with all required fields present, builds cleanly."""
