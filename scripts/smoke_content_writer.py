@@ -1,59 +1,42 @@
 """
-THROWAWAY smoke test for ContentWriter.write() (P3 Task 5).
+End-to-end smoke for the single-shot pipeline (premise → write → render_jobs → execute).
 
-Runs write() once per premise in PREMISES (4 stratified what-if premises, one
-per axis: creature / environment / transformation / scale) against real DB rows
-+ a real Sonnet call each, and prints a human-readable arc dump per premise for
-eyeballing against the 4-failure rubric. Not an eval, not a gate — just "does it
-produce coherent chained takes across premises, and where does it fail". Delete
-after use.
+By default runs dry_run (cost estimate only, no credits spent). Pass --real to
+execute a live Higgsfield render. A premise is auto-generated via PremiseGenerator
+(n=1) unless --premise supplies one manually.
 
-Stratifying across 4 premises (not 1) is deliberate: a single premise cannot
-reveal whether the writer overfits one template — only a spread exposes
-cross-premise monotony.
+USAGE:
+  uv run python scripts/smoke_content_writer.py                     # dry run, auto premise
+  uv run python scripts/smoke_content_writer.py --premise "..."     # dry run, named premise
+  uv run python scripts/smoke_content_writer.py --real              # LIVE render (~60cr)
+  uv run python scripts/smoke_content_writer.py --real --model veo3_1 --premise "..."
 
-Picks the most common niche among v3 blueprints, uses 3 of those blueprints as
-the retrieved "winners" (hits), hand-builds a plausible target candidate from
-the first one's grouped mechanics, and asks the writer to generate around each
-premise.
+OUTPUT:
+  Prints the full ContentPackage (still prompt, motion prompt, hook text, caption,
+  hashtags, credit estimate). In --real mode also prints the local still/clip paths
+  and whether the clip carries native audio.
+  A timestamped transcript of the run is saved to output/smoke_runs/.
 """
 
+import argparse
 import subprocess
 import sys
-from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Load secrets BEFORE importing src.database (it reads DATABASE_URL at import).
 load_dotenv("config/.env")
 
-from sqlalchemy import select  # noqa: E402
-
-from src.database import SessionLocal  # noqa: E402
-from src.models.blueprint import BlueprintRecord  # noqa: E402
-from src.miner.schemas import BlueprintCandidate, MinerEvidence  # noqa: E402
-from src.rag.schemas import RetrievalHit  # noqa: E402
 from src.generation.content_writer import ContentWriter  # noqa: E402
-
-PREMISES = [
-    "Footage of Kraken appearing in the pacific ocean",
-    "POV: Someone exploring and found the Yggdrasil",
-    "Human transforming into an angel",
-    "Life as an ant"
-]
+from src.generation.executor import execute  # noqa: E402
+from src.generation.premise_generator import PremiseGenerator  # noqa: E402
+from src.generation.render_adapters.adapter import render_jobs  # noqa: E402
+from src.generation.render_adapters.rules import RenderRules  # noqa: E402
 
 
 class _Tee:
-    """
-    Duplicate every write to two streams (live console + the record file).
-
-    The smoke prints to stdout for live eyeballing; wrapping sys.stdout in a _Tee
-    for the duration of the run also captures the EXACT same text to a timestamped
-    transcript so runs can be diffed against each other later (regression hunting).
-    Only write/flush are needed — print() touches nothing else.
-    """
+    """Duplicate every write to two streams (live console + the record file)."""
 
     def __init__(self, *streams):
         self._streams = streams
@@ -68,13 +51,7 @@ class _Tee:
 
 
 def _git_sha() -> str:
-    """
-    Return the current short git SHA, or "nogit" if unavailable.
-
-    Stamped into every transcript header so a saved smoke run is traceable to the
-    exact prompt/schema commit that produced it — a transcript you cannot tie to a
-    code version is uncomparable.
-    """
+    """Return the current short git SHA, or 'nogit' if unavailable."""
     try:
         return subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"], text=True
@@ -84,7 +61,27 @@ def _git_sha() -> str:
 
 
 def main() -> None:
-    # Open a timestamped, SHA-stamped transcript and tee all stdout into it.
+    """Parse args, run the single-shot pipeline, print the package and render result."""
+    parser = argparse.ArgumentParser(
+        description="End-to-end smoke for the single-shot pipeline."
+    )
+    parser.add_argument(
+        "--premise",
+        default=None,
+        help="One-line premise to develop. Omit to auto-generate via PremiseGenerator.",
+    )
+    parser.add_argument(
+        "--model",
+        default="veo3_1",
+        help="Motion model CLI id (default: veo3_1).",
+    )
+    parser.add_argument(
+        "--real",
+        action="store_true",
+        help="Run a live Higgsfield render. Default is dry_run (cost estimate only).",
+    )
+    args = parser.parse_args()
+
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     sha = _git_sha()
     record_path = Path("output/smoke_runs") / f"smoke_{ts}_{sha}.txt"
@@ -96,106 +93,66 @@ def main() -> None:
     original_stdout = sys.stdout
     sys.stdout = _Tee(original_stdout, record_file)
 
-    db = SessionLocal()
     try:
-        v3 = db.scalars(
-            select(BlueprintRecord).where(BlueprintRecord.extractor_version == "v3")
-        ).all()
-        if len(v3) < 3:
-            raise SystemExit(f"Need >=3 v3 blueprints, found {len(v3)}.")
+        # --- Premise ---
+        if args.premise:
+            premise = args.premise
+            print(f"[premise] (supplied)\n{premise}\n")
+        else:
+            print("[premise] generating via PremiseGenerator (n=1)…")
+            premise_set = PremiseGenerator().generate(n=1)
+            premise = premise_set.premises[0].premise
+            why = premise_set.premises[0].why_arresting
+            print(f"  {premise}")
+            if why:
+                print(f"  → {why}")
+            print()
 
-        niches = Counter(b.blueprint_data.get("niche_label", "unknown") for b in v3)
-        top_niche, _ = niches.most_common(1)[0]
-        print(f"niche distribution (v3): {niches.most_common()}")
-        print(f"using niche: {top_niche}\n")
-
-        chosen = [b for b in v3 if b.blueprint_data.get("niche_label") == top_niche][:3]
-
-        hits = [
-            RetrievalHit(
-                content_item_id=b.content_item_id,
-                blueprint_id=b.id,
-                score=0.90 - i * 0.05,
-                blueprint_data=b.blueprint_data,
-                niche_label=b.blueprint_data.get("niche_label", "unknown"),
-            )
-            for i, b in enumerate(chosen)
-        ]
-
-        # Hand-build a target candidate from the first winner's grouped mechanics.
-        seed = chosen[0].blueprint_data
-        template = {
-            k: seed[k]
-            for k in ("hook_type", "pacing", "audio_type")
-            if k in seed
-        }
-        candidate = BlueprintCandidate(
-            rank=1,
-            niche_label=top_niche,
-            blueprint_template=template,
-            evidence=MinerEvidence(
-                matching_items=len(chosen),
-                median_views=250_000,
-                p90_views=1_200_000,
-                trend_slope_4wk_pct=12.5,
-                rationale="smoke-test synthetic evidence",
-            ),
+        # --- Write ---
+        rules = RenderRules()
+        print(f"[write] model={args.model}")
+        package = ContentWriter().write(
+            premise,
+            rules=rules,
+            model_cli_id=args.model,
         )
-        print(f"candidate template: {template}")
-        print(f"hit content_item_ids: {[h.content_item_id for h in hits]}\n")
 
-        writer = ContentWriter()
+        # --- Package dump ---
+        print("=" * 70)
+        print(f"PREMISE:       {package.premise}")
+        print(f"MODEL:         {package.model_cli_id}")
+        print(f"MOOD ANCHOR:   {package.mood_anchor}")
+        print("-" * 70)
+        print(f"START KEYFRAME:\n  {package.shot.start_keyframe}")
+        print(f"\nMOTION:\n  {package.shot.motion}")
+        if package.shot.end_keyframe:
+            print(f"\nEND KEYFRAME:\n  {package.shot.end_keyframe}")
+        print("-" * 70)
+        print(f"HOOK TEXT:     {package.onscreen_text}")
+        print(f"CAPTION:       {package.caption}")
+        print(f"HASHTAGS:      {package.hashtags}")
+        if package.voiceover:
+            print(f"VOICEOVER:     {package.voiceover}")
+        if package.rationale:
+            print(f"RATIONALE:     {package.rationale}")
+        print("=" * 70 + "\n")
 
-        chosen_devices: list[str] = []
+        # --- Render jobs + execute ---
+        jobs = render_jobs(package, rules)
+        out_dir = str(Path("output/smoke_runs") / f"render_{ts}_{sha}")
 
-        slot_labels = ("OPENING", "MIDDLE", "CLOSING")
+        mode = "REAL RENDER" if args.real else "DRY RUN (cost estimate only)"
+        print(f"[execute] {mode}")
+        result = execute(jobs, out_dir, dry_run=not args.real)
 
-        for premise in PREMISES:
-            package = writer.write(candidate, hits, db, premise)
-            chosen_devices.append(package.device)
-
-            # Human-readable arc dump — surface only the fields the rubric needs
-            # (3 labeled chained segments + the package mood-anchor + overlays +
-            # caption). Skip braces/hashtags/grounding_ids/rationale: noise for the
-            # read. mood_anchor is package-level (one grade for the whole take), so
-            # it prints once.
-            print("=" * 70)
-            print(f"PREMISE: {premise}")
-            print(f"DEVICE: {package.device}  —  {package.device_rationale}")
-            print(f"MOOD-ANCHOR: {package.mood_anchor}")
-            print("-" * 70)
-            for slot, shot in zip(slot_labels, package.shots):
-                # start_keyframe prints only on segment 1 (the only generated still);
-                # segments 2-3 inherit the prior clip's last frame. end_keyframe
-                # printed even when absent (as a marker) so the read shows which
-                # segments reach a target state vs ride pure motion.
-                start = shot.start_keyframe if shot.start_keyframe is not None else "— (inherits prior clip's last frame)"
-                end = shot.end_keyframe if shot.end_keyframe is not None else "— (no end-state)"
-                print(f"[{slot}]")
-                print(f"  START:  {start}")
-                print(f"  MOTION: {shot.motion}")
-                print(f"  END:    {end}\n")
-            print(f"OVERLAYS: {package.onscreen_text}")
-            print(f"CAPTION:  {package.caption}")
-            print("=" * 70 + "\n")
-
-        # Cross-premise device-variety check — the anti-monotony guard being
-        # exercised. A single premise cannot reveal a template; only the spread can.
-        # If all 4 premises collapse to one device, the writer is defaulting to a
-        # habit instead of letting the premise drive the pick — that is the monotony
-        # failure resurfacing, so shout it. This is a printed diagnostic for the
-        # human, not an assertion.
-        distinct = set(chosen_devices)
-        print("#" * 70)
-        print(f"DEVICE PICKS (in premise order): {chosen_devices}")
-        print(f"DISTINCT DEVICES: {sorted(distinct)}  ({len(distinct)} of {len(chosen_devices)})")
-        if len(distinct) == 1:
-            print(">>> MONOTONY WARNING: all premises chose the same device. "
-                  "The pick is not tracking the premise — iterate the prompt.")
-        print("#" * 70)
+        print("\n[result]")
+        print(f"  credits_spent: {result.credits_spent}")
+        if args.real:
+            print(f"  still_path:    {result.still_path}")
+            print(f"  clip_path:     {result.clip_path}")
+            print(f"  has_audio:     {result.has_audio}")
 
     finally:
-        db.close()
         sys.stdout = original_stdout
         record_file.close()
         print(f"\n[record saved] {record_path}")
