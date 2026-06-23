@@ -35,6 +35,7 @@ models:
     display: "Minimax Hailuo 02"
     source: "methodology/13 §3"   # NOT image-video-director/06 — that doc omits Hailuo (verified 2026-06-19, see INDEX L107)
     ratings: { physics: 5, audio: 1, consistency: 3, cinematic: 4, max_seconds: 10 }
+    emits_audio: false   # i2v physics model, audio 1/5 — no usable native audio track
     best_for: [impossible_physics, fluid_motion, fire_smoke, cloth, gravity, real_motion]
     io_mode: pass_image_via_cli   # 2026-06-21 (own CLI test): ALWAYS pass --image to Hailuo via the Higgsfield CLI; text-only t2v FAILS here. Root cause NOT fully isolated (and moot for us — see below): (a) likely CLI bug — `--resolution` rejects its own listed values (512/768/1080), so with no image to set dimensions t2v falls back to an invalid 1024×1024 square and the render fails silently; (b) the base `minimax` variant ALSO hard-requires an image ("One of 'input_image' or 'input_image_end' must be provided"). i2v works because the 9:16 input image sets valid dims (output 768×1376). The official MODELS.md marks --image OPTIONAL, so the model itself may support t2v — UNCONFIRMED, do NOT claim the docs are wrong. MOOT for us: we are still-first, always have a seed image. PIPELINE/EXECUTOR IMPACT: the adapter only DECLARES jobs (no rendered still URL at build time); the executor must render the opening still FIRST, then inject it as --image into the Hailuo motion job at submit time.
     # evidence 2026-06-21 (OWN render, CLI i2v) — RESOLVES open_question #1: Hailuo HELD the impossible
@@ -61,6 +62,7 @@ models:
     display: "Google Veo 3.1"
     source: "methodology/12 + 06 video selection"
     ratings: { physics: 3, audio: 5, consistency: 3, cinematic: 3, max_seconds: 8 }   # extendable to ~60 via chaining
+    emits_audio: true   # native synced diegetic audio (audio 5/5) — the single-shot default
     best_for: [dialogue, multi_voice, precise_audio_sync, native_vertical, timestamped_pacing]
     variants: [veo3_1_lite]   # cheaper/faster Veo; route to it only after pulling real specs via `higgsfield model get`
     # NOTE: Veo physics is only 3/5 — do NOT default impossible-physics shots here.
@@ -87,6 +89,7 @@ models:
     display: "Kling v3.0"
     source: "methodology/18 + 09 + 06"
     ratings: { physics: 4, audio: 4, consistency: 5, cinematic: 3, max_seconds: 15 }
+    emits_audio: true   # native audio (audio 4/5)
     best_for: [multi_shot, character_consistency, shot_reverse_shot, transformation, chinese_dialogue]
     variants: [kling3_0_turbo, kling3_0_motion_control, kling2_6]
     dialect:
@@ -99,6 +102,7 @@ models:
     display: "Seedance 2.0"
     source: "methodology/15 + 19 + 06"
     ratings: { physics: 3, audio: 4, consistency: 4, cinematic: 4, max_seconds: 20 }
+    emits_audio: true   # native audio (audio 4/5)
     best_for: [narrative_arc, multi_shot_story, transformation, multimodal_reference]
     variants: [seedance1_5]
     dialect:
@@ -110,6 +114,7 @@ models:
     display: "Wan 2.7"
     source: "methodology/13 §5"   # NOT image-video-director/06 — that doc omits Wan (verified 2026-06-19, see INDEX L107)
     ratings: { physics: 3, audio: 5, consistency: 3, cinematic: 3, max_seconds: 15 }
+    emits_audio: true   # voice auto-lip-sync + sfx + bgm (audio 5/5)
     best_for: [digital_human, lip_sync, talking_head, broadcast]
     variants: [wan2_6]
     dialect:
@@ -120,6 +125,7 @@ models:
     display: "Grok Video 1.5"
     source: "06 video selection (Grok Imagine)"
     ratings: { physics: 3, audio: 3, consistency: 3, cinematic: 2, max_seconds: 15 }
+    emits_audio: true   # synchronized audio (audio 3/5)
     best_for: [fast_cheap_social, scale]
     dialect:
       style: "Declarative prompts, synchronized audio. 720p cap — cheap/fast, lower fidelity."

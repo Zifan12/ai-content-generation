@@ -126,3 +126,16 @@ class RenderRules:
                 model has no ``ratings.max_seconds`` entry.
         """
         return self.data["models"][cli_id]["ratings"]["max_seconds"]
+
+    def emits_audio(self, cli_id: str) -> bool:
+        """Return whether a model generates its own native audio track.
+
+        Reads the ``emits_audio`` flag off a model's config block, defaulting to
+        ``False`` when the flag is absent. Unlike ``model``/``max_seconds``, this
+        does NOT treat an unknown cli_id as a programming error: the still model
+        (``nano_banana_2``) has no entry in the video-models block at all, and a
+        still never emits audio, so a missing model resolves to ``False`` rather
+        than raising. The executor (Task 6) uses this to warn when a model that
+        should carry audio renders a mute clip.
+        """
+        return self.data["models"].get(cli_id, {}).get("emits_audio", False)
