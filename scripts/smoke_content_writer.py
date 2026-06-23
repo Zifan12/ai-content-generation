@@ -105,7 +105,7 @@ def main() -> None:
             why = premise_set.premises[0].why_arresting
             print(f"  {premise}")
             if why:
-                print(f"  → {why}")
+                print(f"  -> {why}")
             print()
 
         # --- Write ---

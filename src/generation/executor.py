@@ -26,6 +26,7 @@ real (paid) run — the mocked tests cannot catch these:
   * ``--quality high``: confirm veo3_1 accepts it, or it errors "Unknown params".
 """
 
+import platform
 import re
 import subprocess
 from pathlib import Path
@@ -64,10 +65,19 @@ class RenderResult(BaseModel):
 def _run_cli(argv: list[str]) -> str:
     """Run a higgsfield CLI command and return its stdout.
 
+    On Windows the higgsfield npm package installs as a .cmd shim that only
+    resolves through the shell (cmd.exe); shell=True is required there.
+
     Raises:
         subprocess.CalledProcessError: if the CLI exits non-zero.
     """
-    completed = subprocess.run(argv, capture_output=True, text=True, check=True)
+    completed = subprocess.run(
+        argv,
+        capture_output=True,
+        text=True,
+        check=True,
+        shell=(platform.system() == "Windows"),
+    )
     return completed.stdout
 
 
