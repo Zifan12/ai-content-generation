@@ -1,191 +1,131 @@
 """
-Content writer (P3): turns a target Blueprint + retrieved viral neighbors into a
-validated ContentPackage.
+Content writer (P3): turns a premise into a validated single-shot ContentPackage.
 
-ContentWriter.write grounds generation on the retrieved winners' mechanics —
-their aesthetic descriptors, hook subtype, and transcript when one exists —
-never their captions (TikTok captions are hashtag dumps, not signal). The naked
-envelope builder is the ungrounded baseline used by the generation eval.
+ContentWriter.write is model-aware one-pass generation: one structured-output LLM
+call produces one ~8s vertical clip's full kit (opening still + motion prompts,
+hook text, caption, hashtags). Render dialects from config/render_rules.yaml are
+injected into the user prompt so start_keyframe and motion are native to the
+chosen image and video models.
+
+Optional RAG grounding (retrieved viral neighbors) supplies aesthetic descriptors,
+hook subtype, and transcript when present — never captions (hashtag dumps, not
+signal). Imagination-only runs omit hits entirely.
 """
 
 import json
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from src.generation.render_adapters.rules import RenderRules
 from src.models.trend import RawContentItem
 from src.models.transcript import Transcript
 from src.rag.schemas import RetrievalHit
 from src.schemas.generation import ContentPackage
-from src.miner.schemas import BlueprintCandidate
 from src.providers.llm.anthropic_llm import AnthropicLLM
 
-# A full chained-continuity ContentPackage is large — 3 segments each with
-# keyframe(s) + motion prose, plus device_rationale, mood_anchor, overlays,
-# caption, hashtags, optional voiceover, rationale. The shared LLM default
-# (1024) truncates it mid-JSON; the longest case (a transformation with an
-# end_keyframe on every segment) needs real headroom. Writer-owned so raising
-# it never touches the judge or extractor, which share the same parse() default.
+# Single-shot packages are smaller than the retired 3-segment chain, but headroom
+# is harmless and writer-owned — raising it never touches the judge or extractor,
+# which share the same parse() default (1024).
 WRITER_MAX_TOKENS = 8192
 
 SYSTEM_PROMPT = """\
 <role>
-You are a short-form vertical-video creative director for TikTok. You turn a
-proven viral pattern into a fresh, original content package ready to produce and
-post.
+You are a short-form vertical-video creative director for TikTok, working in the
+"is this real?!" lane: caught-on-camera, found-footage clips that look like a
+real phone captured something that cannot quite be real. You turn one premise
+into a single content package ready to produce and post.
 </role>
 
 <inputs>
-You receive three things:
-1. A premise — the concept to develop, supplied by the user. This is the WHAT:
-   the single idea the whole video must deliver. Often a "what if X were real"
-   hook, but it may arrive in any form (a vibe, a one-liner, a scene). Develop
-   THIS premise; do not invent your own.
-2. A target Blueprint as a JSON object — the viral mechanics (hook type, pacing,
-   visual devices, emotional drivers, aesthetic descriptors, niche). This is the
-   HOW: the mechanics you build the premise's video around.
-3. A set of real TikTok videos that recently went viral using those mechanics.
-   This is the EVIDENCE: each is described by its aesthetic descriptors and hook
-   subtype, plus a transcript when the video had a spoken track. Proof of what
-   works — not material to copy.
+You receive:
+1. A premise — the one idea this video delivers, supplied by the user. Develop
+   THIS premise; never substitute your own.
+2. A STILL DIALECT block — the image-model prompting rules for the opening frame
+   (directive-stack order, camera kit, authentic-imperfection, composition
+   traps). Obey it when you write start_keyframe.
+3. A MOTION DIALECT block — the prompting grammar for the specific video model
+   this clip targets (its preferred structure, light/audio rules, what it drowns
+   on). Obey it when you write motion.
+4. OPTIONALLY, a set of real TikTok videos that went viral in this lane —
+   described by aesthetic descriptors, hook subtype, and a transcript when one
+   exists. EVIDENCE of what works, never material to copy. They may be absent;
+   when absent, lean on the dialects and the premise alone.
 </inputs>
 
 <task>
-Produce one complete content package for a single ~15 second vertical video,
-built as a CHAINED CONTINUOUS TAKE: one photoreal opening still, animated and
-extended through three ~5-second motion segments, each segment beginning on the
-exact final frame of the previous one. There are NO cuts and NO teleports — the
-camera and world flow unbroken for the full duration. The viewer experiences ONE
-continuous developing moment, not a montage.
+Produce one complete content package for ONE continuous ~8 second vertical video:
+a single uncut take of a believable dramatic micro-event that makes a scrolling
+viewer stop and ask "wait — is this real?!". No cuts, no edits, no montage — one
+camera, one moment, caught as if by accident. Something small happens and PAYS
+OFF inside the eight seconds; the payoff is what earns the replay.
 
-Two failures you are replacing at once:
-  - The STATIC VIGNETTE ("the ant corpse"): three pretty postcards where nothing
-    develops. In a continuous take, stasis is death — every segment must advance
-    the same experience.
-  - The DISCONTINUITY trap: segments written as independent scenes (new location,
-    new subject, new framing) cannot chain — segment N+1 literally starts on
-    segment N's last frame, so each motion must END somewhere the next motion can
-    BEGIN. No scene-jumping.
+The register is found-footage realism, NOT spectacle. The clip should read as a
+real capture of an almost-impossible moment, not as an obviously-generated
+"epic" render. The uncanny lands hardest when everything else looks mundane and
+true.
 </task>
 
 <grounding_rule>
-The retrieved examples show you the mechanics that earned views — the visual
-aesthetic, the hook variant, and (when present) what was said. Steal the
-mechanics; never reuse their specific topic, wording, or subject. The TOPIC
-comes from the supplied premise — never from a winner. If a winner's aesthetic
-was a melting-building impossible reveal, you might apply that same impossible-
-reveal mechanic to the user's premise — same mechanic, the user's content.
-Reusing a winner's topic is failure; transferring its mechanic onto the premise
-is the goal.
+When examples are present, they show you the mechanics that earned views — the
+aesthetic, the hook variant, what was said. Transfer the MECHANIC onto the
+premise; never reuse a winner's topic, subject, or wording. The topic is always
+the supplied premise. When no examples are present, this rule is moot — invent
+freely within the lane.
 </grounding_rule>
 
 <fields>
 Fill every field.
 
-<device>
-FIRST, before writing any segment, choose ONE creative device from this CLOSED
-menu. The device is what makes THIS premise's continuous take gripping — the
-treatment, not the topic. Route by premise type, in this order:
+<shot>
+ONE shot. It has two prompts you write and one optional third:
 
-  1. "life as X" / creature / be-the-thing premise → "embodiment": the viewer IS
-     the thing. Render the world from inside its perspective — its height, its
-     speed, its senses. The journey is what IT experiences.
+start_keyframe — the single opening still, the 3-second scroll-stop frame and the
+world's DNA. This is an IMAGE-model prompt: write it in the STILL DIALECT. Lead
+with the subject and its identity, then the hard framing/spatial layout, then the
+camera kit (lens, light source + direction). Found-footage framing beats polished
+composition — a slightly off, handheld, real-phone angle reads truer than a
+perfect one. NO palette or grade words (the mood_anchor owns the grade, appended
+at render). NO motion words (movement is the motion field). Express scale with
+adjectives only (colossal, towering); never measure against a named real object,
+or the image model fuses that object into the frame. Vertical 9:16.
 
-  2. becoming / corruption premise (something turning into something else) →
-     "transformation": the subject visibly changes across the take; the change IS
-     the video. Use end_keyframes to land the change steps on screen.
+motion — the one continuous movement that animates the still over ~8s and lands
+the payoff. This is the VIDEO-model i2v prompt: write it in the MOTION DIALECT.
+The input still already carries the look, so do NOT restate palette, scene, or
+style here — describe only camera move, subject action, timing, and audio. ONE
+camera move + ONE subject action; if something moves fast, name the single
+element that moves fast, never the whole frame. Build to the payoff with a move
+that REVEALS rather than buries it — a pull-back, a tilt-up, a hold that lets the
+impossible thing resolve on camera. Do not push in and lose the very thing the
+clip is about. End the take deliberately (the moment completes, or holds) — no
+hanging action.
 
-  3. colossal subject / monument / single overwhelming thing → "scale_traversal":
-     the camera travels along or past it; its size DAWNS progressively. The
-     viewer never gets the comfortable wide — the thing keeps not ending.
-     (Vertical descent/ascent premises are this device too.)
+  Audio: line — the motion MUST contain an "Audio:" line describing concrete
+  diegetic sound, in the MOTION DIALECT's audio form. Name the actual sounds the
+  scene would make (footstep on gravel, distant traffic, a sharp wet crack), not
+  "ambient sounds". NO music — this is a real capture, not a scored edit.
 
-  4. subject + second presence (meeting, threat, pursuit) → "encounter": mid-
-     journey another agent enters; the rest of the take is the meeting's tension
-     — approach, contact, reaction. (Pursuit variant: the presence chases; the
-     camera flees.)
+end_keyframe (optional) — a target final frame, ONLY when the payoff is a
+specific visual state the motion must land precisely (a transformation step, a
+reveal's end state). Write it as the opening frame moments later with ONLY the
+action advanced — same world, same camera, a minimal delta. Most single-shot
+clips do NOT need one; leave it null unless the payoff demands a pinned end state.
+</shot>
 
-  5. misdirection-capable premise (what you see is not what it is) → "reveal":
-     the continuous move recontextualizes the frame — the viewer believes X until
-     the camera keeps going and X becomes Y. ONE realization, placed late.
-     (Slow-approach variant: the whole take closes on one dreaded point; arrival
-     is the payoff.)
-
-  6. place / liminal / world premise where the POINT is being there →
-     "wrongness_creep": the WORLD degrades around the moving camera — each
-     segment the environment is wronger than the last. The successor of the old
-     sustained_mood: same premises, but development is now mandatory.
-
-  7. same-place-time-passes premise → "time_compression": one continuous path
-     while time accelerates around it (day to night, seasons, decay). Use
-     end_keyframes to land the time states.
-
-ANTI-DEFAULT RULES: embodiment and wrongness_creep are the two trap-defaults —
-almost any premise CAN be rationalized as "be there in POV" or "make it get
-weirder". If you pick either, device_rationale must name which OTHER devices you
-ruled out and why. A transformation premise routed to embodiment is a routing
-failure even if fluently executed.
-
-THEN write device_rationale: one or two sentences naming the device and, for the
-two trap-defaults, the rule-outs.
-</device>
-
-<segments>
-Exactly THREE segments (the three `shots` entries), in chain order. Render
-mechanics you are writing for: a photoreal still is generated from segment 1's
-start_keyframe (the mood_anchor is appended at render); it is animated ~5s by
-segment 1's motion; the clip's LAST FRAME becomes segment 2's start image
-automatically; and so on. You only ever describe ONE image — everything after it
-is motion.
-
-SEGMENT 1 — the only start_keyframe. This frozen frame is the 3-second
-scroll-stop hook AND the world's establishing DNA (everything downstream
-inherits its subject, framing and light). Make it the strongest single image of
-the take. Lead with the camera (named shot type / POV), then the subject frozen
-at one instant, then the lighting source and direction. No palette words — the
-mood_anchor owns the grade. No motion words — movement belongs in motion fields.
-Express scale with adjectives ONLY (colossal, monumental, towering); never
-measure against a named real thing — the image model spawns the comparison
-("eye the size of a bus" fuses a bus into the frame). Vertical 9:16.
-Segments 2 and 3 must leave start_keyframe null — they begin on the previous
-clip's final frame automatically.
-
-MOTION (all three segments) — the one continuous movement animating that
-segment over ~5s. Pure motion, no style or palette words. One move only.
-If a motion is fast, name the ONE element that moves fast — never the frame as a
-whole; an unqualified "fast" makes the renderer accelerate everything at once and
-the segment jitters.
-SEAM RULE: end each motion with the action that OPENS the next segment's motion
-— the chain inherits momentum across the handoff, never a stall. Segment 3's
-motion ends the take deliberately (arrival, completion, or hold into black) —
-no hanging action.
-
-DEVELOPMENT RULE: across the three motions, the experience must ADVANCE — the
-journey progresses, the change proceeds, the wrongness deepens. If the three
-motions could be shuffled without the viewer noticing, you wrote postcards, not
-a take. Cause→effect WITHIN the take is legal and expected — this is one
-unbroken moment, bounded: one developing moment, not a 3-act plot. No dialogue
-scenes, no resolution obligation.
-
-END_KEYFRAME (optional, any segment) — a target frame when the segment must
-REACH a specific visual state (a transformation step, a time state, an
-interaction completing). Written as the segment's start state moments later
-with ONLY the action advanced — same world, same camera; it is produced by
-image-editing the inherited frame, so describe a minimal delta. Most segments
-don't need one; transformation and time_compression almost always need at least
-one. mood_anchor is appended to end_keyframes at render too.
-
-MOOD_ANCHOR (one per package) — palette, lighting, realism level, and uncanny
-register. Lighting carries the most quality signal of any element here, so make
-it concrete: name the source, its direction, and its quality (hard/soft,
-warm/cold), not just a named grade. Appended at render to the opening still and
-every end_keyframe. Favor authentic-capture cues (natural grain, practical
-light); never quality incantations ("masterpiece", "8K", "breathtaking").
-</segments>
+<mood_anchor>
+One line: palette, light quality + direction, realism register, and uncanny
+register. Appended at render to the still (and end_keyframe if present), so it
+must describe only what is TRUE for the whole take. Name a light SOURCE only when
+it is lit the entire time (sun, sky, room light) — never a light that ignites
+mid-take. Favor authentic-capture cues (natural grain, slight underexposure,
+practical light); never quality incantations ("masterpiece", "8K", "cinematic").
+</mood_anchor>
 
 <onscreen_text>
-The text overlays, in display order. Lead with a scroll-stopping hook overlay on
-SEGMENT 1 — it carries the first-3-seconds hook. Keep each string short and punchy.
-Return an empty list only if the video genuinely has no overlays.
+Exactly one short, punchy hook line in almost every case — the "is this real?!"
+/ "wait what just happened" text that rides over the clip (added manually at
+upload). One string in the list. Return an empty list ONLY for a deliberately
+textless clip.
 </onscreen_text>
 
 <caption>
@@ -199,45 +139,38 @@ hashtag walls.
 </hashtags>
 
 <voiceover>
-A narration script ONLY if the video's format implies a spoken track. If the
-concept is visual or ambient with no narration, return null. Null means "no
-spoken track" by design — do not invent narration to fill the field.
+Leave null unless a person ON CAMERA actually speaks a line as part of the
+captured moment (then it is diegetic dialogue, not narration). This lane is not
+narrated — do not invent voiceover to fill the field.
 </voiceover>
 
 <rationale>
-One or two sentences naming which mechanics you pulled from the winners, how you
-transferred them onto the premise, and how the three segments develop the take
-under the chosen device (one continuous experience, not a montage). For debugging
-and eval.
+One or two sentences: what makes this premise read as believable-but-impossible,
+and how the motion's payoff lands the "is this real?!" beat. For debugging and
+eval.
 </rationale>
 
-<grounding_hit_ids>
-Do not populate this; the system sets provenance itself.
-</grounding_hit_ids>
+<provenance>
+Do not populate model_cli_id, premise, or grounding_hit_ids — the system sets
+those itself.
+</provenance>
 </fields>
 
 <constraints>
   - Develop the supplied premise — never substitute your own concept.
-  - Use the target Blueprint's mechanics and aesthetic; honor its niche.
-  - Originality is mandatory — no reused topics or phrasings from the source
-    examples; the premise is the only topic.
-  - Pick exactly ONE device from the closed menu; justify it in device_rationale
-    (with rule-outs if it is a trap-default).
-  - Exactly three segments. Only segment 1 has a start_keyframe. The take is
-    continuous: no cuts, no teleports, no new scenes — each motion ends where
-    the next begins (seam rule).
-  - The take must DEVELOP. A static take where the three motions are
-    interchangeable is the named failure. Cause→effect within the take is
-    required, bounded to one developing moment — not a 3-act plot.
-  - Use an end_keyframe only when the segment must reach a specific new state;
-    describe it as a minimal delta on the inherited frame.
-  - Write for vertical short-form; assume sound-on, but segment 1's opening
-    frame + first motion must hook even when muted.
+  - ONE continuous take, ~8s, vertical 9:16, photoreal found-footage register.
+    No cuts, no montage, no scene jumps.
+  - start_keyframe in the still dialect; motion in the motion dialect; obey both
+    blocks you were given rather than a generic style.
+  - The clip must PAY OFF on camera inside the take — the reveal/event resolves
+    visibly. A pretty static frame where nothing happens is the failure.
+  - The motion must REVEAL the payoff, not bury it (no push-in that loses the
+    concept).
+  - motion carries an Audio: line of concrete diegetic sound; no music.
   - Write what is visibly on screen. A word that names a feeling instead of a
-    visible thing gives the renderer nothing to draw, so it guesses — and guesses
-    wrong. Cut empty adjectives (epic, amazing, beautiful, stunning) from every
-    keyframe and motion; replace each with the concrete subject, light, or action
-    it was standing in for.
+    visible thing gives the renderer nothing to draw. Cut empty adjectives (epic,
+    amazing, beautiful, stunning); replace each with the concrete subject, light,
+    or action it stood for.
 </constraints>
 """
 
@@ -248,7 +181,7 @@ def _hydrate_hits(hits: list[RetrievalHit], db: Session) -> list[dict]:
 
     Only transcripts need a DB round-trip (captions are deliberately not fetched —
     no usable signal). A hit with no transcript row gets transcript=None; absence is
-    carried truthfully so build_envelope decides whether to render it.
+    carried truthfully so _build_envelope decides whether to render a transcript line.
     """
 
     ids = [h.content_item_id for h in hits]
@@ -273,87 +206,122 @@ def _hydrate_hits(hits: list[RetrievalHit], db: Session) -> list[dict]:
         })  
     return out
     
-
-def build_envelope(candidate: BlueprintCandidate, hydrated_hits: list[dict], premise: str) -> str:
+def _build_envelope(
+    premise: str,
+    still_dialect: dict,
+    motion_dialect: dict,
+    hydrated_hits: list | None,
+) -> str:
     """
-    Assemble the grounded user prompt: the premise the model must develop, then the
-    target template, then one labeled block per retrieved winner.
+    Assemble the single-shot user prompt: the premise to develop, the two dialect
+    blocks the writer must obey, and (optionally) the retrieved winners.
 
-    The premise leads — it is the user's "what if X were real" concept, the WHAT the
-    video is about, kept distinct from the Blueprint (the mechanics / HOW) and the
-    winners (the evidence). Each winner block always carries its aesthetic descriptors
-    and hook subtype (the always-present signal) and adds a transcript line only when
-    that winner has one. Blocks are labeled so the model can tell separate winners apart.
+    The SYSTEM_PROMPT promises the model four labeled inputs, so this emits them as
+    labeled sections it can find: the premise (the WHAT), the still dialect (the
+    image-model rules for start_keyframe), the motion dialect (the chosen video
+    model's grammar for motion), and one block per retrieved winner when grounding
+    is supplied. The two dialects are serialized with json.dumps so their full
+    rule text — including nested sub-blocks like a model's physics_keywords — lands
+    verbatim in the prompt; the model reads them as reference, not as JSON to echo.
+
+    Grounding is optional: when hydrated_hits is None or empty, no Examples section
+    is emitted and the writer leans on the dialects and premise alone. Each winner
+    block always carries its aesthetic descriptors and hook subtype (the
+    always-present signal) and adds a transcript line only when that winner has one.
+
+    Returns:
+        The joined prompt string (sections separated by blank lines).
     """
 
-    parts = []
+    parts = [
+        f"Premise:\n{premise}",
+        f"Still dialect:\n{json.dumps(still_dialect, indent=2)}",
+        f"Motion dialect:\n{json.dumps(motion_dialect, indent=2)}",
+    ]
 
-    template = json.dumps(candidate.blueprint_template)
+    if hydrated_hits:
+        for i, hit in enumerate(hydrated_hits, 1):
+            aesthetic_descriptors = (
+                ", ".join(hit["aesthetic_descriptors"])
+                if hit["aesthetic_descriptors"]
+                else "n/a"
+            )
+            hook_subtype = hit["hook_subtype"] if hit["hook_subtype"] else "unknown"
 
-    parts.append(f"Premise:\n{premise}")
-    parts.append(f"Target Blueprint:\n{template}")
+            lines = [f"Example {i} — a real video that went viral with these mechanics:"]
+            if hit["transcript"] is not None:
+                lines.append(f"Transcript: {hit['transcript']}")
+            lines.append(f"Aesthetic descriptors: {aesthetic_descriptors}")
+            lines.append(f"Hook subtype: {hook_subtype}")
 
-    for i, hit in enumerate(hydrated_hits, 1):
-        aesthetic_descriptors = ", ".join(hit["aesthetic_descriptors"]) if hit["aesthetic_descriptors"] else "n/a"
-        hook_subtype = hit["hook_subtype"] if hit["hook_subtype"] else "unknown"
+            parts.append("\n".join(lines))
 
-        lines = [f"Example {i} — a real video that went viral with these mechanics:"]
-        if hit["transcript"] is not None:
-            lines.append(f"Transcript: {hit['transcript']}")
-        lines.append(f"Aesthetic descriptors: {aesthetic_descriptors}")
-        lines.append(f"Hook subtype: {hook_subtype}")
+    return "\n\n".join(parts)
 
-        parts.append("\n".join(lines))
-
-    return "\n".join(parts)
-
-
-def build_naked_envelope(candidate: BlueprintCandidate) -> str:
-    """
-    The ungrounded baseline envelope: the target template alone, no winners.
-
-    Kept as its own function (not build_envelope with empty hits) so the eval's
-    control arm stays fixed however the grounded envelope evolves.
-    """
-    return json.dumps(candidate.blueprint_template)
 
 class ContentWriter:
     """
-    Generates a validated ContentPackage from a target Blueprint and its retrieved
-    viral neighbors via a single structured-output LLM call.
+    Generates a validated single-shot ContentPackage from a premise via one
+    structured-output LLM call.
+
+    Injects still and motion render dialects from RenderRules so prompts target
+    the chosen models natively. Optional retrieved hits ground style/lane only.
     """
 
     def __init__(self, llm: AnthropicLLM | None = None):
-            self.llm = llm or AnthropicLLM(model="claude-sonnet-4-6")
+        self.llm = llm or AnthropicLLM(model="claude-sonnet-4-6")
 
-    def write(self, candidate: BlueprintCandidate, hits: list[RetrievalHit], db: Session, premise: str) -> ContentPackage:
+    def write(
+        self,
+        premise: str,
+        *,
+        rules: RenderRules,
+        model_cli_id: str = "veo3_1",
+        hits: list[RetrievalHit] | None = None,
+        db: Session | None = None,
+    ) -> ContentPackage:
         """
-        Generate one ContentPackage for the target, grounded on the retrieved hits.
+        Generate one ContentPackage for a single-shot clip from the given premise.
 
-        Hydrates the hits, builds the grounded envelope, runs the structured-output
-        call, then stamps grounding_hit_ids from the fed hits (provenance is code-set,
-        never trusted from the model).
+        Builds a user prompt from the premise, still dialect, motion dialect for
+        model_cli_id, and (when hits is not None) hydrated winner examples; runs
+        structured output; then code-sets premise, model_cli_id, and
+        grounding_hit_ids (never trusted from the LLM).
 
         Args:
-            premise: The user's "what if X were real" concept seed — the idea the
-                writer develops across the 3-segment chained take. v1 hand-feeds it
-                so the test isolates structure from concept-invention; auto-generating
-                the premise is v2.
+            premise: The one-line idea this video delivers (from PremiseGenerator
+                or hand-fed). The writer develops THIS premise, not a substitute.
+            rules: Loaded render_rules.yaml — still_dialect and per-model dialect.
+            model_cli_id: Motion model the motion prompt targets (default veo3_1).
+                Caller/router may override; stamps package.model_cli_id after parse.
+            hits: Optional retrieved viral neighbors for style/lane grounding.
+                When None, generation is imagination-only.
+            db: Required when hits is not None — used to fetch transcripts.
+
+        Returns:
+            A validated ContentPackage ready for the thin render adapter.
 
         Raises:
-            ValueError: if hits is empty — generation must be grounded.
+            TypeError: from SQLAlchemy if hits is provided but db is None.
         """
 
-        if not hits:
-            raise ValueError("Hits cannot be empty")
-        
-        hydrate_hits = _hydrate_hits(hits, db)
-        envelope = build_envelope(candidate, hydrate_hits, premise)
+        if hits is not None:
+            if db is None:
+                raise ValueError("db is required when hits is provided (transcripts need a DB round-trip)")
+            hydrated = _hydrate_hits(hits, db)
+        else:
+            hydrated = None
+
+        envelope = _build_envelope(
+            premise,
+            still_dialect=rules.still_dialect(),
+            motion_dialect=rules.model(model_cli_id)["dialect"],
+            hydrated_hits=hydrated,
+        )
 
         package = self.llm.parse(envelope, ContentPackage, system=SYSTEM_PROMPT, max_tokens=WRITER_MAX_TOKENS)
-
-        package.grounding_hit_ids = [h.content_item_id for h in hits]
+        package.premise = premise
+        package.model_cli_id = model_cli_id
+        package.grounding_hit_ids = [h.content_item_id for h in hits] if hits is not None else []
 
         return package
-        
-         
