@@ -18,6 +18,8 @@ dependencies = [
     "uvicorn[standard]>=0.32.0",
     "rq>=2.0.0",
     "redis>=5.2.0",
+    # News-reactive monitor (P3.5) — Reddit cultural source
+    "praw>=7.7",
     # LLM SDKs + structured output
     "anthropic>=0.40.0",
     "openai>=1.60.0",

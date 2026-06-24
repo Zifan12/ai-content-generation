@@ -16,6 +16,14 @@ generation:
   default_aspect_ratio: "9:16"
   content_style: "faceless"  # faceless, narrated, mixed
 
+# News-reactive render backends (P3.5) — which output formats the angle pitcher
+# may route to. Only enabled backends are buildable; the format router substitutes
+# a disabled backend's angles down to an available one (v1: visual_satire).
+render_backends:
+  visual_satire: true         # available now (single still + Veo i2v)
+  commentary_voiceover: false # Phase 2 — not built
+  narrative_alt: false        # Phase 3 — Seedance 2.5, not built
+
 # RAG (retrieval-augmented generation) — P2
 rag:
   embedder:
