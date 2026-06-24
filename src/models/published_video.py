@@ -25,9 +25,9 @@ KEY FIELDS:
   - fetched_at: when the day-7 count was read (audit + future staleness logic).
 """
 
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.database import Base
@@ -42,13 +42,13 @@ class PublishedVideo(Base):
     the 7-day mark, not at insert time. compute_percentiles later ranks all rows with a
     non-null view_7d and writes each one's self-relative percentile to the linked blueprint.
     """
-
+    
     __tablename__ = "published_videos"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    blueprint_id: Mapped[int] = mapped_column(
-        ForeignKey("blueprints.id"), index=True
-    )  # closed-loop link to the conditioning blueprint
+    blueprint_id: Mapped[int | None] = mapped_column(
+        ForeignKey("blueprints.id"), index=True, nullable=True
+    )  # closed-loop link to the conditioning blueprint (old path; null for news-reactive videos)
     niche: Mapped[str] = mapped_column(String(100))
     tiktok_url: Mapped[str] = mapped_column(String(500))
     post_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -63,3 +63,11 @@ class PublishedVideo(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+    angle_pitch_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("angle_pitches.id"), nullable=True
+    )  # news-reactive path; null for old blueprint-sourced videos
+    trendiness_score_at_post: Mapped[float | None] = mapped_column(Float, nullable=True)
+    gap_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    format_backend: Mapped[str | None] = mapped_column(String, nullable=True)
+    virality_window_hours_remaining: Mapped[float | None] = mapped_column(Float, nullable=True)

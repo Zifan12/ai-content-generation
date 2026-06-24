@@ -17,6 +17,9 @@ import src.models.transcript  # noqa: E402
 import src.models.blueprint  # noqa: E402
 import src.models.extractor_response  # noqa: E402
 import src.models.viral_video  # noqa: E402, F401
+import src.models.published_video  # noqa: E402, F401
+import src.models.trending_event  # noqa: E402, F401
+import src.models.angle_pitch  # noqa: E402, F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
