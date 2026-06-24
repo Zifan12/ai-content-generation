@@ -25,7 +25,7 @@ KEY FIELDS:
   - fetched_at: when the day-7 count was read (audit + future staleness logic).
 """
 
-from datetime import date, datetime
+from datetime import datetime
 
 from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
@@ -42,7 +42,7 @@ class PublishedVideo(Base):
     the 7-day mark, not at insert time. compute_percentiles later ranks all rows with a
     non-null view_7d and writes each one's self-relative percentile to the linked blueprint.
     """
-    
+
     __tablename__ = "published_videos"
 
     id: Mapped[int] = mapped_column(primary_key=True)
