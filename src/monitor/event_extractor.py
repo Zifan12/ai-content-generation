@@ -24,12 +24,19 @@ _DEDUP_SYSTEM_PROMPT = """You are a deduplication judge for a trending-events pi
 items scraped from Reddit, each with a headline and a sample of comments. Decide whether they are about \
 the SAME underlying real-world event/story, even if the wording, subreddit, or angle differs.
 
-Same event = same core happening (same incident, announcement, match, release, death, ruling, etc.), \
-regardless of how it's phrased or which community posted it. Different events = distinct happenings, even \
-if the topic or franchise overlaps.
+Same event = the same core happening, regardless of how it's phrased or which community posted it. This \
+applies to ANY subject — entertainment, sports, politics, technology, science, business, internet culture, \
+etc. The subject does not matter; what matters is whether both posts point at one shared occurrence.
 
-Two posts about the same TV finale = same. A finale post vs a casting-rumor post for the same show = \
-different. When genuinely unsure, answer not-same.
+Different events = distinct happenings, even when they share a topic, franchise, person, or company. A post \
+ABOUT an event and a post SPECULATING on its aftermath or rumoring a related development are different.
+
+Examples of the boundary (the principle, not the domains, is what transfers):
+- Two posts reacting to the same game's final score = same; a post about the game vs a post rumoring a \
+post-game trade = different.
+- Two posts about the same product launch = same; a launch post vs a post leaking the NEXT model = different.
+
+When genuinely unsure, answer not-same.
 
 Return only the structured verdict."""
 
