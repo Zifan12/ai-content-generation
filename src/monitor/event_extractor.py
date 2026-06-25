@@ -66,19 +66,19 @@ class EventExtractor:
         self.llm = llm or AnthropicLLM(model="claude-sonnet-4-6")
 
     @staticmethod
-    def _sort_and_cap(events: list[TrendingEvent], top_n) -> list[TrendingEvent]:
+    def _sort_and_cap(events: list[TrendingEvent], top_n: int) -> list[TrendingEvent]:
         """Sort events by trendiness (highest first) and keep only the top N.
 
         Args:
-            events: The events to rank. Sorted in place.
+            events: The events to rank. Not mutated — a new sorted list is built.
             top_n: Maximum number of events to return.
 
         Returns:
             The ``top_n`` highest-trendiness events, descending. Fewer than
             ``top_n`` are returned if the input is shorter.
         """
-        events.sort(key=lambda e: e.trendiness_score, reverse=True)
-        return events[:top_n]
+        ranked = sorted(events, key=lambda e: e.trendiness_score, reverse=True)
+        return ranked[:top_n]
 
     @staticmethod
     def _normalize(events: list[TrendingEvent]) -> list[TrendingEvent]:
@@ -90,25 +90,29 @@ class EventExtractor:
         ``model_copy`` (the schema forbids extra fields / in-place edits).
 
         Args:
-            events: The events to rescale. Assumed non-empty.
+            events: The events to rescale.
 
         Returns:
-            New events with normalized trendiness_score. If every event shares
-            the same score (max == min, which would divide by zero), the input
-            list is returned unchanged.
+            New events with normalized trendiness_score. Always returns fresh
+            copies, never the input objects. An empty input returns an empty
+            list. If every event shares the same score (max == min, which would
+            divide by zero), copies are returned with scores unchanged.
         """
+        if not events:
+            return []
+
         minimum = min(e.trendiness_score for e in events)
         maximum = max(e.trendiness_score for e in events)
 
-        if maximum == minimum: 
-            return events
-            
+        if maximum == minimum:
+            return [e.model_copy() for e in events]
+
         normalized = []
-        for e in (events):
+        for e in events:
             scaled_score = (e.trendiness_score - minimum) / (maximum - minimum)
             normalized.append(e.model_copy(update={"trendiness_score": scaled_score}))
-            
-        return normalized 
+
+        return normalized
 
     @traced(name="event_dedup")
     def _dedup(self, events: list[TrendingEvent]) -> list[TrendingEvent]:
@@ -117,9 +121,12 @@ class EventExtractor:
         Greedy single-pass clustering: each incoming event is compared (via an
         LLM "same event?" verdict) against every survivor kept so far. On the
         first match it is merged into that survivor and scanning stops; if it
-        matches none, it becomes a new survivor. This handles transitive dups
-        (A==B, B==C all collapse) because later events are compared against the
-        already-merged survivor, not the raw originals.
+        matches none, it becomes a new survivor. Transitive dups collapse
+        through the survivor chain (B merges into A, then C is compared against
+        the merged A+B) — but because the scan stops at the first match and the
+        result depends on arrival order, greedy clustering is not guaranteed to
+        unify every set the LLM might consider related under all orderings. For
+        v1's small batches this is an accepted tradeoff over O(n^2) clustering.
 
         Merge rule: the survivor keeps its own headline/url/subreddit/metadata;
         trendiness scores are summed (two communities surfacing the same story
@@ -170,7 +177,7 @@ class EventExtractor:
             descending. Merged duplicates carry summed trendiness and combined
             reaction samples.
         """
-        normalizd_events = self._normalize(events)
-        deduplicate_events = self._dedup(normalizd_events)
+        normalized_events = self._normalize(events)
+        deduplicate_events = self._dedup(normalized_events)
         sorted_and_capped = self._sort_and_cap(deduplicate_events, top_n)
         return sorted_and_capped

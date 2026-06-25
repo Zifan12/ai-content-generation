@@ -59,3 +59,25 @@ def test_output_sorted_and_capped():
 
     assert len(result) == 2
     assert result[0].trendiness_score >= result[1].trendiness_score
+
+
+def test_three_duplicates_accumulate_into_one():
+    """Three events the LLM calls 'same' collapse to one survivor that carries
+    all three reaction samples and the summed (normalized) trendiness."""
+    verdict = DedupVerdict(is_same=True)
+    extractor = EventExtractor(FakeLLM(verdict))
+    result = extractor.extract([EVENT_A, EVENT_B, EVENT_C])
+
+    assert len(result) == 1
+    survivor = result[0]
+    assert "I am devastated" in survivor.reaction_sample
+    assert "We deserved better" in survivor.reaction_sample
+    assert "Incredible footage" in survivor.reaction_sample
+    # Normalized scores max out at 1.0 per event; a sum above 1.0 proves the
+    # accumulation ran across all three, not just a single pair.
+    assert survivor.trendiness_score > 1.0
+
+
+def test_empty_input_returns_empty():
+    extractor = EventExtractor(FakeLLM(DedupVerdict(is_same=False)))
+    assert extractor.extract([]) == []

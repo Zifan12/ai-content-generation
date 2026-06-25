@@ -64,4 +64,6 @@ class RoutingDecision(BaseModel):
     substitution_note: str
 
 class DedupVerdict(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     is_same: bool
