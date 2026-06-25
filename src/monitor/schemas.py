@@ -62,3 +62,6 @@ class RoutingDecision(BaseModel):
     backend: RenderBackend
     is_substitute: bool
     substitution_note: str
+
+class DedupVerdict(BaseModel):
+    is_same: bool
