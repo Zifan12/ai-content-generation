@@ -1,0 +1,237 @@
+import json
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from src.models.angle_pitch import AnglePitchRecord
+from src.models.trending_event import TrendingEventRecord
+from src.database import Base
+from src.monitor.schemas import (
+    AnglePitch,
+    AnglePitchSlate,
+    GapAnalysis,
+    GapType,
+    RenderBackend,
+    RoutingDecision,
+    TrendingEvent,
+)
+from scripts.pitch_angles import run_pitch_pipeline
+
+# ---------------------------------------------------------------------------
+# Sample pipeline data (one event → one gap → three angles)
+# ---------------------------------------------------------------------------
+
+SAMPLE_EVENT = TrendingEvent(
+    headline="Dragon spotted circling Tokyo Tower at dawn",
+    subreddit="interestingasfuck",
+    url="https://reddit.com/r/interestingasfuck/comments/abc123",
+    reaction_sample=(
+        "Top comment: 'I wish we got to see it actually breathe fire.' "
+        "Reply: 'They cut away right before the good part, classic.'"
+    ),
+    trendiness_score=0.92,
+    virality_window_hours=18.0,
+    raw_source_data={},
+)
+
+SAMPLE_GAP = GapAnalysis(
+    dominant_emotion="longing",
+    audience_want="to see the dragon actually breathe fire",
+    gap_type=GapType.alternate_reality,
+    producibility_score=0.8,
+    virality_window_hours=18.0,
+    reasoning="The crowd was teased a payoff the footage never delivered.",
+)
+
+SAMPLE_SLATE = AnglePitchSlate(
+    angles=[
+        AnglePitch(
+            take="The dragon finally breathes fire over Tokyo Tower at dawn",
+            format_description="Single wide aerial shot, slow push-in as flame erupts",
+            render_backend=RenderBackend.visual_satire,
+            estimated_cost_credits=24.0,
+            gap_satisfaction_rationale="Shows the fire-breath payoff fans were denied",
+            legal_flag=False,
+        ),
+        AnglePitch(
+            take="Breaking news helicopter footage captures the dragon's fire breath",
+            format_description="Mock news B-roll, shaky helicopter POV, lower-third chyron",
+            render_backend=RenderBackend.commentary_voiceover,
+            estimated_cost_credits=24.0,
+            gap_satisfaction_rationale="Delivers the climax through a documentary news frame",
+            legal_flag=False,
+        ),
+        AnglePitch(
+            take="A-list actor watches the dragon breathe fire from a rooftop",
+            format_description="Split-screen: celebrity reaction face + dragon fire wide shot",
+            render_backend=RenderBackend.narrative_alt,
+            estimated_cost_credits=30.0,
+            gap_satisfaction_rationale="Pairs the wish-fulfillment with a recognizable reaction",
+            legal_flag=True,
+        ),
+    ]
+)
+
+# Pick "1" in tests → first angle above (visual_satire, no substitution).
+ROUTED_VISUAL = RoutingDecision(
+    backend=RenderBackend.visual_satire,
+    is_substitute=False,
+    substitution_note="",
+)
+
+ROUTED_SUBSTITUTE = RoutingDecision(
+    backend=RenderBackend.visual_satire,
+    is_substitute=True,
+    substitution_note="Wished-for backend 'commentary_voiceover' is not available; substituted 'visual_satire'.",
+)
+
+
+AVAILABLE_BACKENDS = {
+    RenderBackend.visual_satire: True,
+    RenderBackend.commentary_voiceover: False,
+    RenderBackend.narrative_alt: False,
+    RenderBackend.unknown: False,
+}
+
+
+@pytest.fixture
+def db():
+    engine = create_engine(
+        "sqlite:///:memory:", connect_args={"check_same_thread": False}
+    )
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    session = Session()
+    yield session
+    session.close()
+    engine.dispose()
+
+
+class FakeScraper:
+    def __init__(self, events: list[TrendingEvent] | None = None) -> None:
+        self._events = events if events is not None else [SAMPLE_EVENT]
+
+    def fetch(self) -> list[TrendingEvent]:
+        return self._events
+
+
+class FakeExtractor:
+    """Pass-through by default; set ``events`` to force a fixed shortlist."""
+
+    def __init__(self, events: list[TrendingEvent] | None = None) -> None:
+        self._events = events
+
+    def extract(
+        self, events: list[TrendingEvent], top_n: int = 3
+    ) -> list[TrendingEvent]:
+        if self._events is not None:
+            return self._events[:top_n]
+        return events[:top_n]
+
+
+class FakeGapAgent:
+    def __init__(self, gap: GapAnalysis | None = None) -> None:
+        self._gap = gap if gap is not None else SAMPLE_GAP
+        self.calls: list[TrendingEvent] = []
+
+    def analyze(self, event: TrendingEvent) -> GapAnalysis:
+        self.calls.append(event)
+        return self._gap
+
+
+class FakeAnglePitcher:
+    def __init__(self, slate: AnglePitchSlate | None = None) -> None:
+        self._slate = slate if slate is not None else SAMPLE_SLATE
+        self.calls: list[tuple[TrendingEvent, GapAnalysis]] = []
+
+    def pitch(self, event: TrendingEvent, gap: GapAnalysis) -> AnglePitchSlate:
+        self.calls.append((event, gap))
+        return self._slate
+
+
+class FakeFormatRouter:
+    """Returns a fixed decision per wished-for backend, or one global override."""
+
+    def __init__(
+        self,
+        *,
+        default: RoutingDecision | None = None,
+        by_backend: dict[RenderBackend, RoutingDecision] | None = None,
+    ) -> None:
+        self._default = default if default is not None else ROUTED_VISUAL
+        self._by_backend = by_backend or {
+            RenderBackend.visual_satire: ROUTED_VISUAL,
+            RenderBackend.commentary_voiceover: ROUTED_SUBSTITUTE,
+            RenderBackend.narrative_alt: ROUTED_SUBSTITUTE,
+            RenderBackend.unknown: ROUTED_SUBSTITUTE,
+        }
+        self.calls: list[AnglePitch] = []
+
+    def route(self, angle: AnglePitch) -> RoutingDecision:
+        self.calls.append(angle)
+        return self._by_backend.get(angle.render_backend, self._default)
+
+
+def pick_first() -> str:
+    """Simulated user selection: angle [1] on a single-event slate."""
+    return "1"
+
+
+def test_approved_path(db, tmp_path):
+    scraper = FakeScraper()
+    extractor = FakeExtractor()
+    gap_agent = FakeGapAgent()
+    angle_pitcher = FakeAnglePitcher()
+    format_router = FakeFormatRouter()
+
+    run_pitch_pipeline(
+        db,
+        scraper,
+        extractor,
+        gap_agent,
+        angle_pitcher,
+        format_router,
+        dry_run=False,
+        choice_provider=pick_first,
+        output_dir=tmp_path,
+    )
+
+    approved_pitches = db.query(AnglePitchRecord).filter_by(approved=True).all()
+    assert len(approved_pitches) == 1
+    assert SAMPLE_SLATE.angles[0].take == approved_pitches[0].take
+
+    event = db.query(TrendingEventRecord).filter_by(id=approved_pitches[0].trending_event_id).one()
+    assert event.selected_for_pitching is True
+
+    json_files = list(tmp_path.glob("*.json"))
+    assert len(json_files) == 1
+
+ 
+    data = json.loads(json_files[0].read_text())
+
+    assert data["routed_backend"] == "visual_satire"
+    assert data["trendiness_score"] == pytest.approx(0.92)
+    assert data["angle_pitch_id"] == approved_pitches[0].id
+
+
+def test_dry_run_writes_nothing(db, tmp_path):
+    scraper = FakeScraper()
+    extractor = FakeExtractor()
+    gap_agent = FakeGapAgent()
+    angle_pitcher = FakeAnglePitcher()
+    format_router = FakeFormatRouter()
+
+    run_pitch_pipeline(
+        db,
+        scraper,
+        extractor,
+        gap_agent,
+        angle_pitcher,
+        format_router,
+        dry_run=True,
+        choice_provider=None,
+        output_dir=tmp_path,
+    )
+
+    assert db.query(TrendingEventRecord).count() == 0
+    assert db.query(AnglePitchRecord).count() == 0
+    assert len(list(tmp_path.glob("*.json"))) == 0
