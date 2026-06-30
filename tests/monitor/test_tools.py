@@ -78,10 +78,15 @@ def test_trending_event_origin_accepts_valid_values():
 
 
 def test_reddit_search_formats_items():
-    
-    result = reddit_search("Wistoria", item_fetcher=lambda run_input: [{"dataType": "post", "title": "test"}])
+    result = reddit_search(
+        "Wistoria",
+        item_fetcher=lambda run_input: [
+            {"dataType": "post", "id": "t3_abc", "title": "test", "postUrl": "https://reddit.com/abc"}
+        ],
+    )
 
-    assert "test" in result
+    assert "test" in result.text
+    assert result.urls == ["https://reddit.com/abc"]
 
 
 class _FakeTavilyClient:
@@ -100,6 +105,7 @@ class _FakeTavilyClient:
 def test_tavily_search_formats_results():
     result = tavily_search("Wistoria", client=_FakeTavilyClient())
 
-    assert "Wistoria fan wiki" in result
-    assert "https://example.com/wistoria" in result
-    assert "wand-crafting student" in result
+    assert "Wistoria fan wiki" in result.text
+    assert "https://example.com/wistoria" in result.text
+    assert "wand-crafting student" in result.text
+    assert result.urls == ["https://example.com/wistoria"]

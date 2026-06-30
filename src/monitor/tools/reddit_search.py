@@ -13,6 +13,8 @@ from typing import Callable
 
 import httpx
 
+from src.monitor.tools._types import ToolResult
+
 _APIFY_BASE_URL = "https://api.apify.com/v2"
 _DEFAULT_REDDIT_ACTOR = "harshmaur/reddit-scraper"
 
@@ -26,7 +28,7 @@ def reddit_search(
     max_comments_per_post: int = 20,
     timeout_seconds: float = 120.0,
     item_fetcher: Callable[[dict], list[dict]] | None = None,
-) -> str:
+) -> ToolResult:
     """Search Reddit for ``query`` and return matching posts/comments as one text blob.
 
     Args:
@@ -48,13 +50,15 @@ def reddit_search(
             network.
 
     Returns:
-        One block per matched post: a ``[POST]`` title line followed by its
-        own comments as indented ``[COMMENT]`` lines, blocks separated by a
-        blank line. Comments are grouped under their post via ``postId`` —
-        the actor's raw item order interleaves posts and comments from
-        different threads, so grouping (not print order) is what keeps a
-        comment attributed to the right post. Empty string if nothing
-        matched. Posts with no matched comments still get their own block.
+        A ``ToolResult``. Its ``text`` is one block per matched post: a
+        ``[POST]`` title line followed by its own comments as indented
+        ``[COMMENT]`` lines, blocks separated by a blank line. Comments are
+        grouped under their post via ``postId`` — the actor's raw item order
+        interleaves posts and comments from different threads, so grouping
+        (not print order) is what keeps a comment attributed to the right
+        post. Empty string if nothing matched. Posts with no matched
+        comments still get their own block. Its ``urls`` is each matched
+        post's ``postUrl``, in the same order as the text blocks.
 
     Raises:
         RuntimeError: if no Apify token is configured and no ``item_fetcher``
@@ -96,6 +100,7 @@ def reddit_search(
         comments_by_post.setdefault(bare_post_id, []).append(item)
 
     blocks: list[str] = []
+    urls: list[str] = []
     for item in items:
         if item.get("dataType") != "post":
             continue
@@ -104,8 +109,11 @@ def reddit_search(
         for comment in comments_by_post.get(bare_id, []):
             post_lines.append(f"  [COMMENT] {comment.get('body') or ''}")
         blocks.append("\n".join(post_lines))
+        post_url = item.get("postUrl")
+        if post_url:
+            urls.append(post_url)
 
-    return "\n\n".join(blocks).strip()
+    return ToolResult(text="\n\n".join(blocks).strip(), urls=urls)
 
 
 def _make_apify_fetcher(

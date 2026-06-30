@@ -11,6 +11,8 @@ import os
 
 from tavily import TavilyClient
 
+from src.monitor.tools._types import ToolResult
+
 
 def tavily_search(
     query: str,
@@ -18,7 +20,7 @@ def tavily_search(
     api_key: str | None = None,
     max_results: int = 5,
     client: TavilyClient | None = None,
-) -> str:
+) -> ToolResult:
     """Search the web for ``query`` and return title/url/snippet per result.
 
     Args:
@@ -31,9 +33,11 @@ def tavily_search(
             exercise the formatting with no network.
 
     Returns:
-        One block per result — ``"{title} — {url}\\n{content}"`` — separated
-        by blank lines, in the order Tavily ranked them. Empty string if
-        nothing matched.
+        A ``ToolResult``. Its ``text`` is one block per result — ``"{title}
+        — {url}\\n{content}"`` — separated by blank lines, in the order
+        Tavily ranked them. Empty string if nothing matched. Its ``urls`` is
+        each result's ``url``, same order, kept separate from the text so
+        callers don't have to re-parse them back out.
 
     Raises:
         RuntimeError: if no Tavily API key is configured and no ``client``
@@ -52,9 +56,12 @@ def tavily_search(
     results = response.get("results", [])
 
     blocks: list[str] = []
+    urls: list[str] = []
     for result in results:
         title = result.get("title") or ""
         url = result.get("url") or ""
         content = result.get("content") or ""
         blocks.append(f"{title} — {url}\n{content}")
-    return "\n\n".join(blocks).strip()
+        if url:
+            urls.append(url)
+    return ToolResult(text="\n\n".join(blocks).strip(), urls=urls)

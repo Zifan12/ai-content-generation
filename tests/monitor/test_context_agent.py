@@ -1,0 +1,322 @@
+import pytest
+from pydantic import ValidationError
+
+from src.monitor.schemas import ContextBundle, ContextSynthesis, PlanDecision, TrendingEvent
+from src.monitor.tools import reddit_search, tavily_search
+from src.monitor.tools._types import ToolResult
+import src.monitor.context_agent as context_agent_module
+from src.monitor.context_agent import ContextAgent, build_context_bundle, decide_next_step, ContextAgentState
+
+
+class FakePlanLLM:
+    def __init__(self, decision: PlanDecision) -> None:
+        self._decision = decision
+
+    def parse(self, prompt: str, response_model: type, **kwargs) -> PlanDecision:
+        self.prompt = prompt
+        return self._decision
+
+
+class FakeFinalizeLLM:
+    def __init__(self, synthesis: ContextSynthesis) -> None:
+        self._synthesis = synthesis
+
+    def parse(self, prompt: str, response_model: type, **kwargs) -> ContextSynthesis:
+        self.prompt = prompt
+        return self._synthesis
+
+
+class FakeSequenceLLM:
+    """Drives ContextAgent.run() end-to-end: returns queued PlanDecisions in
+    order for _plan's calls (dispatched by response_model), then a fixed
+    ContextSynthesis for _finalize's single call.
+    """
+
+    def __init__(self, plan_decisions: list[PlanDecision], synthesis: ContextSynthesis) -> None:
+        self._plan_decisions = list(plan_decisions)
+        self._synthesis = synthesis
+
+    def parse(self, prompt: str, response_model: type, **kwargs):
+        if response_model is PlanDecision:
+            return self._plan_decisions.pop(0)
+        return self._synthesis
+
+
+def test_decide_next_step():
+    state = ContextAgentState(
+        topic="",
+        reddit_text="",
+        tavily_text="",
+        reddit_calls=3,
+        tavily_calls=2,
+        next_action="reddit_search",
+        next_query="",
+        urls=[],
+        summary="",
+        key_moments=[],
+    )
+    result = decide_next_step(state, max_tool_calls=5)
+
+    assert result == "stop"
+
+
+def test_plan_returns_llm_decision():
+    decision = PlanDecision(next_action="reddit_search", next_query="Wistoria season 2 finale")
+    fake = FakePlanLLM(decision=decision)
+    agent = ContextAgent(llm=fake)
+    state = ContextAgentState(
+        topic="Wistoria season 2 finale",
+        reddit_text="",
+        tavily_text="",
+        reddit_calls=0,
+        tavily_calls=0,
+        next_action="",
+        next_query="",
+        urls=[],
+        summary="",
+        key_moments=[],
+    )
+
+    result = agent._plan(state)
+
+    assert result == {"next_action": "reddit_search", "next_query": "Wistoria season 2 finale"}
+    assert "Wistoria season 2 finale" in fake.prompt
+
+
+def test_finalize_returns_llm_synthesis():
+    synthesis = ContextSynthesis(
+        summary="Fans were furious the finale denied the long-teased reunion.",
+        key_moments=["showrunner confirms no reunion planned"],
+    )
+    fake = FakeFinalizeLLM(synthesis=synthesis)
+    agent = ContextAgent(llm=fake)
+    state = ContextAgentState(
+        topic="Wistoria season 2 finale",
+        reddit_text="top comment: robbed",
+        tavily_text="background: finale aired June 28",
+        reddit_calls=1,
+        tavily_calls=1,
+        next_action="stop",
+        next_query="",
+        urls=[],
+        summary="",
+        key_moments=[],
+    )
+
+    result = agent._finalize(state)
+
+    assert result == {
+        "summary": "Fans were furious the finale denied the long-teased reunion.",
+        "key_moments": ["showrunner confirms no reunion planned"],
+    }
+    assert "top comment: robbed" in fake.prompt
+    assert "background: finale aired June 28" in fake.prompt
+
+
+def test_act_reddit_appends_to_existing_text(monkeypatch):
+    monkeypatch.setattr(
+        context_agent_module,
+        "reddit_search",
+        lambda query: ToolResult(text="fresh reaction text", urls=["https://reddit.com/r/x/comments/1"]),
+    )
+    agent = ContextAgent(llm=object())  # llm unused by _act_reddit
+    state = ContextAgentState(
+        topic="",
+        reddit_text="earlier reaction text",
+        tavily_text="",
+        reddit_calls=1,
+        tavily_calls=0,
+        next_action="reddit_search",
+        next_query="some query",
+        urls=["https://reddit.com/r/x/comments/0"],
+        summary="",
+        key_moments=[],
+    )
+
+    result = agent._act_reddit(state)
+
+    assert result == {
+        "reddit_text": "earlier reaction text\n\nfresh reaction text",
+        "reddit_calls": 2,
+        "urls": ["https://reddit.com/r/x/comments/0", "https://reddit.com/r/x/comments/1"],
+    }
+
+
+def test_act_tavily_starts_fresh_when_empty(monkeypatch):
+    monkeypatch.setattr(
+        context_agent_module,
+        "tavily_search",
+        lambda query: ToolResult(text="background facts", urls=["https://example.com/article"]),
+    )
+    agent = ContextAgent(llm=object())  # llm unused by _act_tavily
+    state = ContextAgentState(
+        topic="",
+        reddit_text="",
+        tavily_text="",
+        reddit_calls=0,
+        tavily_calls=0,
+        next_action="tavily_search",
+        next_query="some query",
+        urls=[],
+        summary="",
+        key_moments=[],
+    )
+
+    result = agent._act_tavily(state)
+
+    assert result == {
+        "tavily_text": "background facts",
+        "tavily_calls": 1,
+        "urls": ["https://example.com/article"],
+    }
+
+
+def test_build_context_bundle_both_sources():
+    state = ContextAgentState(
+        topic="",
+        reddit_text="top comment: robbed",
+        tavily_text="background: finale aired June 28",
+        reddit_calls=1,
+        tavily_calls=1,
+        next_action="stop",
+        next_query="",
+        urls=["https://reddit.com/r/x/comments/1", "https://example.com/article"],
+        summary="Fans were furious the finale denied the long-teased reunion.",
+        key_moments=["showrunner confirms no reunion planned"],
+    )
+
+    bundle = build_context_bundle(state)
+
+    assert bundle == ContextBundle(
+        reaction_sample="top comment: robbed",
+        summary="Fans were furious the finale denied the long-teased reunion.",
+        key_moments=["showrunner confirms no reunion planned"],
+        references=["https://reddit.com/r/x/comments/1", "https://example.com/article"],
+        sources=["reddit_search", "tavily_search"],
+    )
+
+
+def test_build_context_bundle_no_sources():
+    state = ContextAgentState(
+        topic="",
+        reddit_text="",
+        tavily_text="",
+        reddit_calls=0,
+        tavily_calls=0,
+        next_action="stop",
+        next_query="",
+        urls=[],
+        summary="",
+        key_moments=[],
+    )
+
+    bundle = build_context_bundle(state)
+
+    assert bundle.sources == []
+
+
+def test_run_full_loop(monkeypatch):
+    monkeypatch.setattr(
+        context_agent_module,
+        "reddit_search",
+        lambda query: ToolResult(text="top comment: robbed", urls=["https://reddit.com/r/x/comments/1"]),
+    )
+    monkeypatch.setattr(
+        context_agent_module,
+        "tavily_search",
+        lambda query: ToolResult(text="background: finale aired June 28", urls=["https://example.com/article"]),
+    )
+
+    plan_decisions = [
+        PlanDecision(next_action="reddit_search", next_query="finale reaction"),
+        PlanDecision(next_action="tavily_search", next_query="finale background"),
+        PlanDecision(next_action="stop", next_query=""),
+    ]
+    synthesis = ContextSynthesis(
+        summary="Fans were furious the finale denied the long-teased reunion.",
+        key_moments=["showrunner confirms no reunion planned"],
+    )
+    fake = FakeSequenceLLM(plan_decisions=plan_decisions, synthesis=synthesis)
+    agent = ContextAgent(llm=fake, max_tool_calls=5)
+
+    bundle = agent.run("Wistoria season 2 finale")
+
+    assert bundle == ContextBundle(
+        reaction_sample="top comment: robbed",
+        summary="Fans were furious the finale denied the long-teased reunion.",
+        key_moments=["showrunner confirms no reunion planned"],
+        references=["https://reddit.com/r/x/comments/1", "https://example.com/article"],
+        sources=["reddit_search", "tavily_search"],
+    )
+
+
+def test_decide_next_step_passthrough():
+    state = ContextAgentState(
+        topic="",
+        reddit_text="",
+        tavily_text="",
+        reddit_calls=0,
+        tavily_calls=0,
+        next_action="tavily_search",
+        next_query="",
+        urls=[],
+        summary="",
+        key_moments=[],
+    )
+    result = decide_next_step(state, max_tool_calls=5)
+
+    assert result == "tavily_search"
+
+
+def test_decide_next_step_floor_override_reddit():
+    state = ContextAgentState(
+        topic="",
+        reddit_text="",
+        tavily_text="",
+        reddit_calls=0,
+        tavily_calls=0,
+        next_action="stop",
+        next_query="",
+        urls=[],
+        summary="",
+        key_moments=[],
+    )
+    result = decide_next_step(state, max_tool_calls=5)
+
+    assert result == "reddit_search"
+
+
+def test_decide_next_step_floor_override_tavily():
+    state = ContextAgentState(
+        topic="",
+        reddit_text="",
+        tavily_text="",
+        reddit_calls=1,
+        tavily_calls=0,
+        next_action="stop",
+        next_query="",
+        urls=[],
+        summary="",
+        key_moments=[],
+    )
+    result = decide_next_step(state, max_tool_calls=5)
+
+    assert result == "tavily_search"
+
+
+def test_decide_next_step_floor_satisfied():
+    state = ContextAgentState(
+        topic="",
+        reddit_text="",
+        tavily_text="",
+        reddit_calls=1,
+        tavily_calls=1,
+        next_action="stop",
+        next_query="",
+        urls=[],
+        summary="",
+        key_moments=[],
+    )
+    result = decide_next_step(state, max_tool_calls=5)
+
+    assert result == "stop"

@@ -93,6 +93,20 @@ class IdeaFitResult(BaseModel):
     kill_reason: str | None  # set when idea_fit=False; None when the event passes
 
 
+class PlanDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    next_action: Literal["reddit_search", "tavily_search", "stop"]
+    next_query: str  # search query to use; empty when next_action == "stop"
+
+
+class ContextSynthesis(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    summary: str
+    key_moments: list[str]
+
+
 class ContextBundle(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
