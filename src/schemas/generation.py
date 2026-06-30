@@ -34,6 +34,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class Shot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     """
     The only visual segment in a single-shot clip — one still → one i2v take (~8s).
 
@@ -50,8 +51,6 @@ class Shot(BaseModel):
         a diegetic `Audio:` line (concrete sound, no music by default).
       end_keyframe: Rarely used optional target state. Most clips omit this.
     """
-
-    model_config = ConfigDict(extra="forbid")
 
     start_keyframe: str
     motion: str
