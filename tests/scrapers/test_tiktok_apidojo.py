@@ -9,7 +9,7 @@ import pytest
 from src.scrapers.tiktok import TikTokScraper
 
 
-FIXTURE_PATH = Path(__file__).parent / "fixtures" / "apidojo_item.json"
+FIXTURE_PATH = Path(__file__).parent.parent / "fixtures" / "apidojo_item.json"
 
 
 @pytest.fixture

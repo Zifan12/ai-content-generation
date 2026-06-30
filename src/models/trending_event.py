@@ -13,6 +13,7 @@ class TrendingEventRecord(Base):
     run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     source: Mapped[str] = mapped_column(String, nullable=False, default="reddit")
     headline: Mapped[str] = mapped_column(String, nullable=False)
+    url: Mapped[str | None] = mapped_column(String, nullable=True)
     reaction_sample: Mapped[str] = mapped_column(Text, nullable=False)
     trendiness_score: Mapped[float] = mapped_column(Float, nullable=False)
     virality_window_hours: Mapped[float] = mapped_column(Float, nullable=False)
