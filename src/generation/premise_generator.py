@@ -1,5 +1,5 @@
-from src.schemas.premise import PremiseSet
 from src.providers.llm.anthropic_llm import AnthropicLLM
+from src.schemas.premise import PremiseSet
 
 SYSTEM_PROMPT = """\
 <role>
@@ -37,7 +37,7 @@ Two retired anchors — do NOT regress to either:
 1. The STATIC ANOMALY. A premise is not a frozen impossible tableau ("a house that
    is slightly too tall," "a second moon in the sky"). Nothing develops in a
    tableau. Demand a beat: something must change, move, or be revealed DURING the
-   shot.
+   shot.    
 2. The SILENT-VISUAL rule. The old doctrine forbade sound and on-screen text. That
    is dead. A premise may turn on a sound (a wrong noise, a snap, a far-off voice),
    and the finished video will carry a text hook — but you do NOT write that sound
@@ -76,9 +76,9 @@ class PremiseGenerator:
         """
         Args:
             llm: structured-output client; defaults to AnthropicLLM on
-                claude-sonnet-4-6. Inject a fake in tests to avoid a real API call.
+                claude-sonnet-5. Inject a fake in tests to avoid a real API call.
         """
-        self.llm = llm or AnthropicLLM(model="claude-sonnet-4-6")
+        self.llm = llm or AnthropicLLM(model="claude-sonnet-5")
 
     def generate(self, *, n: int = 10) -> PremiseSet:
         """

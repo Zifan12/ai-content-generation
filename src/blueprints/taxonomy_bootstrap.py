@@ -92,7 +92,7 @@ def main():
     if len(distinct) < 3:
         raise SystemExit("Not enough distinct values to cluster (need ≥3).")
 
-    llm = AnthropicLLM(model="claude-sonnet-4-6")
+    llm = AnthropicLLM(model="claude-sonnet-5")
 
     prompt=(
         f"Field: {args.field}\n\n"

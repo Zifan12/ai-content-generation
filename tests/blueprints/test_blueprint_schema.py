@@ -20,7 +20,7 @@ def _valid_payload() -> dict:
         "aesthetic_descriptors": ["photorealistic", "impossible_physics", "uncanny"],
         "niche_label": "surreal_hyperreal",
         "extractor_version": EXTRACTOR_VERSION,
-        "extractor_model": "claude-sonnet-4-6",
+        "extractor_model": "claude-sonnet-5",
         "notes": None,
     }
 

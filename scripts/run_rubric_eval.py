@@ -69,7 +69,7 @@ from src.evals.writer_judge import WriterJudge, PackageVerdict  # noqa: E402
 from src.evals.package_view import render_for_judge  # noqa: E402
 from src.evals.judge_fixture import load_judge_fixtures  # noqa: E402
 
-WRITER_MODEL = "claude-sonnet-4-6"
+WRITER_MODEL = "claude-sonnet-5"
 GOLDEN_PATH = Path("data/golden/generation_targets.jsonl")
 DUMP_DIR = Path("output/rubric_eval")
 # A full 3-shot package overruns the 1024 default; give the parse room so a long

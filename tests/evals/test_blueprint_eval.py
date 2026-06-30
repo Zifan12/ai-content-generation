@@ -22,7 +22,7 @@ def _good_payload() -> dict:
         "niche_label": "surreal_hyperreal",
         "hook_subtype": None,
         "extractor_version": EXTRACTOR_VERSION,
-        "extractor_model": "claude-sonnet-4-6",
+        "extractor_model": "claude-sonnet-5",
         "notes": None,
     }
 

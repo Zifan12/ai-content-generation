@@ -2,7 +2,7 @@ from src.blueprints.extractor import compute_prompt_fingerprint
 
 SYSTEM = "You are an expert analyst."
 ENVELOPE = "Caption: surreal void. Duration: 15s."
-MODEL = "claude-sonnet-4-6"
+MODEL = "claude-sonnet-5"
 PARAMS = {"max_tokens": 2048, "temperature": 0}
 
 

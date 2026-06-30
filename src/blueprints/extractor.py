@@ -167,7 +167,7 @@ def build_envelope(item: RawContentItem, transcript_text: str | None, niche_labe
         f"Caption / Description:\n{item.description or '(no caption)'}\n\n"
         f"{transcript_block}\n\n"
         f"Extract the {EXTRACTOR_VERSION} Blueprint now. Set extractor_version='{EXTRACTOR_VERSION}' and "
-        f"extractor_model='claude-sonnet-4-6'. Set niche_label='{niche_label}'."
+        f"extractor_model='claude-sonnet-5'. Set niche_label='{niche_label}'."
     )
 
 def compute_prompt_fingerprint(system_prompt: str, envelope: str, model: str, sampling_params: dict) -> str:
@@ -181,7 +181,7 @@ def compute_prompt_fingerprint(system_prompt: str, envelope: str, model: str, sa
     Args:
         system_prompt: System prompt text.
         envelope: Per-request user message / context.
-        model: Model name (e.g. "claude-sonnet-4-6").
+        model: Model name (e.g. "claude-sonnet-5").
         sampling_params: Dict of sampling parameters (temperature, max_tokens, etc.).
 
     Returns:
@@ -207,7 +207,7 @@ class BlueprintExtractor:
     """
 
     def __init__(self, llm: AnthropicLLM | None = None):
-        self.llm = llm or AnthropicLLM(model="claude-sonnet-4-6")
+        self.llm = llm or AnthropicLLM(model="claude-sonnet-5")
 
     @traced(name="blueprints.extract", kind="generation")
     def extract(self, item: RawContentItem, transcript_text: str | None, niche_label: str, db: Session) -> Blueprint:

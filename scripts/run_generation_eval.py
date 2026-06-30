@@ -39,7 +39,7 @@ from src.evals.generation_eval import generation_rag_win_rate  # noqa: E402
 
 TARGETS_PATH = Path("data/golden/generation_targets.jsonl")
 EXTRACTOR_VERSION = "v3.1"
-WRITER_MODEL = "claude-sonnet-4-6"
+WRITER_MODEL = "claude-sonnet-5"
 
 
 def load_targets(path: Path) -> list[BlueprintCandidate]:

@@ -53,7 +53,7 @@ class ScriptQualityJudge:
     LLM-as-judge scoring TikTok scripts on a 1-5 quality scale.
     """
 
-    def __init__(self, model: str = "claude-sonnet-4-6"):
+    def __init__(self, model: str = "claude-sonnet-5"):
         self.llm = AnthropicLLM(model=model)
 
     def judge(self, video_stats: dict, script: str) -> JudgeVerdict:

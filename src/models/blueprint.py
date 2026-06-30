@@ -21,7 +21,7 @@ VERSIONING STRATEGY:
 
 KEY FIELDS:
   - extractor_version: schema stamp (e.g., 'v3'). Changes here = schema breaking change.
-  - extractor_model: which LLM model created this (e.g., 'claude-sonnet-4-6').
+  - extractor_model: which LLM model created this (e.g., 'claude-sonnet-5').
   - blueprint_data: JSON-serialized Pydantic object with the extracted mechanics.
   - confidence: optional float (0.0-1.0) for extractor confidence in this Blueprint.
 

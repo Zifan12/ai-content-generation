@@ -62,7 +62,7 @@ def save_blueprint(db: Session, content_item_id: int, blueprint: Blueprint, vers
         content_item_id: FK to raw_content_items.id.
         blueprint: Extracted Blueprint Pydantic object — serialized to dict for JSON storage.
         version: Extractor version string (e.g. "v3").
-        model: Model ID used for extraction (e.g. "claude-sonnet-4-6").
+        model: Model ID used for extraction (e.g. "claude-sonnet-4-5").
     """
     record = BlueprintRecord(
         content_item_id=content_item_id,

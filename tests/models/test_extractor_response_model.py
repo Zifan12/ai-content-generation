@@ -52,7 +52,7 @@ def _make_response(item_id: int, fingerprint: str = "abc123") -> ExtractorRespon
         system_prompt="You are an expert analyst.",
         envelope="Caption: surreal void. Duration: 15s.",
         raw_response={"hook_type": "visual_shock", "pacing": "slow_atmospheric"},
-        model="claude-sonnet-4-6",
+        model="claude-sonnet-5",
         usage_input_tokens=500,
         usage_output_tokens=200,
         usage_cache_read_tokens=450,
@@ -68,7 +68,7 @@ def test_write_and_read_roundtrip(db, raw_item):
 
     result = db.execute(select(ExtractorResponse).filter_by(prompt_fingerprint="fp_roundtrip")).scalar_one()
     assert result.content_item_id == raw_item.id
-    assert result.model == "claude-sonnet-4-6"
+    assert result.model == "claude-sonnet-5"
     assert result.raw_response == {"hook_type": "visual_shock", "pacing": "slow_atmospheric"}
     assert result.usage_input_tokens == 500
     assert result.usage_output_tokens == 200
@@ -105,7 +105,7 @@ def test_nullable_usage_columns(db, raw_item):
         system_prompt="sys",
         envelope="env",
         raw_response={},
-        model="claude-sonnet-4-6",
+        model="claude-sonnet-5",
         usage_input_tokens=None,
         usage_output_tokens=None,
         usage_cache_read_tokens=None,

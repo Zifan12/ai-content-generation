@@ -269,7 +269,7 @@ class ContentWriter:
     """
 
     def __init__(self, llm: AnthropicLLM | None = None):
-        self.llm = llm or AnthropicLLM(model="claude-sonnet-4-6")
+        self.llm = llm or AnthropicLLM(model="claude-sonnet-5")
 
     def write(
         self,

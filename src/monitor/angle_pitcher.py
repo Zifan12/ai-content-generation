@@ -56,7 +56,7 @@ Return an AnglePitchSlate containing exactly three AnglePitch objects."""
 
 class AnglePitcher:
     def __init__(self, llm, embedder: TextEmbedder):
-        self.llm = llm or AnthropicLLM(model="claude-sonnet-4-6")
+        self.llm = llm or AnthropicLLM(model="claude-sonnet-5")
         self.embedder = embedder 
 
         

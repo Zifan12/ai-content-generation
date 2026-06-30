@@ -61,7 +61,7 @@ def _fake_blueprint() -> Blueprint:
         niche_label="surreal_hyperreal",
         hook_subtype=None,
         extractor_version=EXTRACTOR_VERSION,
-        extractor_model="claude-sonnet-4-6",
+        extractor_model="claude-sonnet-5",
         notes=None,
     )
 
@@ -88,7 +88,7 @@ def _item() -> RawContentItem:
 def test_extract_calls_llm_with_envelope():
     """Extractor builds text envelope and calls AnthropicLLM.parse_with_raw with Blueprint schema."""
     fake_llm = MagicMock()
-    fake_llm.model = "claude-sonnet-4-6"
+    fake_llm.model = "claude-sonnet-5"
     expected_bp = _fake_blueprint()
     fake_llm.parse_with_raw.return_value = (expected_bp, fake_raw)
     extractor = BlueprintExtractor(llm=fake_llm)
@@ -113,7 +113,7 @@ def test_extract_calls_llm_with_envelope():
 
 def test_extract_handles_missing_transcript():
     fake_llm = MagicMock()
-    fake_llm.model = "claude-sonnet-4-6"
+    fake_llm.model = "claude-sonnet-5"
     expected_bp = _fake_blueprint()
     fake_llm.parse_with_raw.return_value = (expected_bp, fake_raw)
     extractor = BlueprintExtractor(llm=fake_llm)
@@ -130,7 +130,7 @@ def test_extract_handles_missing_transcript():
 def test_extract_returns_blueprint_unchanged():
     """Make sure that the Extractor does not alter the Blueprint returned by the LLM"""
     fake_llm = MagicMock()
-    fake_llm.model = "claude-sonnet-4-6"
+    fake_llm.model = "claude-sonnet-5"
     expected_bp = _fake_blueprint()
     fake_llm.parse_with_raw.return_value = (expected_bp, fake_raw)
     extractor = BlueprintExtractor(llm=fake_llm)
@@ -146,11 +146,11 @@ def test_reparse_from_cache_hit_no_llm_call(db):
     db.add(item)
     db.flush()
     fake_llm = MagicMock()
-    fake_llm.model = "claude-sonnet-4-6"
+    fake_llm.model = "claude-sonnet-5"
 
     extractor = BlueprintExtractor(llm=fake_llm)
     envelope = build_envelope(item, None, "surreal_hyperreal")
-    fake_fingerprint = compute_prompt_fingerprint(SYSTEM_PROMPT, envelope, "claude-sonnet-4-6", {"max_tokens": 2048})
+    fake_fingerprint = compute_prompt_fingerprint(SYSTEM_PROMPT, envelope, "claude-sonnet-5", {"max_tokens": 2048})
 
     row = ExtractorResponse(
         content_item_id=item.id,
@@ -174,7 +174,7 @@ def test_reparse_from_cache_miss_different_fingerprint(db):
     db.add(item)
     db.flush()
     fake_llm = MagicMock()
-    fake_llm.model = "claude-sonnet-4-6"
+    fake_llm.model = "claude-sonnet-5"
 
     extractor = BlueprintExtractor(llm=fake_llm)
     envelope = build_envelope(item, None, "surreal_hyperreal")
@@ -201,11 +201,11 @@ def test_reparse_from_cache_hit_no_llm_call_invalid_raw_response(db):
     db.add(item)
     db.flush()
     fake_llm = MagicMock()
-    fake_llm.model = "claude-sonnet-4-6"
+    fake_llm.model = "claude-sonnet-5"
 
     extractor = BlueprintExtractor(llm=fake_llm)
     envelope = build_envelope(item, None, "surreal_hyperreal")
-    fake_fingerprint = compute_prompt_fingerprint(SYSTEM_PROMPT, envelope, "claude-sonnet-4-6", {"max_tokens": 2048})
+    fake_fingerprint = compute_prompt_fingerprint(SYSTEM_PROMPT, envelope, "claude-sonnet-5", {"max_tokens": 2048})
 
     row = ExtractorResponse(
         content_item_id=item.id,
@@ -227,7 +227,7 @@ def test_reparse_from_cache_no_cached_row(db):
     db.add(item)
     db.flush()
     fake_llm = MagicMock()
-    fake_llm.model = "claude-sonnet-4-6"
+    fake_llm.model = "claude-sonnet-5"
 
     extractor = BlueprintExtractor(llm=fake_llm)
 

@@ -48,7 +48,7 @@ Be specific and concrete. The audience_want must name something a video could ac
 
 class GapAgent:
     def __init__(self, llm):
-        self.llm = llm or AnthropicLLM(model="claude-sonnet-4-6")
+        self.llm = llm or AnthropicLLM(model="claude-sonnet-5")
 
         
     @traced(name="gap_analyze")

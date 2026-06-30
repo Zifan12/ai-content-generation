@@ -77,7 +77,7 @@ class EventExtractor:
                 Sonnet is used because the "same event?" judgment benefits from
                 stronger reasoning than Haiku, though this can be tuned.
         """
-        self.llm = llm or AnthropicLLM(model="claude-sonnet-4-6")
+        self.llm = llm or AnthropicLLM(model="claude-sonnet-5")
 
     @staticmethod
     def _sort_and_cap(events: list[TrendingEvent], top_n: int) -> list[TrendingEvent]:
