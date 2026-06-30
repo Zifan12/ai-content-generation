@@ -50,6 +50,7 @@ def _event(
         trendiness_score=5000.0,
         virality_window_hours=24.0,
         raw_source_data=raw,
+        origin="scraped",
     )
 
 
@@ -103,6 +104,7 @@ class TestExtractRecencyDays:
             trendiness_score=1.0,
             virality_window_hours=24.0,
             raw_source_data={"post": {"created_utc": ts}},
+            origin="scraped",
         )
         assert abs(_extract_recency_days(event) - 3.0) < 0.05
 

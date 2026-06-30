@@ -20,6 +20,7 @@ SAMPLE_EVENT = TrendingEvent(
     trendiness_score=0.92,
     virality_window_hours=18.0,
     raw_source_data={},
+    origin="scraped",
 )
 
 SAMPLE_GAP = GapAnalysis(

@@ -72,6 +72,7 @@ class RedditScraper:
                         reaction_sample=reaction_sample,
                         trendiness_score=float(post.score),
                         virality_window_hours=_VIRALITY_WINDOW_HOURS_V1,
+                        origin="scraped",
                         raw_source_data={
                             "title": post.title,
                             "score": post.score,
@@ -265,6 +266,7 @@ class ApifyRedditScraper:
                     reaction_sample=reaction_sample,
                     trendiness_score=trendiness_score,
                     virality_window_hours=_VIRALITY_WINDOW_HOURS_V1,
+                    origin="scraped",
                     raw_source_data={
                         "post": item,
                         "comment_count": len(all_comments),

@@ -1,4 +1,6 @@
 from enum import Enum
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -30,6 +32,7 @@ class TrendingEvent(BaseModel):
     trendiness_score: float
     virality_window_hours: float
     raw_source_data: dict
+    origin: Literal["scraped", "manual"]
 
 
 class GapAnalysis(BaseModel):
@@ -88,3 +91,13 @@ class IdeaFitResult(BaseModel):
     recency_days: float  # post age in days, derived from raw_source_data
     reason: str  # human-readable verdict
     kill_reason: str | None  # set when idea_fit=False; None when the event passes
+
+
+class ContextBundle(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reaction_sample: str
+    summary: str
+    key_moments: list[str]
+    references: list[str]
+    sources: list[str]

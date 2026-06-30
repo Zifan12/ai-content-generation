@@ -22,6 +22,7 @@ def _make_event(headline: str, reaction: str, score: float) -> TrendingEvent:
         trendiness_score=score,
         virality_window_hours=24.0,
         raw_source_data={},
+        origin="scraped",
     )
 
 
