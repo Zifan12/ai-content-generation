@@ -36,9 +36,8 @@ apify/
 # Reference notes / guides (local-only)
 guides/
 
-# Research scratch — keep only the curated doctrine sheet
-resources/*
-!resources/doctrine_sheet.md
+# AI video model repos/guides — source material, not tracked
+ai_video_resources/
 
 # Claude Code
 .claude/
@@ -58,3 +57,10 @@ Thumbs.db
 # Coverage
 .coverage
 htmlcov/
+
+# Local AI-tool config (user-specific, not project state)
+.agents/
+.codex/
+.opencode/
+.openpackage/
+skills-lock.json

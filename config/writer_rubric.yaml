@@ -33,7 +33,7 @@ criteria:
     check_type: code
     check: No text field carries dead "quality" words (8k, masterpiece, etc.).
     severity: blocker
-    source: resources/image-video-director corpus (cargo-cult filler)
+    source: ai_video_resources/image-video-director corpus (cargo-cult filler)
 
   - id: no_palette_in_keyframes
     scope: universal
