@@ -46,3 +46,23 @@ Track every shipped feature that fails, what was tried, and what fixed it.
   Closes the long-carried Opus-4.8 cache question: prompt caching IS live; warm read = 2032.
   Full pytest suite still green (237 passed, 1 skipped) — no regression from the signature change.
 
+### BUG-002 - First reaction-driven render (Stellar Blade "adult redesign") failed the post gate
+- Date opened: 2026-06-27
+- Status: closed (lessons captured; triggered the hand-first → build-pipeline re-sequencing)
+- Feature: Phase-0 hand-made postable video. Render path = `nano_banana_2` still → `kling3_0` i2v ×2 → ffmpeg assemble + Sonilo music + drawtext captions. Artifacts in `render_taste_test/evie_redesign/`.
+- Environment: Higgsfield CLI (max plan); Windows ffmpeg. ~22.8cr spent.
+- Error/behavior: produced a 12.6s video but the user (binding judge) refused to post. Four distinct failures:
+  1. TIMING (the killer): wave was COLD — Stellar Blade: Blood Rain reveal was ~June 6 (Summer Game Fest); we rendered June 27, the discourse had already passed. The idea-fit gate as run only checked recognizable + fictional, NOT heat/recency.
+  2. GROUNDING: no reference image used; still generated from a text description → wrong primary outfit (rendered the black poncho; her signature look is the pure-white suit) and the face did not read as Evie.
+  3. SHOTCRAFT: both beats frontal/medium and static — no angle/distance variety (violates `render_taste_test/SHOT_CRAFT_CHEATSHEET.md` "vary the distance" / establish-detail-reveal).
+  4. CAPTIONS: explainer captions on shots 2-3 were unnecessary; only the hook card earned its place.
+  Overall read: "AI slop at a glance."
+- Root cause: two layers. (a) Idea-fit gate missing a heat/recency check. (b) The render run took the cheapest ungrounded path (no refs, single frontal still, cheapest model) — so the quality failures are METHOD, not a proven ceiling.
+- Final fix (process, not code):
+  - Render MECHANICS confirmed working (chain executes end-to-end, identity holds across i2v) → render leaf is de-risked.
+  - DROPPED the "hand-make one postable video first" gate (spec §8 / plan Phase 0). The remaining failures are upstream PIPELINE stages, not render-leaf risks, so they can only be fixed by building those stages.
+  - Re-sequenced to build the pipeline, attacking failures in order: Stage A harvester WITH heat/recency + idea-fit scoring → Stage C reference-grounded render (real key-art into nano-banana + multi-angle stills) → Stage B story-craft pitcher → loop.
+  - Added constraints: reference-grounding mandatory; angle variety; caption restraint; and VERIFY EACH STAGE (test thoroughly on real data) before advancing.
+- Date fixed: 2026-06-27
+- Validation evidence: the non-slop render METHOD will be proven the first time Stage C runs with real references (not a separate hand-run). Each pipeline stage carries its own verification gate in the plan — no stage is "done" until proven on real data.
+

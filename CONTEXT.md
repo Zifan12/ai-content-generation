@@ -48,6 +48,20 @@ and the chain-contract `model_validator` are all removed.
 
 _Avoid_: "chained continuity", "segment", "3-shot", "handoff", "device menu" — retired 2026-06-22.
 
+## Premise source — news-reactive cultural monitoring (2026-06-23)
+
+Where the writer's **premise** comes from (resolved 2026-06-23, superseding both grounded `premise_generator.py` and pure imagination — both shelved, dormant not deleted). An on-demand **Cultural Monitor** (`src/monitor/`, PLANNED) scans Reddit for trending events; a **Gap Agent** reads the audience reaction and names the *unmet desire*; an **Angle Pitcher** proposes 3 distinct takes. The human approves one; its `take` becomes the writer's premise. Insight: a trending event carries a built-in audience — satisfy the unmet desire and you ride it, instead of hoping the algorithm finds an invented premise. Spec: `docs/superpowers/specs/2026-06-23-audience-reaction-content-system-design.md`.
+
+_Avoid_: treating "imagination-led premise" or "grounded premise" as the live path — both retired 2026-06-23.
+
+## Gap (audience-reaction)
+
+The specific **unmet desire** behind a trending reaction — what the audience would be satisfied by if it existed. Output of the Gap Agent (`GapAnalysis`: `dominant_emotion`, `audience_want`, `gap_type` ∈ {alternate_reality, vindication, ridicule, explanation, tribute, speculation, solidarity, other}, `producibility_score`, `virality_window_hours`). Hard rule: a gap is a *positive desire* ("people wanted the climax they were teased and never got"), NOT a negative reaction ("people hated the ending"). The agent reads SCRAPED reactions — it cannot rely on the LLM's own knowledge of the event (cutoff), so reaction-text quality is the system's most fragile dependency.
+
+## Angle Pitch
+
+One of 3 distinct creative takes the Angle Pitcher proposes per gap (`AnglePitch`: `take`, free-text `format_description`, `render_backend`, `estimated_cost_credits`, `gap_satisfaction_rationale`, `legal_flag`). The three must differ meaningfully (loose embedding-diversity check). Format is open-ended; the **render backend** is what's actually buildable today — v1 = `visual_satire` (single-shot) only; `commentary_voiceover` and `narrative_alt` (Seedance 2.5) are later phases, substituted by the Format Router until built. `legal_flag` marks real-person/IP likeness; posture is a risk dial leaning parody/commentary, NOT abstract-only.
+
 ## Executor
 
 The render runner (`src/generation/executor.py`, new in the single-shot rebuild) — the piece
@@ -82,7 +96,7 @@ Two-tier evaluation of writer output (`src/evals/`, driver `scripts/run_rubric_e
 
 A third tier exists for negative-control testing — the **floor probe**: a hand-authored
 bad fixture (`data/golden/writer_floor_static.jsonl`, local-only) fed via
-`run_rubric_eval --fixtures` and locked by a gated pytest (`tests/test_judge_floor.py`,
+`run_rubric_eval --fixtures` and locked by a gated pytest (`tests/evals/test_judge_floor.py`,
 runs only under `RUN_PAID_EVALS=1`). The fixture is structurally legal + code-check-clean
 but semantically empty; the judge must score it low on the dims it sabotages
 (development ≤ 2, vividness ≤ 2). Proves the judge can detect bad work, not just confirm good.
@@ -220,7 +234,7 @@ _Avoid_: "monetization test" — the test measures traction, not money.
 
 ## Deferred decisions (P5 agent layer)
 
-The following are NOT decided. Defer until P5 spec writing (post-P3.5). Decisions made earlier would be guesswork — context too thin.
+The following are NOT decided. Defer until P5 spec writing (post-P3.5). Decisions made earlier would be guesswork — context too thin. **(2026-06-23: the P5 agent's *use case* is now concrete — the news-reactive front-end `src/monitor/`. The framework choice below is still deferred.)**
 
 - **Agent framework:** Pydantic AI vs LangGraph vs raw Anthropic SDK tool-calling. `langgraph>=0.2.0` currently in `pyproject.toml` from speculative P0 stack pick; not yet imported anywhere.
 - **Multi-agent vs single agent:** Roadmap line 184 implies single ReAct loop ("0 code-level branching, all routing is LLM-driven"). Default = single agent unless P5 scope reveals genuine role separation.
