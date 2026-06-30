@@ -3,13 +3,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class GapType(str, Enum):
-    alternate_reality = "alternate_reality" # show the version that should've happened (denied ending, what-if)
-    vindication = "vindication" # prove the side they back was right
-    ridicule = "ridicule" # mock the thing/person everyone's piling on
-    explanation = "explanation" # make a confusing event make sense
-    tribute = "tribute" # honor / celebrate something they love
-    speculation = "speculation" # show what happens next
-    solidarity = "solidarity" # voice the feeling everyone's sharing
+    alternate_reality = "alternate_reality"  # show the version that should've happened (denied ending, what-if)
+    vindication = "vindication"  # prove the side they back was right
+    ridicule = "ridicule"  # mock the thing/person everyone's piling on
+    explanation = "explanation"  # make a confusing event make sense
+    tribute = "tribute"  # honor / celebrate something they love
+    speculation = "speculation"  # show what happens next
+    solidarity = "solidarity"  # voice the feeling everyone's sharing
     other = "other"
 
 
@@ -18,6 +18,7 @@ class RenderBackend(str, Enum):
     commentary_voiceover = "commentary_voiceover"
     narrative_alt = "narrative_alt"
     unknown = "unknown"
+
 
 class TrendingEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -30,26 +31,28 @@ class TrendingEvent(BaseModel):
     virality_window_hours: float
     raw_source_data: dict
 
+
 class GapAnalysis(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    
-    dominant_emotion: str 
+
+    dominant_emotion: str
     audience_want: str
     gap_type: GapType
     producibility_score: float
     virality_window_hours: float
     reasoning: str
-    
+
 
 class AnglePitch(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    
+
     take: str
     format_description: str
     render_backend: RenderBackend
-    estimated_cost_credits: float 
-    gap_satisfaction_rationale: str 
+    estimated_cost_credits: float
+    gap_satisfaction_rationale: str
     legal_flag: bool
+
 
 class AnglePitchSlate(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -61,9 +64,27 @@ class RoutingDecision(BaseModel):
 
     backend: RenderBackend
     is_substitute: bool
-    substitution_note: str
+    substitution_note: str | None
+
 
 class DedupVerdict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     is_same: bool
+
+
+class ContentMode(str, Enum):
+    wish = "wish"  # fans want the satisfying version they didn't get
+    satire = "satire"  # fans want their disappointment voiced as humor/contrast
+    other = "other"
+
+
+class IdeaFitResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    idea_fit: bool
+    mode: ContentMode
+    heat_score: float = Field(ge=0.0, le=1.0)  # LLM-judged reaction passion
+    recency_days: float  # post age in days, derived from raw_source_data
+    reason: str  # human-readable verdict
+    kill_reason: str | None  # set when idea_fit=False; None when the event passes

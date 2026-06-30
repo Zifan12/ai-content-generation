@@ -2,8 +2,9 @@
 
 Strings the whole monitor pipeline together and lets a human approve one angle:
 
-    Reddit scraper -> event extractor -> gap agent -> angle pitcher -> format
-    router -> [human picks one] -> persist + emit a render handoff.
+    Reddit scraper -> event extractor -> idea-fit gate -> gap agent -> angle
+    pitcher -> format router -> [human picks one] -> persist + emit a render
+    handoff.
 
 The orchestration lives in ``run_pitch_pipeline`` which takes every component as
 an argument (dependency injection) so it can be driven by fakes in tests with no
@@ -18,16 +19,16 @@ back and feeds the angle's ``take`` to the writer as a premise.
 
 import argparse
 import json
-import os
+import sys
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
 
 from src.models.angle_pitch import AnglePitchRecord
 from src.models.trending_event import TrendingEventRecord
 
 
-def _print_slate(displayed: list[dict]) -> None:
+def _print_slate(displayed: list[dict]) -> None:  # noqa: C901
     """Render the numbered pitch slate to stdout for the human to choose from.
 
     Args:
@@ -50,16 +51,29 @@ def _print_slate(displayed: list[dict]) -> None:
         decision = entry["decision"]
 
         if event.headline != last_headline:
+            fit = entry.get("fit")
             print("\n" + "=" * 70)
             print(f"EVENT: {event.headline}")
-            print(f"  trendiness={event.trendiness_score:.2f}  "
-                  f"gap={gap.gap_type.value}  want={gap.audience_want}")
+            heat_str = (
+                (
+                    f"heat={fit.heat_score:.2f}  recency={fit.recency_days:.1f}d  "
+                    f"mode={fit.mode.value}  "
+                )
+                if fit
+                else ""
+            )
+            print(
+                f"  {heat_str}trendiness={event.trendiness_score:.2f}  "
+                f"gap={gap.gap_type.value}  want={gap.audience_want}"
+            )
             print("=" * 70)
             last_headline = event.headline
 
         print(f"\n[{i}] {angle.take}")
         print(f"     format:   {angle.format_description}")
-        print(f"     backend:  {decision.backend.value}  (~{angle.estimated_cost_credits:.0f} cr)")
+        print(
+            f"     backend:  {decision.backend.value}  (~{angle.estimated_cost_credits:.0f} cr)"
+        )
         if decision.is_substitute:
             print(f"     ↪ substituted: {decision.substitution_note}")
         if angle.legal_flag:
@@ -70,6 +84,7 @@ def run_pitch_pipeline(
     db,
     scraper,
     extractor,
+    idea_fit_gate,
     gap_agent,
     angle_pitcher,
     format_router,
@@ -82,9 +97,10 @@ def run_pitch_pipeline(
     """Run the monitor pipeline, present the slate, and persist the approved angle.
 
     Flow: fetch raw events from ``scraper`` -> ``extractor.extract`` shortlist ->
-    for each surviving event ``gap_agent.analyze`` then ``angle_pitcher.pitch``
-    (3 angles) -> ``format_router.route`` each angle. The combined angles are
-    printed as one numbered slate.
+    ``idea_fit_gate.evaluate`` kills stale / cheap-meme events -> for each
+    surviving event ``gap_agent.analyze`` then ``angle_pitcher.pitch`` (3 angles)
+    -> ``format_router.route`` each angle. The combined angles are printed as one
+    numbered slate.
 
     In ``dry_run`` the pipeline runs and prints but touches nothing: no DB writes,
     no prompt (``choice_provider`` is never called — passing ``None`` is safe), no
@@ -95,6 +111,7 @@ def run_pitch_pipeline(
         db: An open SQLAlchemy session.
         scraper: Anything with ``fetch() -> list[TrendingEvent]``.
         extractor: Anything with ``extract(events, top_n) -> list[TrendingEvent]``.
+        idea_fit_gate: Anything with ``evaluate(event) -> IdeaFitResult``.
         gap_agent: Anything with ``analyze(event) -> GapAnalysis``.
         angle_pitcher: Anything with ``pitch(event, gap) -> AnglePitchSlate``.
         format_router: Anything with ``route(angle) -> RoutingDecision``.
@@ -113,26 +130,51 @@ def run_pitch_pipeline(
     raw_events = scraper.fetch()
     events = extractor.extract(raw_events, top_n=top_n)
 
+    # Idea-fit gate: kill stale waves and cheap-meme events before spending LLM credits.
+    fit_pairs: list[tuple] = []
+    for event in events:
+        fit = idea_fit_gate.evaluate(event)
+        if fit.idea_fit:
+            fit_pairs.append((event, fit))
+        else:
+            print(f"\n[KILLED] {event.headline[:70]!r}")
+            print(
+                f"         heat={fit.heat_score:.2f}  "
+                f"recency={fit.recency_days:.1f}d  "
+                f"mode={fit.mode.value}"
+            )
+            print(f"         kill_reason: {fit.kill_reason}")
+            if fit.reason:
+                print(f"         llm_reason:   {fit.reason}")
+
+    if not fit_pairs:
+        print("\nNo events passed the idea-fit gate.")
+        if dry_run:
+            print("[dry-run] nothing persisted.")
+        return None
+
     # Build the flat, display-ordered slate. One LLM gap + pitch per event; one
     # routing decision per angle.
     displayed: list[dict] = []
-    for event in events:
+    for event, fit in fit_pairs:
         gap = gap_agent.analyze(event)
         slate = angle_pitcher.pitch(event, gap)
         for angle in slate.angles:
             decision = format_router.route(angle)
             displayed.append(
-                {"event": event, "gap": gap, "angle": angle, "decision": decision}
+                {
+                    "event": event,
+                    "fit": fit,
+                    "gap": gap,
+                    "angle": angle,
+                    "decision": decision,
+                }
             )
 
     _print_slate(displayed)
 
     if dry_run:
         print("\n[dry-run] nothing persisted.")
-        return None
-
-    if not displayed:
-        print("\nNo angles to approve.")
         return None
 
     # Persist every surfaced event once (keyed by object identity so the three
@@ -148,6 +190,7 @@ def run_pitch_pipeline(
                 run_at=now,
                 source="reddit",
                 headline=event.headline,
+                url=event.url,
                 reaction_sample=event.reaction_sample,
                 trendiness_score=event.trendiness_score,
                 virality_window_hours=event.virality_window_hours,
@@ -194,12 +237,22 @@ def run_pitch_pipeline(
         print("\nRe-pitch not implemented in v1 — saved, none approved.")
         return None
 
-    if not choice.isdigit() or not (1 <= int(choice) <= len(pitch_records)):
+    if not choice.isdigit():
+        db.commit()
+        print(f"\nInvalid selection {choice!r} — saved, none approved.")
+        return None
+    try:
+        selected = int(choice)
+    except ValueError:
+        db.commit()
+        print(f"\nInvalid selection {choice!r} — saved, none approved.")
+        return None
+    if not (1 <= selected <= len(pitch_records)):
         db.commit()
         print(f"\nInvalid selection {choice!r} — saved, none approved.")
         return None
 
-    index = int(choice) - 1
+    index = selected - 1
     chosen_entry = displayed[index]
     chosen_record = pitch_records[index]
     chosen_event_record = event_records[id(chosen_entry["event"])]
@@ -227,8 +280,10 @@ def run_pitch_pipeline(
     handoff_path.write_text(json.dumps(handoff, indent=2), encoding="utf-8")
 
     print(f"\n✓ Approved angle [{choice}] -> {handoff_path}")
-    print(f"  Next: uv run python scripts/smoke_content_writer.py "
-          f"--pitch-id {handoff['angle_pitch_id']} --real")
+    print(
+        f"  Next: uv run python scripts/smoke_content_writer.py "
+        f"--pitch-id {handoff['angle_pitch_id']} --real"
+    )
     return handoff
 
 
@@ -237,36 +292,14 @@ def run_pitch_pipeline(
 # ---------------------------------------------------------------------------
 
 _DEFAULT_SUBREDDITS = [
-    "popular", "all", "television", "soccer", "sports",
-    "technology", "singularity", "movies", "games", "music",
+    "manga",
+    "manhwa",
+    "anime",
+    "WutheringWavesLeaks",
+    "gaming",
+    "television",
+    "movies",
 ]
-
-
-def _build_reddit_client():
-    """Construct a read-only praw.Reddit client from environment credentials.
-
-    Reads ``REDDIT_CLIENT_ID`` / ``REDDIT_CLIENT_SECRET`` / ``REDDIT_USER_AGENT``
-    (loaded from ``config/.env`` by the import-time dotenv load below). Imported
-    lazily so the unit tests never need praw installed/configured.
-
-    Raises:
-        RuntimeError: if any of the three credentials are missing.
-    """
-    import praw
-
-    client_id = os.environ.get("REDDIT_CLIENT_ID")
-    client_secret = os.environ.get("REDDIT_CLIENT_SECRET")
-    user_agent = os.environ.get("REDDIT_USER_AGENT")
-    if not (client_id and client_secret and user_agent):
-        raise RuntimeError(
-            "Missing Reddit credentials. Set REDDIT_CLIENT_ID, "
-            "REDDIT_CLIENT_SECRET, and REDDIT_USER_AGENT in config/.env."
-        )
-    return praw.Reddit(
-        client_id=client_id,
-        client_secret=client_secret,
-        user_agent=user_agent,
-    )
 
 
 def _load_available_backends() -> dict:
@@ -291,51 +324,117 @@ def main() -> None:
 
     load_dotenv("config/.env")
 
+    # The slate prints Unicode glyphs (↪, ⚠, ═, em-dashes) and scraped Reddit
+    # text; Windows stdout defaults to cp1252 and raises UnicodeEncodeError on
+    # them. Force UTF-8 so the CLI renders on Windows consoles.
+    sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+
     parser = argparse.ArgumentParser(description="News-reactive angle approval CLI.")
     parser.add_argument(
-        "--dry-run", action="store_true",
+        "--dry-run",
+        action="store_true",
         help="Run + print the slate but persist nothing and don't prompt.",
     )
     parser.add_argument(
-        "--sources", default=None,
+        "--sources",
+        default=None,
         help="Comma-separated subreddits to scan (default: the v1 set).",
     )
     parser.add_argument(
-        "--top-n", type=int, default=3,
+        "--top-n",
+        type=int,
+        default=3,
         help="Max events to carry forward from the extractor (default 3).",
     )
     parser.add_argument(
-        "--no-llm", action="store_true",
+        "--max-posts",
+        type=int,
+        default=4,
+        help="Posts to scrape PER subreddit (Apify maxPostsCount is per-URL, not "
+        "total). 7 subs × 4 posts × 11 items = ~$0.57/call. Apify bills per "
+        "returned item (post + "
+        "comment), so raising this or --comments-per-post increases cost ~linearly.",
+    )
+    parser.add_argument(
+        "--comments-per-post",
+        type=int,
+        default=10,
+        help="Comments to FETCH per post from Apify (maxCommentsPerPost; default "
+        "10). Fetch wide enough to get good top-level reactions — actor has no "
+        "top-sort, so we over-fetch then rank locally. Default 10 balances cost "
+        "vs coverage. Below 5 risks missing the top-voted comments.",
+    )
+    parser.add_argument(
+        "--top-comments",
+        type=int,
+        default=8,
+        help="After fetching, how many TOP-LEVEL comments (ranked by upvotes) to keep "
+        "in the reaction_sample that grounds the gap agent (default 8).",
+    )
+    parser.add_argument(
+        "--no-llm",
+        action="store_true",
         help="Scraper only: print raw scraped events and exit (no gap/pitch/route).",
     )
     parser.add_argument(
-        "--output-dir", default="output/pitches",
+        "--output-dir",
+        default="output/pitches",
         help="Where the approved-angle handoff JSON is written.",
     )
     args = parser.parse_args()
+
+    # Apify cost guard — actor bills ~$0.001844 per returned item (post + every
+    # fetched comment). estimates = subreddits × max_posts × (1 + comments_per_post)
+    # Refuse to run if estimated cost > $1.00 (one stuck probe in the 2026-06-29
+    # session burned ~$9.40 because defaults were 10 srs × 10 posts × 50 comments).
+    _APIFY_COST_PER_ITEM = 0.001844
+    _n_subreddits = len(_DEFAULT_SUBREDDITS) if not args.sources else len(
+        [s.strip() for s in args.sources.split(",")]
+    )
+    _est_items = _n_subreddits * args.max_posts * (1 + args.comments_per_post)
+    _est_cost = _est_items * _APIFY_COST_PER_ITEM
+    if _est_cost > 1.0:
+        sys.exit(
+            f"Refusing to run: estimated Apify cost ${_est_cost:.2f} "
+            f"(threshold $1.00). Items={_est_items} = "
+            f"{_n_subreddits} subreddits × {args.max_posts} posts × "
+            f"({1 + args.comments_per_post} items/post). "
+            f"Pass fewer subreddits (--sources), fewer posts (--max-posts), "
+            f"or fewer comments (--comments-per-post)."
+        )
 
     from src.database import SessionLocal
     from src.monitor.angle_pitcher import AnglePitcher
     from src.monitor.event_extractor import EventExtractor
     from src.monitor.gap_agent import GapAgent
+    from src.monitor.idea_fit_gate import IdeaFitGate
     from src.monitor.router import FormatRouter
-    from src.monitor.scraper import RedditScraper
+    from src.monitor.scraper import ApifyRedditScraper
     from src.providers.llm.anthropic_llm import AnthropicLLM
     from src.rag.embedder import BgeM3Embedder
 
     subreddits = (
-        [s.strip() for s in args.sources.split(",")] if args.sources
+        [s.strip() for s in args.sources.split(",")]
+        if args.sources
         else _DEFAULT_SUBREDDITS
     )
-    scraper = RedditScraper(_build_reddit_client(), subreddits=subreddits)
+    scraper = ApifyRedditScraper(
+        subreddits=subreddits,
+        max_posts=args.max_posts,
+        fetch_comments_per_post=args.comments_per_post,
+        top_comments_in_sample=args.top_comments,
+    )
 
     if args.no_llm:
         for event in scraper.fetch():
-            print(f"[{event.trendiness_score:.0f}] r/{event.subreddit}: {event.headline}")
+            print(
+                f"[{event.trendiness_score:.0f}] r/{event.subreddit}: {event.headline}"
+            )
         return
 
-    llm = AnthropicLLM(model="claude-sonnet-4-6")
+    llm = AnthropicLLM(model="claude-sonnet-5")
     extractor = EventExtractor(llm=llm)
+    idea_fit_gate = IdeaFitGate(llm=llm)
     gap_agent = GapAgent(llm=llm)
     angle_pitcher = AnglePitcher(llm=llm, embedder=BgeM3Embedder())
     format_router = FormatRouter(llm=llm, available_backends=_load_available_backends())
@@ -346,11 +445,14 @@ def main() -> None:
             db,
             scraper,
             extractor,
+            idea_fit_gate,
             gap_agent,
             angle_pitcher,
             format_router,
             dry_run=args.dry_run,
-            choice_provider=(None if args.dry_run else lambda: input("\nPick an angle [#/s/r]: ")),
+            choice_provider=(
+                None if args.dry_run else lambda: input("\nPick an angle [#/s/r]: ")
+            ),
             output_dir=args.output_dir,
             top_n=args.top_n,
         )
