@@ -248,6 +248,20 @@ class IdeaFitGate:
                 kill_reason=f"stale_wave: {recency_days:.1f}d old",
             )
 
+        # ── Check 1.5: empty reaction (no LLM) — nothing to analyze or pitch.
+        # Origin-agnostic: a scraped wave with no captured comments and a manual
+        # topic whose agent gathered no reactions are equally unusable. Runs
+        # before _judge so no credits are spent on an event with zero signal.
+        if not event.reaction_sample.strip():
+            return IdeaFitResult(
+                idea_fit=False,
+                mode=ContentMode.other,
+                heat_score=0.0,
+                recency_days=recency_days,
+                reason="No audience reaction captured — nothing to analyze.",
+                kill_reason="no_reactions: reaction_sample is empty",
+            )
+
         judgment = self._judge(event)
 
         # ── Check 2: fictional & recognisable
