@@ -332,6 +332,37 @@ def run_pitch_pipeline(
 # Production wiring (real components). Not exercised by the unit tests.
 # ---------------------------------------------------------------------------
 
+
+def _dataset_item_fetcher(dataset_id: str):
+    """Build an item_fetcher that replays an EXISTING Apify dataset — free.
+
+    A crashed run's scrape money isn't lost: the actor's dataset persists
+    server-side and reading it back is a plain GET (no actor run, no billing).
+    Injected into ApifyRedditScraper via its item_fetcher seam, so the rest of
+    the pipeline is byte-identical to a live scrape; the run_input the scraper
+    builds is ignored (the items already exist).
+    """
+    import os
+
+    import httpx
+
+    def _fetch(run_input: dict) -> list[dict]:
+        token = os.environ.get("APIFY_API_TOKEN")
+        if not token:
+            raise RuntimeError("APIFY_API_TOKEN is not set — needed to read the dataset.")
+        response = httpx.get(
+            f"https://api.apify.com/v2/datasets/{dataset_id}/items",
+            params={"clean": "true"},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=120.0,
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data if isinstance(data, list) else []
+
+    return _fetch
+
+
 _DEFAULT_SUBREDDITS = [
     "manga",
     "manhwa",
@@ -426,6 +457,14 @@ def main() -> None:
         help="Scraper only: print raw scraped events and exit (no gap/pitch/route).",
     )
     parser.add_argument(
+        "--from-dataset",
+        default=None,
+        metavar="DATASET_ID",
+        help="Replay an existing Apify dataset instead of scraping (FREE — no "
+        "actor run). Recovers a crashed run's already-paid scrape; LLM stages "
+        "still spend normally. Path A only.",
+    )
+    parser.add_argument(
         "--output-dir",
         default="output/pitches",
         help="Where the approved-angle handoff JSON is written.",
@@ -450,8 +489,9 @@ def main() -> None:
     # session burned ~$9.40 because defaults were 10 srs × 10 posts × 50 comments).
     # Path B (--topic) bypasses this guard: it uses reddit_search in search-mode
     # (one topic, not N subreddits), cost-guarded inside the tool itself plus the
-    # context agent's $2.00 run ceiling.
-    if args.topic is None:
+    # context agent's $2.00 run ceiling. --from-dataset also bypasses it: a
+    # dataset replay is a free GET, there is no Apify spend to guard.
+    if args.topic is None and args.from_dataset is None:
         from src.monitor.tools.reddit_search import _APIFY_COST_PER_ITEM
         _n_subreddits = len(_DEFAULT_SUBREDDITS) if not args.sources else len(
             [s.strip() for s in args.sources.split(",")]
@@ -488,11 +528,16 @@ def main() -> None:
             if args.sources
             else _DEFAULT_SUBREDDITS
         )
+        if args.from_dataset:
+            print(f"[replay] reading existing dataset {args.from_dataset} — no Apify spend")
         scraper = ApifyRedditScraper(
             subreddits=subreddits,
             max_posts=args.max_posts,
             fetch_comments_per_post=args.comments_per_post,
             top_comments_in_sample=args.top_comments,
+            item_fetcher=(
+                _dataset_item_fetcher(args.from_dataset) if args.from_dataset else None
+            ),
         )
         if args.no_llm:
             for event in scraper.fetch():
