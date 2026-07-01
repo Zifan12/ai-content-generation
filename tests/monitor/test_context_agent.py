@@ -320,3 +320,45 @@ def test_decide_next_step_floor_satisfied():
     result = decide_next_step(state, max_tool_calls=5)
 
     assert result == "stop"
+
+
+def test_run_floor_override_uses_topic_not_empty_query(monkeypatch):
+    """Regression: when decide_next_step floor-overrides a "stop" into a forced
+    tavily call, _act_tavily must search on the topic, not the empty next_query
+    the LLM wrote when it intended to stop.
+
+    Pre-fix this recorded [""]; post-fix it records [topic]. The plan-LLM
+    sequence forces the override: run reddit, then say "stop" (tavily_calls==0
+    triggers the floor override), then say "stop" again (floor now satisfied).
+    Three plan calls before finalize.
+    """
+    recorded_tavily_queries: list[str] = []
+
+    def fake_reddit_search(query):
+        return ToolResult(text="top comment: robbed", urls=["https://reddit.com/r/x/comments/1"])
+
+    def fake_tavily_search(query):
+        recorded_tavily_queries.append(query)
+        return ToolResult(text="background: finale aired June 28", urls=["https://example.com/article"])
+
+    monkeypatch.setattr(context_agent_module, "reddit_search", fake_reddit_search)
+    monkeypatch.setattr(context_agent_module, "tavily_search", fake_tavily_search)
+
+    plan_decisions = [
+        PlanDecision(next_action="reddit_search", next_query="finale reaction"),
+        PlanDecision(next_action="stop", next_query=""),
+        PlanDecision(next_action="stop", next_query=""),
+    ]
+    synthesis = ContextSynthesis(
+        summary="Fans were furious the finale denied the long-teased reunion.",
+        key_moments=["showrunner confirms no reunion planned"],
+    )
+    fake = FakeSequenceLLM(plan_decisions=plan_decisions, synthesis=synthesis)
+    agent = ContextAgent(llm=fake, max_tool_calls=5)
+
+    agent.run("Wistoria season 2 finale")
+
+    assert recorded_tavily_queries == ["Wistoria season 2 finale"], (
+        f"floor-override tavily call must use the topic, not empty next_query; "
+        f"got {recorded_tavily_queries!r}"
+    )
