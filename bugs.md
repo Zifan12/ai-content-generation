@@ -141,6 +141,38 @@ Track every shipped feature that fails, what was tried, and what fixed it.
   (`test_reddit_search_sort_defaults_to_relevance_when_unscoped`,
   `test_reddit_search_sort_switches_to_top_when_scoped`); 11/11 `test_tools.py` passing.
 
+### BUG-007 - Anthropic "Grammar compilation timed out" 400 kills a paid pitch run at the first LLM call
+- Date opened: 2026-07-01
+- Status: monitoring
+- Feature: every structured-output LLM call via `src/providers/llm/anthropic_llm.py` `parse_with_raw`
+  (`client.messages.parse`); surfaced in `EventExtractor._dedup` (the pipeline's first LLM call) on a
+  live `pitch_angles --dry-run`.
+- Environment: Anthropic API, model `claude-sonnet-5`, native structured output (`output_format`).
+- Error/behavior: `anthropic.BadRequestError: 400 {'type': 'invalid_request_error', 'message':
+  'Grammar compilation timed out.'}` (request id req_011Ccc76u6kVk73BMLgB4JFh). The response-schema
+  was `DedupVerdict` — a single bool — so schema complexity cannot be the cause; this is the
+  server-side constrained-decoding grammar compiler timing out transiently, misreported as a
+  non-retryable 400. Because the shared LLM seam had no retry (audit AUD-M6 predicted exactly this)
+  the whole run died AFTER the Apify scrape had already been paid (~$0.56, 282 items) — orphaned
+  spend, since scraped events lived only in memory.
+- Reproduction steps: not deterministic (transient server-side). Any `messages.parse` call can hit it;
+  first-seen on a cold run ~7s in.
+- Root cause: two layers. (a) Transient Anthropic-side grammar-compiler timeout dressed as a 400.
+  (b) Our seam treated all 400s as fatal and the pipeline has no checkpoint between the paid scrape
+  and the LLM stages.
+- Attempted fixes:
+  1. (2026-07-01) `anthropic_llm.py`: bounded retry (2 retries, 2s backoff) ONLY when a
+     BadRequestError message contains "Grammar compilation timed out" — grammar is cached
+     server-side after a successful compile, so a retry normally clears it. All other 400s still
+     raise immediately.
+  2. (2026-07-01) `scripts/pitch_angles.py`: `--from-dataset <id>` replay flag — feeds an EXISTING
+     Apify dataset through `ApifyRedditScraper`'s `item_fetcher` seam via a free GET (Bearer header,
+     not URL token), skipping the actor run and the cost guard (nothing to guard). Recovers a
+     crashed run's already-paid scrape; the incident dataset (`tLYHyfiWxQyRNl9jG`, 282 items) is
+     replayable.
+- Validation evidence: 83/83 tests (monitor+providers) pass, ruff clean. Move to closed after the
+  replay run completes end-to-end (which also exercises the retry path if the flake recurs).
+
 ### BUG-002 - First reaction-driven render (Stellar Blade "adult redesign") failed the post gate
 - Date opened: 2026-06-27
 - Status: closed (lessons captured; triggered the hand-first → build-pipeline re-sequencing)

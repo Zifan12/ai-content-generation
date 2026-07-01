@@ -1,6 +1,6 @@
 # config/.env.example guarantees a broken first run
 
-Status: ready-for-agent
+Status: closed (fixed 2026-07-01 — regenerated from the grep-verified env-read list: APIFY_API_TOKEN name corrected, Postgres-only DATABASE_URL, TAVILY_API_KEY + LANGFUSE_* + YOUTUBE_API_KEY added, praw block commented as dormant)
 Severity: High (AUD-H14)
 
 Three defects in `config/.env.example`:
