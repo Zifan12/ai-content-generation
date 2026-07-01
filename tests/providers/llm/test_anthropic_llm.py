@@ -7,8 +7,10 @@ _mock_langfuse = MagicMock()
 _mock_langfuse.observe = lambda **kwargs: (lambda fn: fn)
 sys.modules["langfuse"] = _mock_langfuse
 
+import pytest  # noqa: E402
+from anthropic import BadRequestError  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
-from src.providers.llm.anthropic_llm import AnthropicLLM  # noqa: E402
+from src.providers.llm.anthropic_llm import AnthropicLLM, TruncatedResponseError  # noqa: E402
 from src.schemas.llm import TrendAnalysis, SafetyCheck  # noqa: E402
 
 
@@ -73,8 +75,72 @@ def test_parse_includes_system_when_provided():
     assert call_kwargs["system"] == [{
         "type": "text",
         "text": "You are a helpful assistant.",
-        "cache_control": {"type": "ephemeral", "ttl": "1h"},
+        "cache_control": {"type": "ephemeral", "ttl": "5m"},
     }]
+
+
+def test_parse_cache_ttl_override():
+    """A constructor cache_ttl overrides the 5m default in the system block."""
+    expected = SimpleOutput(answer="ok", score=0.5)
+    llm = AnthropicLLM(cache_ttl="1h")
+    llm.client = MagicMock()
+    llm.client.messages.parse.return_value = make_mock_response(expected)
+
+    llm.parse(prompt="hi", response_model=SimpleOutput, system="sys")
+
+    call_kwargs = llm.client.messages.parse.call_args.kwargs
+    assert call_kwargs["system"][0]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
+
+
+def test_parse_raises_named_error_on_max_tokens_truncation():
+    """stop_reason == "max_tokens" must raise TruncatedResponseError naming the
+    fix (per-caller max_tokens), instead of surfacing truncated JSON as a
+    cryptic validation error — the twice-bitten failure class."""
+    llm = AnthropicLLM()
+    llm.client = MagicMock()
+    response = make_mock_response(SimpleOutput(answer="cut", score=0.1))
+    response.stop_reason = "max_tokens"
+    llm.client.messages.parse.return_value = response
+
+    with pytest.raises(TruncatedResponseError, match="max_tokens=1024"):
+        llm.parse(prompt="hi", response_model=SimpleOutput)
+
+
+def test_parse_retries_grammar_compilation_timeout():
+    """The grammar-timeout 400 (transient server-side, BUG-007) is retried;
+    the call succeeds on the second attempt without surfacing the error."""
+    expected = SimpleOutput(answer="ok", score=0.5)
+    grammar_error = BadRequestError(
+        message="Grammar compilation timed out.",
+        response=MagicMock(status_code=400),
+        body={"type": "error", "error": {"message": "Grammar compilation timed out."}},
+    )
+    llm = AnthropicLLM()
+    llm.client = MagicMock()
+    llm.client.messages.parse.side_effect = [grammar_error, make_mock_response(expected)]
+
+    result = llm.parse(prompt="hi", response_model=SimpleOutput)
+
+    assert result == expected
+    assert llm.client.messages.parse.call_count == 2
+
+
+def test_parse_does_not_retry_other_400s():
+    """Any other BadRequestError raises immediately — only the grammar-timeout
+    message is treated as transient."""
+    other_error = BadRequestError(
+        message="max_tokens: must be positive",
+        response=MagicMock(status_code=400),
+        body={"type": "error", "error": {"message": "max_tokens: must be positive"}},
+    )
+    llm = AnthropicLLM()
+    llm.client = MagicMock()
+    llm.client.messages.parse.side_effect = other_error
+
+    with pytest.raises(BadRequestError):
+        llm.parse(prompt="hi", response_model=SimpleOutput)
+
+    assert llm.client.messages.parse.call_count == 1
 
 
 def test_parse_omits_system_when_none():
