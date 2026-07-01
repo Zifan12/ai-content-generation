@@ -46,6 +46,101 @@ Track every shipped feature that fails, what was tried, and what fixed it.
   Closes the long-carried Opus-4.8 cache question: prompt caching IS live; warm read = 2032.
   Full pytest suite still green (237 passed, 1 skipped) — no regression from the signature change.
 
+### BUG-003 - `reddit_search` (Path B) has no cost guard and its item cap is silently ignored
+- Date opened: 2026-06-30
+- Status: monitoring
+- Feature: `src/monitor/tools/reddit_search.py` (Task 4, User-Topic Context Agent) — called by
+  `ContextAgent._act_reddit` on every `--topic` run, up to `max_tool_calls` (5) times per run.
+- Environment: Apify `harshmaur/reddit-scraper` actor, search mode (`searchTerms`), live
+  `APIFY_API_TOKEN`.
+- Error/behavior: two compounding gaps.
+  1. **No cost guard.** The Task 4 plan explicitly calls for "Apply the $1.00 cost guard before
+     the call" — never implemented. `reddit_search()` calls Apify unconditionally.
+  2. **Cap silently ignored.** The tool passes `"maxItems": max_items` (default 20) to the actor.
+     `ApifyRedditScraper` (the working subreddit-listing path in `scraper.py`) uses
+     `maxPostsCount` + `maxCommentsPerPost` for this same actor instead — `maxItems` is
+     suspected not to be a field this actor honors in search mode. Observed Apify datasets from
+     tonight's testing consistently sized ~165-210 items per call, ~10x the configured cap.
+  3. **False safety comment.** `pitch_angles.py`'s own `$1.00` guard in `main()` is explicitly
+     skipped for `--topic` runs, with a comment claiming reddit_search is "cost-guarded inside
+     the tool itself" — untrue, and this claim was repeated to the user without verifying it
+     against `reddit_search.py`, allowing several more live runs before the gap was caught.
+- Reproduction steps:
+  1. Run `uv run python -m scripts.pitch_angles --topic "<any topic>"` a few times.
+  2. Open Apify Console → Storage → Datasets, sorted by Modified desc.
+  3. Compare item counts against the tool's `max_items=20` default — counts run ~165-210.
+- Root cause: Task 4's planned guard was never implemented; the actor param name was assumed
+  (not verified against the actor's real search-mode schema, unlike the listing-mode path which
+  was already correct); the false "self-guarded" comment in `pitch_angles.py` let this go
+  unnoticed through several runs.
+- Attempted fixes:
+  1. (2026-06-30) Looked up the actor's real pricing (`apify.com/harshmaur/reddit-scraper` page
+     metadata, confirmed 4x identically): "From $2/1,000 results" = $0.002/item — NOT the
+     $0.001844/item constant used elsewhere for a different actor; did not reuse it blind.
+  2. (2026-06-30) `reddit_search.py`: renamed `max_items` → `max_posts`, changed the actor field
+     from `maxItems` to `maxPostsCount` (matches both the Task 4 plan's own spec and the working
+     `ApifyRedditScraper` listing-mode pattern). Added a pre-call cost guard — estimates
+     `max_posts × (1 + max_comments_per_post)` items × $0.002/item, raises `RuntimeError` before
+     any network call if estimate exceeds $1.00. Guard is skipped only when a test `item_fetcher`
+     is injected (same bypass pattern as the existing token check — no real spend in tests).
+- Date fixed: 2026-06-30 (code); live-validated 2026-07-01.
+- Validation evidence: Apify Console billing confirmed **$3.22** actual spend for the incident
+  night (bucketed under 2026-07-01 UTC) — real, but well below the ~$9-12 worst-case estimated
+  from raw dataset item counts before checking the authoritative billing page. Post-fix: 70/70
+  monitor tests pass, ruff clean, guard manually confirmed to raise (not silently pass) on an
+  oversized request ($5.10 estimate, 50×50) without hitting the network; defaults (20 posts × 20
+  comments = 420 items ≈ $0.84) stay under the $1.00 threshold so normal runs are unaffected.
+  **Live validation (2026-07-01):** a real `--topic` run produced Apify datasets sized exactly
+  420 items each (pulled via `GET /v2/datasets/{id}/items`, not just the console item count) —
+  matches the intended `max_posts × (1 + max_comments_per_post)` cap, not the old ~165-210-per-call
+  (~10x-over) blowup. `maxPostsCount` is honored in search mode. Moving to `closed`.
+
+### BUG-004 - `reddit_search`'s `searchSort: "top"` silently ignores `searchTerms` — returns unrelated Reddit-wide top posts
+- Date opened: 2026-07-01
+- Status: closed
+- Feature: `src/monitor/tools/reddit_search.py`, the `searchSort` run-input field.
+- Environment: Apify `harshmaur/reddit-scraper` actor, search mode, live `APIFY_API_TOKEN`.
+- Error/behavior: switched `searchSort` from `"relevance"` to `"top"` (per the actor's own
+  documented input schema, which lists `"top"` as a valid search-mode sort value) to satisfy a
+  "give me the highest-upvoted matching posts" request. Live `--topic "Wistoria Elfie Zeovs Will
+  choice"` run instead returned posts with **zero connection to the query** across all 3 calls
+  made that run: r/pics ("Restaurant closed, for good reason"), r/MadeMeSmile (a cancer-survivor
+  story), r/OnePiece (Gorosei tarot-card theory). Not dilution — total non-match.
+- Reproduction steps:
+  1. Set `"searchSort": "top"` in `reddit_search.py`'s run_input.
+  2. Run `uv run python -m scripts.pitch_angles --topic "<any specific topic>"`.
+  3. Pull the resulting dataset's items via the Apify API and check post titles/subreddits
+     against the topic — they will not match.
+- Root cause: CONFIRMED via a differential comparison on real paid data (not doc-reading) —
+  pulled an earlier same-night dataset that was still on `"relevance"` sort; its #1 result was
+  genuinely on-topic ("An infinite tie stalemate! Zeo Vs. Elfie?" in r/Wistoria). `"relevance"`
+  correctly filters by `searchTerms`; `"top"` does not — it almost certainly routes to a generic
+  "top posts" listing internally, ignoring the query entirely, despite the actor's documented
+  schema listing it as a valid *search-mode* sort value. Same failure class as BUG-003's
+  `maxItems` gap: documented actor behavior does not match actual behavior; only a live paid
+  probe caught it, not the schema page.
+- Attempted fixes:
+  1. (2026-07-01) Reverted `searchSort` from `"top"` back to `"relevance"` in
+     `reddit_search.py`. No cost-guard or formula changes needed — this was a pure value
+     regression, not a cap/pricing issue.
+- Final fix: `src/monitor/tools/reddit_search.py` — `"searchSort": "relevance"`, with a comment
+  documenting the confirmed actor behavior gap so it isn't retried blind.
+- Date fixed: 2026-07-01
+- Validation evidence: 7/7 `test_tools.py` passing, ruff clean. Not re-run live post-revert
+  (would cost more real money to re-confirm what the differential comparison already showed);
+  the differential itself — same actor, same night, `"relevance"` sort's real result was on-topic
+  and `"top"` sort's real result was not — is the validation evidence.
+- **Follow-up (2026-07-01, same day): `"top"` + `withinCommunity` together does work.** Built a
+  standalone probe (`scripts/probe_reddit_sort_community.py`) and ran two live paid checks:
+  (1) `"top"` + `within_community="r/Wistoria"` + real query → 3 on-topic, upvote-ordered posts
+  (scores 312/275/245); (2) same community, garbage query → 0 posts, proving `searchTerms` is
+  respected once scoped (rules out "top-of-subreddit-regardless-of-query" as the explanation).
+  So the bug is specific to the *unscoped* case — scoping to a known community fixes it.
+  `reddit_search.py`'s `searchSort` is now conditional: `"top"` when `within_community` is set,
+  `"relevance"` otherwise. Regression tests added in `test_tools.py`
+  (`test_reddit_search_sort_defaults_to_relevance_when_unscoped`,
+  `test_reddit_search_sort_switches_to_top_when_scoped`); 11/11 `test_tools.py` passing.
+
 ### BUG-002 - First reaction-driven render (Stellar Blade "adult redesign") failed the post gate
 - Date opened: 2026-06-27
 - Status: closed (lessons captured; triggered the hand-first → build-pipeline re-sequencing)
@@ -65,4 +160,78 @@ Track every shipped feature that fails, what was tried, and what fixed it.
   - Added constraints: reference-grounding mandatory; angle variety; caption restraint; and VERIFY EACH STAGE (test thoroughly on real data) before advancing.
 - Date fixed: 2026-06-27
 - Validation evidence: the non-slop render METHOD will be proven the first time Stage C runs with real references (not a separate hand-run). Each pipeline stage carries its own verification gate in the plan — no stage is "done" until proven on real data.
+
+### BUG-005 - `pitch_angles` Path A cost guard uses a per-item rate BUG-003 already disproved
+- Date opened: 2026-07-01 (found by full-codebase audit, `docs/audits/2026-07-01-full-codebase-audit.md` AUD-H1)
+- Status: monitoring
+- Feature: `scripts/pitch_angles.py` `main()` Apify cost guard (Path A, non-`--topic` runs) — the
+  guard that decides whether a scrape run is allowed to spend at all.
+- Environment: Apify `harshmaur/reddit-scraper` actor, listing mode via `ApifyRedditScraper`,
+  live `APIFY_API_TOKEN`.
+- Error/behavior: `pitch_angles.py:443` sets `_APIFY_COST_PER_ITEM = 0.001844`. BUG-003's
+  investigation confirmed (4x, from the actor's own pricing metadata) that `harshmaur/reddit-scraper`
+  bills **$0.002/item**, and `src/monitor/tools/reddit_search.py:29-31` explicitly documents that
+  the $0.001844 figure belongs to a DIFFERENT actor and must not be reused. Same actor, two rates:
+  the search-mode tool guards at $0.002 while the listing-mode guard in `main()` guards at $0.001844
+  — an ~8% under-estimate, so configurations estimating just under $1.00 actually cost over it.
+  `src/monitor/scraper.py:113` (ApifyRedditScraper docstring) repeats the same wrong rate.
+- Reproduction steps:
+  1. Read `scripts/pitch_angles.py:443` and `src/monitor/tools/reddit_search.py:29-31` side by side.
+  2. Compute the default-run estimate both ways: 7 subs × 4 posts × 11 items = 308 items →
+     $0.568 (wrong rate) vs $0.616 (confirmed rate).
+  3. Any flag combination whose wrong-rate estimate lands in ($0.92, $1.00] passes the guard while
+     its true cost exceeds the $1.00 threshold.
+- Root cause: the guard predates BUG-003's pricing confirmation and was never updated when the
+  correct rate was established for the tool path; the rate exists as two (three, counting the
+  scraper docstring) independent literals instead of one imported constant — the same
+  single-source failure class as BUG-003/BUG-004.
+- Attempted fixes:
+  1. (2026-07-01) `scripts/pitch_angles.py` — deleted the local `0.001844` literal; the guard
+     now imports `_APIFY_COST_PER_ITEM` ($0.002) from `src.monitor.tools.reddit_search`, so
+     exactly one rate constant exists for this actor (ADR-0007 rule 1). Recomputed the
+     `--max-posts` help-text example ($0.57 → $0.62). Corrected the stale `$0.001844` rate in
+     `ApifyRedditScraper`'s docstring (`src/monitor/scraper.py`), with a note naming the
+     confusion source.
+- Date fixed: 2026-07-01
+- Status → monitoring
+- Validation evidence: 111/111 tests pass (tests/monitor + tests/generation + tests/cli), ruff
+  clean on all three touched files, mypy clean on the two src files. Default Path A run now
+  estimates $0.62 (was $0.57) for the same 308 items — the guard refuses anything whose TRUE
+  cost exceeds $1.00 instead of anything whose under-priced estimate did. Move to closed after
+  the next live Path A run's Apify billing matches the printed estimate.
+
+### BUG-006 - TikTok scraper upsert is written in the SQLite dialect against the Postgres-only DB
+- Date opened: 2026-07-01 (found by full-codebase audit, AUD-C2; independently confirmed by two
+  audit passes + main-thread source read)
+- Status: open
+- Feature: `BaseScraper.upsert_items()` (`src/scrapers/base.py:56-101`), called unconditionally by
+  `TikTokScraper.fetch_trending()` (`src/scrapers/tiktok.py:124`) — the persist step of every live
+  TikTok scrape (`scripts/run_scrape.py`, `src/scrapers/recurring.py`).
+- Environment: Postgres-only engine per ADR 0006 (`src/database.py` rejects any non-`postgresql`
+  DATABASE_URL at import).
+- Error/behavior: `base.py:15` imports `from sqlalchemy.dialects.sqlite import insert as
+  sqlite_insert` and `base.py:88-91` builds the upsert with it. A SQLite-dialect
+  `OnConflictDoUpdate` construct cannot compile against a Postgres engine — the first
+  `upsert_items()` call in a real run raises a SQLAlchemy compilation error. The path is currently
+  dormant (the 72K archive came in via `scripts/ingest_archive.py`, which bypasses this), so no
+  live failure has been observed yet — but any future rescrape (P4 data refresh) hits it
+  immediately. Two adjacent latent bugs in the same path: `tiktok.py:111-112` returns a bare `[]`
+  where the signature promises a 3-tuple (callers unpack → `ValueError`), and `collected_at` is
+  promised as conflict-updated by the `base.py:61` docstring but missing from `mutable_fields`
+  (`base.py:74`), so freshness timestamps would never update even after the dialect fix.
+- Reproduction steps:
+  1. `uv run python scripts/run_scrape.py --niche <any> --limit 2` against the real Postgres DB
+     with a valid `APIFY_API_TOKEN` (or stub `_normalize_item` items and call
+     `TikTokScraper(db).upsert_items(items)` directly against the Postgres engine — no Apify spend
+     needed to reproduce; the compile error fires before any row lands).
+  2. Observe the SQLAlchemy dialect/compile error on the `ON CONFLICT` statement.
+- Root cause: the upsert was written in the P0/P1 SQLite era and never migrated when ADR 0006
+  removed the SQLite backend. It stayed invisible because `tests/scrapers/test_tiktok_scraper_upsert.py:19`
+  runs on `sqlite:///:memory:` — the exact dialect the code hardcodes — a systemic test-fixture
+  gap (audit AUD-H13f: 14 test files use in-memory SQLite against a Postgres-only app).
+- Attempted fixes:
+  1. None yet. Fix direction (audit AUD-C2): switch to `sqlalchemy.dialects.postgresql.insert`
+     (the correct pattern already exists in `src/rag/indexer.py`); add `"collected_at"` to
+     `mutable_fields`; fix the `[]` early return to `([], 0, 0)`; and cover the path with a
+     Postgres-dialect test (real container on :5433) rather than in-memory SQLite.
 
