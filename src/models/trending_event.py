@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, String, Text, func
+from sqlalchemy import JSON, Boolean, DateTime, Float, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.database import Base
@@ -22,6 +22,7 @@ class TrendingEventRecord(Base):
     gap_type: Mapped[str | None] = mapped_column(String, nullable=True)
     producibility_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     composite_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    context_bundle: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     selected_for_pitching: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
