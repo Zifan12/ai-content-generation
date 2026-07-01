@@ -2,7 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from src.monitor.schemas import ContextBundle, ContextSynthesis, PlanDecision, TrendingEvent
-from src.monitor.tools import reddit_search, tavily_search
+from src.monitor.tools import estimate_cost, reddit_search, tavily_search
 from src.monitor.tools._types import ToolResult
 import src.monitor.context_agent as context_agent_module
 from src.monitor.context_agent import ContextAgent, build_context_bundle, decide_next_step, ContextAgentState
@@ -49,13 +49,39 @@ def test_decide_next_step():
         tavily_text="",
         reddit_calls=3,
         tavily_calls=2,
+        apify_cost_estimate=0.0,
+        within_community="",
         next_action="reddit_search",
         next_query="",
         urls=[],
         summary="",
         key_moments=[],
     )
-    result = decide_next_step(state, max_tool_calls=5)
+    result = decide_next_step(state, max_tool_calls=5, max_run_apify_cost=2.00)
+
+    assert result == "stop"
+
+
+def test_decide_next_step_apify_cost_ceiling():
+    """The cumulative Apify cost ceiling overrides everything, same as
+    max_tool_calls — even when total_calls is well under the cap and the
+    LLM wants to keep searching Reddit.
+    """
+    state = ContextAgentState(
+        topic="",
+        reddit_text="",
+        tavily_text="",
+        reddit_calls=1,
+        tavily_calls=0,
+        apify_cost_estimate=2.00,
+        within_community="",
+        next_action="reddit_search",
+        next_query="",
+        urls=[],
+        summary="",
+        key_moments=[],
+    )
+    result = decide_next_step(state, max_tool_calls=5, max_run_apify_cost=2.00)
 
     assert result == "stop"
 
@@ -70,6 +96,8 @@ def test_plan_returns_llm_decision():
         tavily_text="",
         reddit_calls=0,
         tavily_calls=0,
+        apify_cost_estimate=0.0,
+        within_community="",
         next_action="",
         next_query="",
         urls=[],
@@ -96,6 +124,8 @@ def test_finalize_returns_llm_synthesis():
         tavily_text="background: finale aired June 28",
         reddit_calls=1,
         tavily_calls=1,
+        apify_cost_estimate=0.0,
+        within_community="",
         next_action="stop",
         next_query="",
         urls=[],
@@ -117,7 +147,9 @@ def test_act_reddit_appends_to_existing_text(monkeypatch):
     monkeypatch.setattr(
         context_agent_module,
         "reddit_search",
-        lambda query: ToolResult(text="fresh reaction text", urls=["https://reddit.com/r/x/comments/1"]),
+        lambda query, within_community=None: ToolResult(
+            text="fresh reaction text", urls=["https://reddit.com/r/x/comments/1"]
+        ),
     )
     agent = ContextAgent(llm=object())  # llm unused by _act_reddit
     state = ContextAgentState(
@@ -126,6 +158,8 @@ def test_act_reddit_appends_to_existing_text(monkeypatch):
         tavily_text="",
         reddit_calls=1,
         tavily_calls=0,
+        apify_cost_estimate=0.86,
+        within_community="",
         next_action="reddit_search",
         next_query="some query",
         urls=["https://reddit.com/r/x/comments/0"],
@@ -138,8 +172,66 @@ def test_act_reddit_appends_to_existing_text(monkeypatch):
     assert result == {
         "reddit_text": "earlier reaction text\n\nfresh reaction text",
         "reddit_calls": 2,
+        "apify_cost_estimate": 0.86 + estimate_cost(),
         "urls": ["https://reddit.com/r/x/comments/0", "https://reddit.com/r/x/comments/1"],
     }
+
+
+def test_lookup_community_extracts_subreddit_from_url(monkeypatch):
+    monkeypatch.setattr(
+        context_agent_module,
+        "tavily_search",
+        lambda query: ToolResult(
+            text="Wistoria is discussed on its subreddit.",
+            urls=["https://www.reddit.com/r/Wistoria/", "https://example.com/wiki"],
+        ),
+    )
+    agent = ContextAgent(llm=object())  # llm unused by _lookup_community
+    state = ContextAgentState(
+        topic="Wistoria",
+        reddit_text="",
+        tavily_text="",
+        reddit_calls=0,
+        tavily_calls=0,
+        apify_cost_estimate=0.0,
+        within_community="",
+        next_action="",
+        next_query="",
+        urls=[],
+        summary="",
+        key_moments=[],
+    )
+
+    result = agent._lookup_community(state)
+
+    assert result == {"within_community": "r/Wistoria"}
+
+
+def test_lookup_community_empty_when_no_reddit_url(monkeypatch):
+    monkeypatch.setattr(
+        context_agent_module,
+        "tavily_search",
+        lambda query: ToolResult(text="no reddit link here", urls=["https://example.com/wiki"]),
+    )
+    agent = ContextAgent(llm=object())  # llm unused by _lookup_community
+    state = ContextAgentState(
+        topic="Wistoria",
+        reddit_text="",
+        tavily_text="",
+        reddit_calls=0,
+        tavily_calls=0,
+        apify_cost_estimate=0.0,
+        within_community="",
+        next_action="",
+        next_query="",
+        urls=[],
+        summary="",
+        key_moments=[],
+    )
+
+    result = agent._lookup_community(state)
+
+    assert result == {"within_community": ""}
 
 
 def test_act_tavily_starts_fresh_when_empty(monkeypatch):
@@ -155,6 +247,8 @@ def test_act_tavily_starts_fresh_when_empty(monkeypatch):
         tavily_text="",
         reddit_calls=0,
         tavily_calls=0,
+        apify_cost_estimate=0.0,
+        within_community="",
         next_action="tavily_search",
         next_query="some query",
         urls=[],
@@ -178,6 +272,8 @@ def test_build_context_bundle_both_sources():
         tavily_text="background: finale aired June 28",
         reddit_calls=1,
         tavily_calls=1,
+        apify_cost_estimate=0.86,
+        within_community="",
         next_action="stop",
         next_query="",
         urls=["https://reddit.com/r/x/comments/1", "https://example.com/article"],
@@ -193,6 +289,7 @@ def test_build_context_bundle_both_sources():
         key_moments=["showrunner confirms no reunion planned"],
         references=["https://reddit.com/r/x/comments/1", "https://example.com/article"],
         sources=["reddit_search", "tavily_search"],
+        apify_cost_estimate=0.86,
     )
 
 
@@ -203,6 +300,8 @@ def test_build_context_bundle_no_sources():
         tavily_text="",
         reddit_calls=0,
         tavily_calls=0,
+        apify_cost_estimate=0.0,
+        within_community="",
         next_action="stop",
         next_query="",
         urls=[],
@@ -219,7 +318,9 @@ def test_run_full_loop(monkeypatch):
     monkeypatch.setattr(
         context_agent_module,
         "reddit_search",
-        lambda query: ToolResult(text="top comment: robbed", urls=["https://reddit.com/r/x/comments/1"]),
+        lambda query, within_community=None: ToolResult(
+            text="top comment: robbed", urls=["https://reddit.com/r/x/comments/1"]
+        ),
     )
     monkeypatch.setattr(
         context_agent_module,
@@ -247,6 +348,7 @@ def test_run_full_loop(monkeypatch):
         key_moments=["showrunner confirms no reunion planned"],
         references=["https://reddit.com/r/x/comments/1", "https://example.com/article"],
         sources=["reddit_search", "tavily_search"],
+        apify_cost_estimate=0.86,
     )
 
 
@@ -257,13 +359,15 @@ def test_decide_next_step_passthrough():
         tavily_text="",
         reddit_calls=0,
         tavily_calls=0,
+        apify_cost_estimate=0.0,
+        within_community="",
         next_action="tavily_search",
         next_query="",
         urls=[],
         summary="",
         key_moments=[],
     )
-    result = decide_next_step(state, max_tool_calls=5)
+    result = decide_next_step(state, max_tool_calls=5, max_run_apify_cost=2.00)
 
     assert result == "tavily_search"
 
@@ -275,13 +379,15 @@ def test_decide_next_step_floor_override_reddit():
         tavily_text="",
         reddit_calls=0,
         tavily_calls=0,
+        apify_cost_estimate=0.0,
+        within_community="",
         next_action="stop",
         next_query="",
         urls=[],
         summary="",
         key_moments=[],
     )
-    result = decide_next_step(state, max_tool_calls=5)
+    result = decide_next_step(state, max_tool_calls=5, max_run_apify_cost=2.00)
 
     assert result == "reddit_search"
 
@@ -293,13 +399,15 @@ def test_decide_next_step_floor_override_tavily():
         tavily_text="",
         reddit_calls=1,
         tavily_calls=0,
+        apify_cost_estimate=0.86,
+        within_community="",
         next_action="stop",
         next_query="",
         urls=[],
         summary="",
         key_moments=[],
     )
-    result = decide_next_step(state, max_tool_calls=5)
+    result = decide_next_step(state, max_tool_calls=5, max_run_apify_cost=2.00)
 
     assert result == "tavily_search"
 
@@ -311,13 +419,15 @@ def test_decide_next_step_floor_satisfied():
         tavily_text="",
         reddit_calls=1,
         tavily_calls=1,
+        apify_cost_estimate=0.86,
+        within_community="",
         next_action="stop",
         next_query="",
         urls=[],
         summary="",
         key_moments=[],
     )
-    result = decide_next_step(state, max_tool_calls=5)
+    result = decide_next_step(state, max_tool_calls=5, max_run_apify_cost=2.00)
 
     assert result == "stop"
 
@@ -334,7 +444,7 @@ def test_run_floor_override_uses_topic_not_empty_query(monkeypatch):
     """
     recorded_tavily_queries: list[str] = []
 
-    def fake_reddit_search(query):
+    def fake_reddit_search(query, within_community=None):
         return ToolResult(text="top comment: robbed", urls=["https://reddit.com/r/x/comments/1"])
 
     def fake_tavily_search(query):
@@ -358,7 +468,13 @@ def test_run_floor_override_uses_topic_not_empty_query(monkeypatch):
 
     agent.run("Wistoria season 2 finale")
 
-    assert recorded_tavily_queries == ["Wistoria season 2 finale"], (
+    # First entry is _lookup_community's own upfront tavily call (runs once,
+    # before the loop, regardless of plan decisions); second is the
+    # floor-override call under test.
+    assert recorded_tavily_queries == [
+        "Wistoria season 2 finale reddit subreddit",
+        "Wistoria season 2 finale",
+    ], (
         f"floor-override tavily call must use the topic, not empty next_query; "
         f"got {recorded_tavily_queries!r}"
     )

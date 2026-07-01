@@ -217,6 +217,7 @@ class FakeContextAgent:
         self._event = event if event is not None else SAMPLE_TOPIC_EVENT
         self._bundle = bundle if bundle is not None else SAMPLE_BUNDLE
         self.calls: list[str] = []
+        self.max_run_apify_cost = 2.00
 
     def gather(self, topic: str) -> tuple[TrendingEvent, ContextBundle]:
         self.calls.append(topic)

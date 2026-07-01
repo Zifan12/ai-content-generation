@@ -89,6 +89,55 @@ def test_reddit_search_formats_items():
     assert result.urls == ["https://reddit.com/abc"]
 
 
+def test_reddit_search_omits_within_community_by_default():
+    captured = {}
+
+    def fake_fetcher(run_input):
+        captured.update(run_input)
+        return []
+
+    reddit_search("Wistoria", item_fetcher=fake_fetcher)
+
+    assert "withinCommunity" not in captured
+    assert captured["includeNSFW"] is False
+
+
+def test_reddit_search_sets_within_community_when_given():
+    captured = {}
+
+    def fake_fetcher(run_input):
+        captured.update(run_input)
+        return []
+
+    reddit_search("Wistoria", within_community="r/Wistoria", item_fetcher=fake_fetcher)
+
+    assert captured["withinCommunity"] == "r/Wistoria"
+
+
+def test_reddit_search_sort_defaults_to_relevance_when_unscoped():
+    captured = {}
+
+    def fake_fetcher(run_input):
+        captured.update(run_input)
+        return []
+
+    reddit_search("Wistoria", item_fetcher=fake_fetcher)
+
+    assert captured["searchSort"] == "relevance"
+
+
+def test_reddit_search_sort_switches_to_top_when_scoped():
+    captured = {}
+
+    def fake_fetcher(run_input):
+        captured.update(run_input)
+        return []
+
+    reddit_search("Wistoria", within_community="r/Wistoria", item_fetcher=fake_fetcher)
+
+    assert captured["searchSort"] == "top"
+
+
 class _FakeTavilyClient:
     def search(self, query: str, max_results: int = 5) -> dict:
         return {

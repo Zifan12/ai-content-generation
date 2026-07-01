@@ -6,6 +6,7 @@ then synthesizes a ContextBundle. See docs/superpowers/specs/
 2026-06-30-user-topic-context-agent-design.md for the full design.
 """
 
+import re
 from functools import partial
 
 from langgraph.graph import END, START, StateGraph
@@ -18,9 +19,29 @@ from src.monitor.schemas import (
     TrendingEvent,
 )
 from src.providers.llm.anthropic_llm import AnthropicLLM
-from src.monitor.tools import reddit_search, tavily_search
+from src.monitor.tools import estimate_cost, reddit_search, tavily_search
+from src.observability.tracing import traced
 
 _DEFAULT_MAX_TOOL_CALLS = 5
+
+# Guaranteed hard ceiling on total estimated Apify spend across one run, on
+# top of reddit_search's own per-call $1.00 guard. A per-call guard alone
+# isn't a run-level guarantee: max_tool_calls=5 means the plan node could in
+# theory pick reddit_search all 5 times, so per-call limits alone still
+# allow ~$4-5/run. This is the incident-driven fix for BUG-003's root cause
+# (a real, unbounded-in-practice Apify spend before this cap existed).
+_DEFAULT_MAX_RUN_APIFY_COST = 2.00
+
+# ContextSynthesis (summary + key_moments) over long gathered reddit/web text
+# overflows parse()'s shared 1024 default and truncates mid-JSON (same failure
+# class as WRITER_MAX_TOKENS in content_writer.py) — give finalize its own
+# explicit ceiling instead of raising the shared default.
+_FINALIZE_MAX_TOKENS = 4096
+
+# Matches a subreddit name out of a reddit.com URL (e.g.
+# "https://www.reddit.com/r/Wistoria/comments/..." -> "Wistoria"), used to
+# extract a within_community guess from tavily_search's result URLs.
+_SUBREDDIT_URL_PATTERN = re.compile(r"reddit\.com/r/([A-Za-z0-9_]+)", re.IGNORECASE)
 
 PLAN_SYSTEM_PROMPT = """You are a research planner for a content pipeline. You are gathering \
 context on a topic by searching Reddit (fan reactions) and the general web (background facts) \
@@ -74,6 +95,8 @@ class ContextAgentState(BaseModel):
     tavily_text: str
     reddit_calls: int
     tavily_calls: int
+    apify_cost_estimate: float
+    within_community: str
     next_action: str
     next_query: str
     urls: list[str]
@@ -81,7 +104,10 @@ class ContextAgentState(BaseModel):
     key_moments: list[str]
 
 
-def decide_next_step(state: ContextAgentState, *, max_tool_calls: int) -> str:
+@traced(name="context_agent.decide_next_step")
+def decide_next_step(
+    state: ContextAgentState, *, max_tool_calls: int, max_run_apify_cost: float
+) -> str:
     """Decide whether the agent loop should keep going or stop.
 
     Enforces the floor/rubric/ceiling stop condition: the ceiling is checked
@@ -94,6 +120,11 @@ def decide_next_step(state: ContextAgentState, *, max_tool_calls: int) -> str:
         state: Current agent state.
         max_tool_calls: Hard cap on total tool calls (reddit + tavily
             combined), from ``config.context_agent.max_tool_calls``.
+        max_run_apify_cost: Hard cap on cumulative estimated Apify spend
+            (USD) across the whole run, checked in addition to
+            ``max_tool_calls`` — reddit_search's own guard only bounds a
+            single call, not a run that can call it up to ``max_tool_calls``
+            times.
 
     Returns:
         ``"reddit_search"``, ``"tavily_search"``, or ``"stop"`` — names the
@@ -101,6 +132,8 @@ def decide_next_step(state: ContextAgentState, *, max_tool_calls: int) -> str:
     """
     total_calls = state.reddit_calls + state.tavily_calls
     if total_calls >= max_tool_calls:
+        return "stop"
+    if state.apify_cost_estimate >= max_run_apify_cost:
         return "stop"
 
     if state.next_action == "stop":
@@ -132,10 +165,47 @@ class ContextAgent:
     pattern as GapAgent/IdeaFitGate elsewhere in this package.
     """
 
-    def __init__(self, llm=None, max_tool_calls: int = _DEFAULT_MAX_TOOL_CALLS):
+    def __init__(
+        self,
+        llm=None,
+        max_tool_calls: int = _DEFAULT_MAX_TOOL_CALLS,
+        max_run_apify_cost: float = _DEFAULT_MAX_RUN_APIFY_COST,
+    ):
         self.llm = llm or AnthropicLLM(model="claude-sonnet-5")
         self.max_tool_calls = max_tool_calls
+        self.max_run_apify_cost = max_run_apify_cost
 
+    @traced(name="context_agent.lookup_community")
+    def _lookup_community(self, state: ContextAgentState) -> dict:
+        """LangGraph node: run once, before the plan loop starts, to guess
+        which subreddit the topic lives in.
+
+        BUG-004's root cause (reddit_search's unscoped, whole-Reddit search
+        surfacing unrelated top posts once "top" sort broke relevance
+        filtering) showed that an unscoped search leans entirely on
+        searchTerms text-matching, with no fallback if that's not precise
+        enough. Grounding a within_community guess in a real Tavily search
+        result — rather than having the plan LLM invent a subreddit name
+        from its own knowledge — avoids searching a plausible-sounding but
+        nonexistent/wrong subreddit and getting zero results back silently.
+
+        Deliberately NOT counted in tavily_calls/max_tool_calls: this is a
+        one-time setup step, not part of the plan loop's own research
+        budget, so it doesn't eat into the floor/ceiling accounting
+        decide_next_step enforces.
+        """
+        result = tavily_search(f"{state.topic} reddit subreddit")
+
+        within_community = ""
+        for url in result.urls:
+            match = _SUBREDDIT_URL_PATTERN.search(url)
+            if match:
+                within_community = f"r/{match.group(1)}"
+                break
+
+        return {"within_community": within_community}
+
+    @traced(name="context_agent.plan")
     def _plan(self, state: ContextAgentState) -> dict:
         """LangGraph node: ask the LLM what to do next, given gathered state so far.
 
@@ -161,9 +231,12 @@ class ContextAgent:
             "next_query": decision.next_query,
         }
 
+    @traced(name="context_agent.act_reddit")
     def _act_reddit(self, state: ContextAgentState) -> dict:
         """LangGraph node: run reddit_search and accumulate the result into state."""
-        result = reddit_search(_effective_query(state))
+        result = reddit_search(
+            _effective_query(state), within_community=state.within_community or None
+        )
 
         text = f"{state.reddit_text}\n\n{result.text}" if state.reddit_text else result.text
         calls = state.reddit_calls + 1
@@ -171,9 +244,11 @@ class ContextAgent:
         return {
             "reddit_text": text,
             "reddit_calls": calls,
+            "apify_cost_estimate": state.apify_cost_estimate + estimate_cost(),
             "urls": state.urls + result.urls,
         }
 
+    @traced(name="context_agent.act_tavily")
     def _act_tavily(self, state: ContextAgentState) -> dict:
         """LangGraph node: run tavily_search and accumulate the result into state."""
         result = tavily_search(_effective_query(state))
@@ -187,6 +262,7 @@ class ContextAgent:
             "urls": state.urls + result.urls,
         }
 
+    @traced(name="context_agent.finalize")
     def _finalize(self, state: ContextAgentState) -> dict:
         """LangGraph node: synthesize everything gathered into a summary + key moments.
 
@@ -203,6 +279,7 @@ class ContextAgent:
             prompt=user_prompt,
             response_model=ContextSynthesis,
             system=FINALIZE_SYSTEM_PROMPT,
+            max_tokens=_FINALIZE_MAX_TOKENS,
         )
 
         return {
@@ -213,23 +290,31 @@ class ContextAgent:
     def build_graph(self):
         """Wire the nodes into a compiled, runnable LangGraph.
 
-        plan -> (decide_next_step) -> reddit_search/tavily_search -> plan
-                                    -> finalize -> END
-        decide_next_step is the single source of truth for routing (floor/
-        ceiling enforced there, not duplicated here) — its 3 return values
-        map 1:1 onto the 3 possible next nodes.
+        lookup_community -> plan -> (decide_next_step) -> reddit_search/tavily_search -> plan
+                                                         -> finalize -> END
+        lookup_community runs exactly once, before the loop starts (see its
+        docstring for why it isn't folded into the plan/act loop itself).
+        decide_next_step is the single source of truth for routing the loop
+        (floor/ceiling enforced there, not duplicated here) — its 3 return
+        values map 1:1 onto the 3 possible next nodes.
         """
         graph = StateGraph(ContextAgentState)
 
+        graph.add_node("lookup_community", self._lookup_community)
         graph.add_node("plan", self._plan)
         graph.add_node("reddit_search", self._act_reddit)
         graph.add_node("tavily_search", self._act_tavily)
         graph.add_node("finalize", self._finalize)
 
-        graph.add_edge(START, "plan")
+        graph.add_edge(START, "lookup_community")
+        graph.add_edge("lookup_community", "plan")
         graph.add_conditional_edges(
             "plan",
-            partial(decide_next_step, max_tool_calls=self.max_tool_calls),
+            partial(
+                decide_next_step,
+                max_tool_calls=self.max_tool_calls,
+                max_run_apify_cost=self.max_run_apify_cost,
+            ),
             {
                 "reddit_search": "reddit_search",
                 "tavily_search": "tavily_search",
@@ -255,6 +340,8 @@ class ContextAgent:
             tavily_text="",
             reddit_calls=0,
             tavily_calls=0,
+            apify_cost_estimate=0.0,
+            within_community="",
             next_action="",
             next_query="",
             urls=[],
@@ -328,4 +415,5 @@ def build_context_bundle(state: ContextAgentState) -> ContextBundle:
         key_moments=state.key_moments,
         references=state.urls,
         sources=sources,
+        apify_cost_estimate=state.apify_cost_estimate,
     )

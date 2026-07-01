@@ -115,6 +115,7 @@ class ContextBundle(BaseModel):
     key_moments: list[str]
     references: list[str]
     sources: list[str]
+    apify_cost_estimate: float = 0.0
 
     def to_context_block(self) -> str:
         """Render this bundle as a ``<context>`` block for prompt injection.

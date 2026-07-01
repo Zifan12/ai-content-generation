@@ -74,7 +74,7 @@ def seed_extraction(
         system_prompt="test",
         envelope="test",
         raw_response={},
-        model="claude-sonnet-4-6",
+        model="claude-sonnet-5",
         usage_input_tokens=input_tokens,
         usage_output_tokens=output_tokens,
         usage_cache_read_tokens=cache_read_tokens,
