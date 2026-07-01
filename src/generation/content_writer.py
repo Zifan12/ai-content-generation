@@ -13,6 +13,7 @@ signal). Imagination-only runs omit hits entirely.
 """
 
 import json
+import logging
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -22,6 +23,8 @@ from src.models.transcript import Transcript
 from src.rag.schemas import RetrievalHit
 from src.schemas.generation import ContentPackage
 from src.providers.llm.anthropic_llm import AnthropicLLM
+
+logger = logging.getLogger(__name__)
 
 # Single-shot packages are smaller than the retired 3-segment chain, but headroom
 # is harmless and writer-owned — raising it never touches the judge or extractor,
@@ -198,7 +201,17 @@ def _hydrate_hits(hits: list[RetrievalHit], db: Session) -> list[dict]:
 
     out = []
     for hit in hits:
-        text = lookup[hit.content_item_id]
+        # A hit whose RawContentItem row no longer exists (stale RAG index
+        # entry) degrades to transcript=None — the same handled state as a
+        # row with no transcript — instead of a KeyError killing the whole
+        # write() call (audit issue 13). Logged so index drift is visible.
+        if hit.content_item_id not in lookup:
+            logger.warning(
+                "RAG hit %s has no RawContentItem row (stale index entry) — "
+                "grounding without transcript",
+                hit.content_item_id,
+            )
+        text = lookup.get(hit.content_item_id)
         out.append({
             "transcript": text,
             "aesthetic_descriptors": hit.blueprint_data.get("aesthetic_descriptors", None),

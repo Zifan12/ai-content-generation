@@ -1,11 +1,25 @@
-import pytest
-from pydantic import ValidationError
 
-from src.monitor.schemas import ContextBundle, ContextSynthesis, PlanDecision, TrendingEvent
-from src.monitor.tools import estimate_cost, reddit_search, tavily_search
+from src.monitor.schemas import ContextBundle, ContextSynthesis, PlanDecision
+from src.monitor.tools import estimate_cost
 from src.monitor.tools._types import ToolResult
 import src.monitor.context_agent as context_agent_module
 from src.monitor.context_agent import ContextAgent, build_context_bundle, decide_next_step, ContextAgentState
+
+
+def _reddit_call_params() -> dict:
+    """The reddit-search params _act_reddit is expected to use — read from the
+    module's shared constants so these tests and production share one source
+    of truth (AUD-M1)."""
+    return {
+        "max_posts": context_agent_module._REDDIT_MAX_POSTS,
+        "max_comments_per_post": context_agent_module._REDDIT_MAX_COMMENTS_PER_POST,
+        "max_comments_count": context_agent_module._REDDIT_MAX_COMMENTS_COUNT,
+    }
+
+
+def _expected_reddit_call_cost() -> float:
+    """One reddit_search call's estimated cost, priced from the same shared params."""
+    return estimate_cost(**_reddit_call_params())
 
 
 class FakePlanLLM:
@@ -144,13 +158,15 @@ def test_finalize_returns_llm_synthesis():
 
 
 def test_act_reddit_appends_to_existing_text(monkeypatch):
-    monkeypatch.setattr(
-        context_agent_module,
-        "reddit_search",
-        lambda query, within_community=None: ToolResult(
+    captured_kwargs: list[dict] = []
+
+    def fake_reddit_search(query, within_community=None, **kwargs):
+        captured_kwargs.append(kwargs)
+        return ToolResult(
             text="fresh reaction text", urls=["https://reddit.com/r/x/comments/1"]
-        ),
-    )
+        )
+
+    monkeypatch.setattr(context_agent_module, "reddit_search", fake_reddit_search)
     agent = ContextAgent(llm=object())  # llm unused by _act_reddit
     state = ContextAgentState(
         topic="",
@@ -169,10 +185,15 @@ def test_act_reddit_appends_to_existing_text(monkeypatch):
 
     result = agent._act_reddit(state)
 
+    # AUD-M1 regression: the estimate must be priced from the SAME params the
+    # call used — the fake captures what reddit_search received, the expected
+    # cost is computed from the module's shared constants, and the two must
+    # match exactly.
+    assert captured_kwargs == [_reddit_call_params()]
     assert result == {
         "reddit_text": "earlier reaction text\n\nfresh reaction text",
         "reddit_calls": 2,
-        "apify_cost_estimate": 0.86 + estimate_cost(),
+        "apify_cost_estimate": 0.86 + _expected_reddit_call_cost(),
         "urls": ["https://reddit.com/r/x/comments/0", "https://reddit.com/r/x/comments/1"],
     }
 
@@ -318,7 +339,7 @@ def test_run_full_loop(monkeypatch):
     monkeypatch.setattr(
         context_agent_module,
         "reddit_search",
-        lambda query, within_community=None: ToolResult(
+        lambda query, within_community=None, **kwargs: ToolResult(
             text="top comment: robbed", urls=["https://reddit.com/r/x/comments/1"]
         ),
     )
@@ -348,7 +369,9 @@ def test_run_full_loop(monkeypatch):
         key_moments=["showrunner confirms no reunion planned"],
         references=["https://reddit.com/r/x/comments/1", "https://example.com/article"],
         sources=["reddit_search", "tavily_search"],
-        apify_cost_estimate=0.86,
+        # One reddit call priced at the shared call params (was a hardcoded
+        # 0.86 — the pre-AUD-M1 wrong estimate: 20-post defaults for a 5-post call).
+        apify_cost_estimate=_expected_reddit_call_cost(),
     )
 
 
@@ -444,7 +467,7 @@ def test_run_floor_override_uses_topic_not_empty_query(monkeypatch):
     """
     recorded_tavily_queries: list[str] = []
 
-    def fake_reddit_search(query, within_community=None):
+    def fake_reddit_search(query, within_community=None, **kwargs):
         return ToolResult(text="top comment: robbed", urls=["https://reddit.com/r/x/comments/1"])
 
     def fake_tavily_search(query):

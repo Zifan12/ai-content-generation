@@ -38,6 +38,17 @@ _DEFAULT_MAX_RUN_APIFY_COST = 2.00
 # explicit ceiling instead of raising the shared default.
 _FINALIZE_MAX_TOKENS = 4096
 
+# The exact parameter values _act_reddit passes to reddit_search, defined once
+# and shared with the estimate_cost() call that prices each search — so the
+# accumulated apify_cost_estimate is always computed from the same numbers the
+# call actually used (AUD-M1: previously the call ran on the tool's own
+# defaults, 5 posts, while a bare estimate_cost() priced it at ITS defaults,
+# 20 posts — ~3.7x over-real, tripping the $2.00 run ceiling at ~$0.69 of
+# actual spend and understating research the budget could still afford).
+_REDDIT_MAX_POSTS = 5
+_REDDIT_MAX_COMMENTS_PER_POST = 20
+_REDDIT_MAX_COMMENTS_COUNT = 10
+
 # Matches a subreddit name out of a reddit.com URL (e.g.
 # "https://www.reddit.com/r/Wistoria/comments/..." -> "Wistoria"), used to
 # extract a within_community guess from tavily_search's result URLs.
@@ -233,9 +244,18 @@ class ContextAgent:
 
     @traced(name="context_agent.act_reddit")
     def _act_reddit(self, state: ContextAgentState) -> dict:
-        """LangGraph node: run reddit_search and accumulate the result into state."""
+        """LangGraph node: run reddit_search and accumulate the result into state.
+
+        The search call and the estimate_cost() that prices it both take
+        ``_REDDIT_SEARCH_PARAMS`` — one source for the numbers, so the run's
+        cost accounting cannot drift from what the call actually requested.
+        """
         result = reddit_search(
-            _effective_query(state), within_community=state.within_community or None
+            _effective_query(state),
+            within_community=state.within_community or None,
+            max_posts=_REDDIT_MAX_POSTS,
+            max_comments_per_post=_REDDIT_MAX_COMMENTS_PER_POST,
+            max_comments_count=_REDDIT_MAX_COMMENTS_COUNT,
         )
 
         text = f"{state.reddit_text}\n\n{result.text}" if state.reddit_text else result.text
@@ -244,7 +264,12 @@ class ContextAgent:
         return {
             "reddit_text": text,
             "reddit_calls": calls,
-            "apify_cost_estimate": state.apify_cost_estimate + estimate_cost(),
+            "apify_cost_estimate": state.apify_cost_estimate
+            + estimate_cost(
+                max_posts=_REDDIT_MAX_POSTS,
+                max_comments_per_post=_REDDIT_MAX_COMMENTS_PER_POST,
+                max_comments_count=_REDDIT_MAX_COMMENTS_COUNT,
+            ),
             "urls": state.urls + result.urls,
         }
 

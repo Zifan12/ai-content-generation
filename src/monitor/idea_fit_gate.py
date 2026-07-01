@@ -96,11 +96,12 @@ Answer NO (cheap meme) for reactions like:
 • Reactions best served by a text post, not a rendered video.
 
 ──────────────────────────────────────────────────────────────────
-QUESTION 3 — MODE (answer only when Q1 AND Q2 are YES)
+QUESTION 3 — MODE (always required)
 ──────────────────────────────────────────────────────────────────
 • wish   — fans want the satisfying version they didn't get (cathartic, positive payoff).
 • satire — fans want their disappointment voiced as a joke (contrast, absurdism, irony).
 • other  — neither fits cleanly.
+When Q1 or Q2 is NO, set mode to "other" — the field must be filled either way.
 
 ──────────────────────────────────────────────────────────────────
 HEAT SCORE  (0.0 – 1.0)
