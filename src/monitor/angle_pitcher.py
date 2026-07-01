@@ -2,7 +2,12 @@ import logging
 
 import numpy as np
 
-from src.monitor.schemas import AnglePitchSlate, GapAnalysis, TrendingEvent
+from src.monitor.schemas import (
+    AnglePitchSlate,
+    ContextBundle,
+    GapAnalysis,
+    TrendingEvent,
+)
 from src.observability.tracing import traced
 from src.providers.llm.anthropic_llm import AnthropicLLM
 from src.rag.embedder import TextEmbedder
@@ -61,7 +66,12 @@ class AnglePitcher:
 
         
     @traced(name="angle_pitcher")
-    def pitch(self, event: TrendingEvent, gap: GapAnalysis) -> AnglePitchSlate:
+    def pitch(
+        self,
+        event: TrendingEvent,
+        gap: GapAnalysis,
+        bundle: ContextBundle | None = None,
+    ) -> AnglePitchSlate:
         user_prompt = (
             f"Propose exactly three distinct video angles that satisfy the audience's "
             f"unmet desire for the trending event below.\n\n"
@@ -76,6 +86,10 @@ class AnglePitcher:
             f"reasoning: {gap.reasoning}\n"
             f"</gap>"
         )
+        if bundle is not None:
+            block = bundle.to_context_block()
+            if block:
+                user_prompt += f"\n\n{block}"
 
         slate = self.llm.parse(
             prompt=user_prompt,

@@ -1,5 +1,5 @@
 
-from src.monitor.schemas import GapAnalysis, TrendingEvent
+from src.monitor.schemas import ContextBundle, GapAnalysis, TrendingEvent
 from src.observability.tracing import traced
 from src.providers.llm.anthropic_llm import AnthropicLLM
 
@@ -52,13 +52,21 @@ class GapAgent:
 
         
     @traced(name="gap_analyze")
-    def analyze(self, event: TrendingEvent) -> GapAnalysis:
+    def analyze(
+        self,
+        event: TrendingEvent,
+        bundle: ContextBundle | None = None,
+    ) -> GapAnalysis:
         user_prompt = (
             f"Identify the audience's unmet desire for the trending event below "
             f"and produce the GapAnalysis.\n\n"
             f"<event_headline>\n{event.headline}\n</event_headline>\n\n"
             f"<audience_reaction>\n{event.reaction_sample}\n</audience_reaction>"
         )
+        if bundle is not None:
+            block = bundle.to_context_block()
+            if block:
+                user_prompt += f"\n\n{block}"
 
         analyzed = self.llm.parse(
             prompt=user_prompt,

@@ -115,3 +115,26 @@ class ContextBundle(BaseModel):
     key_moments: list[str]
     references: list[str]
     sources: list[str]
+
+    def to_context_block(self) -> str:
+        """Render this bundle as a ``<context>`` block for prompt injection.
+
+        Used by GapAgent and AnglePitcher to ground their prompts in the
+        web-research the context agent gathered.  Keeps the same untrusted-data
+        delimiting discipline (tagged block) those prompts already use.
+
+        Returns an empty string when the bundle carries no real content; callers
+        should check the return value and skip injection when empty.
+        """
+        if not self.summary and not self.key_moments and not self.references:
+            return ""
+        lines = ["<context>", f"summary: {self.summary}"]
+        if self.key_moments:
+            bullets = "\n".join(f"- {m}" for m in self.key_moments)
+            lines.append("key_moments:")
+            lines.append(bullets)
+        if self.references:
+            lines.append("references:")
+            lines.append("\n".join(f"- {r}" for r in self.references))
+        lines.append("</context>")
+        return "\n".join(lines)

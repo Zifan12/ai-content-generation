@@ -4,6 +4,7 @@ from src.monitor.angle_pitcher import AnglePitcher
 from src.monitor.schemas import (
     AnglePitch,
     AnglePitchSlate,
+    ContextBundle,
     GapAnalysis,
     GapType,
     RenderBackend,
@@ -99,3 +100,47 @@ def test_pitch_returns_slate_and_calls_embedder():
     for angle in result.angles:
         assert isinstance(angle.render_backend, RenderBackend)
     assert fake_embedder.texts
+
+
+def _sample_bundle() -> ContextBundle:
+    return ContextBundle(
+        reaction_sample="I wish we saw the dragon breathe fire",
+        summary="Tokyo residents report a dragon sighting at dawn; the footage cuts before the fire breath.",
+        key_moments=["dragon first appears at 06:14 JST", "camera cuts away before fire breath"],
+        references=["https://news.example.com/dragon-tokyo", "https://reddit.com/r/tokyo/dragon"],
+        sources=["tavily", "reddit"],
+    )
+
+
+def test_pitch_without_bundle_has_no_context_block():
+    """Regression: bundle=None path must not inject a <context> block."""
+    fake_llm = FakeLLM(slate=SAMPLE_SLATE)
+    fake_embedder = FakeEmbedder()
+    pitcher = AnglePitcher(llm=fake_llm, embedder=fake_embedder)
+
+    pitcher.pitch(SAMPLE_EVENT, SAMPLE_GAP, bundle=None)
+
+    assert "<context>" not in fake_llm.prompt
+    assert "</context>" not in fake_llm.prompt
+    assert "<event>" in fake_llm.prompt
+    assert "<gap>" in fake_llm.prompt
+
+
+def test_pitch_with_bundle_injects_context_block():
+    """bundle provided -> prompt contains a <context> block with summary,
+    key_moments, and references, alongside the unchanged event+gap blocks."""
+    fake_llm = FakeLLM(slate=SAMPLE_SLATE)
+    fake_embedder = FakeEmbedder()
+    pitcher = AnglePitcher(llm=fake_llm, embedder=fake_embedder)
+    bundle = _sample_bundle()
+
+    pitcher.pitch(SAMPLE_EVENT, SAMPLE_GAP, bundle=bundle)
+
+    assert "<context>" in fake_llm.prompt and "</context>" in fake_llm.prompt
+    assert bundle.summary in fake_llm.prompt
+    for moment in bundle.key_moments:
+        assert moment in fake_llm.prompt, f"key_moment {moment!r} missing from prompt"
+    for ref in bundle.references:
+        assert ref in fake_llm.prompt, f"reference {ref!r} missing from prompt"
+    assert "<event>" in fake_llm.prompt
+    assert "<gap>" in fake_llm.prompt
