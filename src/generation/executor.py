@@ -26,8 +26,8 @@ real (paid) run — the mocked tests cannot catch these:
   * ``--quality high``: confirm veo3_1 accepts it, or it errors "Unknown params".
 """
 
-import platform
 import re
+import shutil
 import subprocess
 from pathlib import Path
 from urllib.parse import urlparse
@@ -65,20 +65,44 @@ class RenderResult(BaseModel):
 def _run_cli(argv: list[str]) -> str:
     """Run a higgsfield CLI command and return its stdout.
 
-    On Windows the higgsfield npm package installs as a .cmd shim that only
-    resolves through the shell (cmd.exe); shell=True is required there.
+    The executable is resolved once via ``shutil.which`` — on Windows this
+    finds the npm-installed .cmd shim through PATHEXT, so no ``shell=True`` is
+    needed and cmd.exe never receives the argv as a raw command line to parse
+    (the old shell=True path let metacharacters inside LLM-written prompt text
+    reach the shell — audit AUD-C1). Prompt text is additionally sanitized in
+    ``_sanitize_prompt`` because CreateProcess still routes .cmd files through
+    cmd.exe internally, whose parser is not reliably escapable.
 
     Raises:
+        FileNotFoundError: if the higgsfield CLI is not on PATH.
         subprocess.CalledProcessError: if the CLI exits non-zero.
     """
+    executable = shutil.which(argv[0])
+    if executable is None:
+        raise FileNotFoundError(
+            f"{argv[0]!r} CLI not found on PATH — is the npm package installed?"
+        )
     completed = subprocess.run(
-        argv,
+        [executable, *argv[1:]],
         capture_output=True,
         text=True,
         check=True,
-        shell=(platform.system() == "Windows"),
     )
     return completed.stdout
+
+
+def _sanitize_prompt(text: str) -> str:
+    """Strip cmd.exe metacharacters from prompt text before it enters argv.
+
+    The Higgsfield CLI on Windows is an npm .cmd shim; CreateProcess executes
+    .cmd files through cmd.exe even with shell=False, and cmd's argument
+    parser is not reliably escapable (the "BatBadBut" class of injections).
+    Prompts are prose — replacing quotes with apostrophes and dropping the
+    handful of shell-hostile characters loses nothing a render model needs.
+    """
+    cleaned = text.replace('"', "'")
+    cleaned = re.sub(r"[&|<>^%]", " ", cleaned)
+    return re.sub(r"\s+", " ", cleaned).strip()
 
 
 def _download(url: str, dest: str) -> str:
@@ -151,7 +175,7 @@ def _param_flags(job: RenderJob) -> list[str]:
     none). Media flags (--image) and --wait/--quality are added by the create
     builder, not here, so the cost call estimates the same shape without them.
     """
-    flags = ["--prompt", job.prompt, "--aspect_ratio", job.aspect_ratio]
+    flags = ["--prompt", _sanitize_prompt(job.prompt), "--aspect_ratio", job.aspect_ratio]
     if job.duration is not None:
         flags += ["--duration", str(job.duration)]
     return flags

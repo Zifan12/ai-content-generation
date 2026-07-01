@@ -134,7 +134,9 @@ def run_pitch_pipeline(
             called when ``dry_run`` is false; may be ``None`` for dry runs.
         output_dir: Directory the handoff JSON is written into (created if absent).
         top_n: Max events to carry forward from the extractor (Path A only).
-        context_agent: Anything with ``gather(topic) -> (TrendingEvent, ContextBundle)``.
+        context_agent: Anything with ``gather(topic) -> (TrendingEvent, ContextBundle)``
+            and a ``max_run_apify_cost`` float attribute (the returned bundle's
+            ``apify_cost_estimate`` is printed against it for cost visibility).
             Required when ``topic`` is set; ignored otherwise.
         topic: When set, run Path B (user-supplied topic on-ramp); when ``None``,
             run Path A (scraper -> extractor -> ...).
@@ -151,7 +153,12 @@ def run_pitch_pipeline(
     if topic is not None:
         if context_agent is None:
             raise ValueError("context_agent is required when topic is set (Path B)")
+        print(
+            f"[Path B] Apify cost ceiling this run: ${context_agent.max_run_apify_cost:.2f} "
+            f"(hard cap, see context_agent.py:decide_next_step)"
+        )
         event, bundle = context_agent.gather(topic)
+        print(f"[Path B] Apify cost spent: ${bundle.apify_cost_estimate:.2f}")
         events = [event]
         bundles[id(event)] = bundle
     else:
@@ -393,7 +400,7 @@ def main() -> None:
         type=int,
         default=4,
         help="Posts to scrape PER subreddit (Apify maxPostsCount is per-URL, not "
-        "total). 7 subs × 4 posts × 11 items = ~$0.57/call. Apify bills per "
+        "total). 7 subs × 4 posts × 11 items = ~$0.62/call. Apify bills per "
         "returned item (post + "
         "comment), so raising this or --comments-per-post increases cost ~linearly.",
     )
@@ -425,15 +432,27 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    # Apify cost guard — actor bills ~$0.001844 per returned item (post + every
-    # fetched comment). estimates = subreddits × max_posts × (1 + comments_per_post)
+    # --no-llm is a Path A scraper-only debug mode; on the --topic path it was
+    # silently ignored and the full paid pipeline ran anyway (audit AUD-H2).
+    # Refuse the combination outright rather than guessing which flag wins.
+    if args.topic is not None and args.no_llm:
+        parser.error(
+            "--no-llm and --topic are mutually exclusive: --no-llm is a Path A "
+            "scraper-only debug mode; there is no free preview of Path B."
+        )
+
+    # Apify cost guard — harshmaur/reddit-scraper bills $0.002 per returned item
+    # (post + every fetched comment). Rate imported from reddit_search so exactly
+    # one constant exists for this actor (BUG-005: a local 0.001844 copy — a
+    # different actor's rate — under-estimated ~8% and let over-threshold runs
+    # pass). estimates = subreddits × max_posts × (1 + comments_per_post).
     # Refuse to run if estimated cost > $1.00 (one stuck probe in the 2026-06-29
     # session burned ~$9.40 because defaults were 10 srs × 10 posts × 50 comments).
     # Path B (--topic) bypasses this guard: it uses reddit_search in search-mode
-    # (one topic, not N subreddits), cost-guarded inside the tool itself via the
-    # agent's max_tool_calls ceiling.
+    # (one topic, not N subreddits), cost-guarded inside the tool itself plus the
+    # context agent's $2.00 run ceiling.
     if args.topic is None:
-        _APIFY_COST_PER_ITEM = 0.001844
+        from src.monitor.tools.reddit_search import _APIFY_COST_PER_ITEM
         _n_subreddits = len(_DEFAULT_SUBREDDITS) if not args.sources else len(
             [s.strip() for s in args.sources.split(",")]
         )

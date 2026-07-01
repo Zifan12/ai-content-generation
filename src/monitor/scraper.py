@@ -108,10 +108,12 @@ class ApifyRedditScraper:
         actor_id: Apify actor id (slash form); tilde-encoded for the URL path.
         max_posts: Cap on posts saved **per start URL** (actor's ``maxPostsCount``).
             IMPORTANT: this is per-URL, not a total — scraping 10 subreddits
-            with max_posts=10 yields up to 100 posts. Billed at ~$0.001844
-            per returned item (post + every fetched comment), so total cost =
+            with max_posts=10 yields up to 100 posts. Billed at $0.002 per
+            returned item (post + every fetched comment; confirmed BUG-003 —
+            the $0.001844 figure that used to sit here belongs to a DIFFERENT
+            actor, see ``tools/reddit_search.py``), so total cost =
             ``len(subreddits) × max_posts × (1 + fetch_comments_per_post)``
-            × $0.001844. Use small max_posts/max_comments for probe runs.
+            × $0.002. Use small max_posts/max_comments for probe runs.
         fetch_comments_per_post: How many comments to pull per post from the actor
             (``maxCommentsPerPost``). Set generously (default 50): the actor has NO
             top-comment sort and truncates in default traversal order, so the only
