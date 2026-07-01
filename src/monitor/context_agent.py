@@ -112,6 +112,20 @@ def decide_next_step(state: ContextAgentState, *, max_tool_calls: int) -> str:
     return state.next_action
 
 
+def _effective_query(state: ContextAgentState) -> str:
+    """Resolve the search phrase an act node should actually run.
+
+    Normally this is the ``next_query`` the plan node's LLM chose. But when
+    ``decide_next_step`` forces a floor-override tool call — the LLM chose
+    ``"stop"`` (which empties ``next_query``) before both a reaction source
+    and a context source were hit — the act node would otherwise search on an
+    empty string, which wastes a call (and can make the provider raise) while
+    still incrementing the call counter and hollowly "satisfying" the floor.
+    The topic is always a valid, on-subject phrase, so fall back to it.
+    """
+    return state.next_query.strip() or state.topic
+
+
 class ContextAgent:
     """Wraps the LangGraph context-gathering loop. The LLM is constructor-
     injected (real AnthropicLLM in production, a fake in tests), same
@@ -149,7 +163,7 @@ class ContextAgent:
 
     def _act_reddit(self, state: ContextAgentState) -> dict:
         """LangGraph node: run reddit_search and accumulate the result into state."""
-        result = reddit_search(state.next_query)
+        result = reddit_search(_effective_query(state))
 
         text = f"{state.reddit_text}\n\n{result.text}" if state.reddit_text else result.text
         calls = state.reddit_calls + 1
@@ -162,7 +176,7 @@ class ContextAgent:
 
     def _act_tavily(self, state: ContextAgentState) -> dict:
         """LangGraph node: run tavily_search and accumulate the result into state."""
-        result = tavily_search(state.next_query)
+        result = tavily_search(_effective_query(state))
 
         text = f"{state.tavily_text}\n\n{result.text}" if state.tavily_text else result.text
         calls = state.tavily_calls + 1
