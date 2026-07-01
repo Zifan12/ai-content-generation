@@ -11,7 +11,12 @@ from functools import partial
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, ConfigDict
 
-from src.monitor.schemas import ContextBundle, ContextSynthesis, PlanDecision
+from src.monitor.schemas import (
+    ContextBundle,
+    ContextSynthesis,
+    PlanDecision,
+    TrendingEvent,
+)
 from src.providers.llm.anthropic_llm import AnthropicLLM
 from src.monitor.tools import reddit_search, tavily_search
 
@@ -248,6 +253,45 @@ class ContextAgent:
         final_state = ContextAgentState(**final)
 
         return build_context_bundle(final_state)
+
+    def gather(self, topic: str) -> tuple[TrendingEvent, ContextBundle]:
+        """Run context-gathering for a user ``--topic`` and return (event, bundle).
+
+        Cold mode (Path B): synthesize a manual-origin ``TrendingEvent`` from
+        the gathered bundle so it can flow through the same gate → gap → pitch
+        tail as scraped events.
+
+        - ``headline``      = the topic text the user supplied
+        - ``reaction_sample`` = the bundle's accumulated reddit threads,
+                                truncated to keep the gate/pitch prompts token-bounded
+        - ``url``           = first reference URL if any, else empty string
+        - ``trendiness_score`` = 0.0 — manual topics have no real engagement score;
+                                the gate relies on LLM signals, not this number
+        - ``virality_window_hours`` = 24.0 — manual topics are not time-bound the way
+                                scraper events are; the gate's recency check is
+                                skipped for origin="manual" anyway (Task 6)
+        - ``raw_source_data`` carries provenance (topic, sources, references)
+        - ``origin``        = "manual" — triggers the Task 6 gate branch
+        """
+        bundle = self.run(topic)
+        reaction = bundle.reaction_sample or ""
+        if len(reaction) > 2000:
+            reaction = reaction[:2000]
+        event = TrendingEvent(
+            headline=topic,
+            subreddit="",
+            url=bundle.references[0] if bundle.references else "",
+            reaction_sample=reaction,
+            trendiness_score=0.0,
+            virality_window_hours=24.0,
+            raw_source_data={
+                "topic": topic,
+                "sources": list(bundle.sources),
+                "references": list(bundle.references),
+            },
+            origin="manual",
+        )
+        return event, bundle
 
 
 def build_context_bundle(state: ContextAgentState) -> ContextBundle:

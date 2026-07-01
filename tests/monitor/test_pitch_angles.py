@@ -8,8 +8,11 @@ from src.database import Base
 from src.monitor.schemas import (
     AnglePitch,
     AnglePitchSlate,
+    ContextBundle,
     GapAnalysis,
     GapType,
+    IdeaFitResult,
+    ContentMode,
     RenderBackend,
     RoutingDecision,
     TrendingEvent,
@@ -93,6 +96,26 @@ AVAILABLE_BACKENDS = {
     RenderBackend.unknown: False,
 }
 
+# Path B (--topic) fixtures — a manual-origin event + a non-empty bundle.
+SAMPLE_TOPIC_EVENT = TrendingEvent(
+    headline="Wuthering Waves Jinhsi ultimate leaked",
+    subreddit="",
+    url="https://reddit.com/r/WutheringWavesLeaks/jinhsi",
+    reaction_sample="I wish we saw the full cutscene, the leak only showed the burst",
+    trendiness_score=0.0,
+    virality_window_hours=24.0,
+    raw_source_data={"topic": "Wuthering Waves Jinhsi", "sources": ["reddit_search"]},
+    origin="manual",
+)
+
+SAMPLE_BUNDLE = ContextBundle(
+    reaction_sample="I wish we saw the full cutscene; the leak only showed the burst",
+    summary="A Wuthering Waves leak teased Jinhsi's ultimate; footage cuts before the full cutscene.",
+    key_moments=["leak drop at 06:14", "cutaway before ultimate"],
+    references=["https://reddit.com/r/WutheringWavesLeaks/jinhsi"],
+    sources=["reddit_search", "tavily_search"],
+)
+
 
 @pytest.fixture
 def db():
@@ -110,8 +133,10 @@ def db():
 class FakeScraper:
     def __init__(self, events: list[TrendingEvent] | None = None) -> None:
         self._events = events if events is not None else [SAMPLE_EVENT]
+        self.calls = 0
 
     def fetch(self) -> list[TrendingEvent]:
+        self.calls += 1
         return self._events
 
 
@@ -120,33 +145,82 @@ class FakeExtractor:
 
     def __init__(self, events: list[TrendingEvent] | None = None) -> None:
         self._events = events
+        self.calls = 0
 
     def extract(
         self, events: list[TrendingEvent], top_n: int = 3
     ) -> list[TrendingEvent]:
+        self.calls += 1
         if self._events is not None:
             return self._events[:top_n]
         return events[:top_n]
 
 
+def _passing_fit() -> IdeaFitResult:
+    return IdeaFitResult(
+        idea_fit=True,
+        mode=ContentMode.wish,
+        heat_score=0.9,
+        recency_days=3.0,
+        reason="Strong wish-fulfillment signal around a recognisable fictional IP.",
+        kill_reason=None,
+    )
+
+
+class FakeIdeaFitGate:
+    """Always passes (idea_fit=True) by default; set ``fit`` to override."""
+
+    def __init__(self, fit: IdeaFitResult | None = None) -> None:
+        self._fit = fit if fit is not None else _passing_fit()
+        self.calls: list[TrendingEvent] = []
+
+    def evaluate(self, event: TrendingEvent) -> IdeaFitResult:
+        self.calls.append(event)
+        return self._fit
+
+
 class FakeGapAgent:
     def __init__(self, gap: GapAnalysis | None = None) -> None:
         self._gap = gap if gap is not None else SAMPLE_GAP
-        self.calls: list[TrendingEvent] = []
+        self.calls: list[tuple[TrendingEvent, ContextBundle | None]] = []
 
-    def analyze(self, event: TrendingEvent) -> GapAnalysis:
-        self.calls.append(event)
+    def analyze(
+        self, event: TrendingEvent, bundle: ContextBundle | None = None
+    ) -> GapAnalysis:
+        self.calls.append((event, bundle))
         return self._gap
 
 
 class FakeAnglePitcher:
     def __init__(self, slate: AnglePitchSlate | None = None) -> None:
         self._slate = slate if slate is not None else SAMPLE_SLATE
-        self.calls: list[tuple[TrendingEvent, GapAnalysis]] = []
+        self.calls: list[tuple[TrendingEvent, GapAnalysis, ContextBundle | None]] = []
 
-    def pitch(self, event: TrendingEvent, gap: GapAnalysis) -> AnglePitchSlate:
-        self.calls.append((event, gap))
+    def pitch(
+        self,
+        event: TrendingEvent,
+        gap: GapAnalysis,
+        bundle: ContextBundle | None = None,
+    ) -> AnglePitchSlate:
+        self.calls.append((event, gap, bundle))
         return self._slate
+
+
+class FakeContextAgent:
+    """Returns a fixed (event, bundle) pair; records the topic."""
+
+    def __init__(
+        self,
+        event: TrendingEvent | None = None,
+        bundle: ContextBundle | None = None,
+    ) -> None:
+        self._event = event if event is not None else SAMPLE_TOPIC_EVENT
+        self._bundle = bundle if bundle is not None else SAMPLE_BUNDLE
+        self.calls: list[str] = []
+
+    def gather(self, topic: str) -> tuple[TrendingEvent, ContextBundle]:
+        self.calls.append(topic)
+        return self._event, self._bundle
 
 
 class FakeFormatRouter:
@@ -180,6 +254,7 @@ def pick_first() -> str:
 def test_approved_path(db, tmp_path):
     scraper = FakeScraper()
     extractor = FakeExtractor()
+    idea_fit_gate = FakeIdeaFitGate()
     gap_agent = FakeGapAgent()
     angle_pitcher = FakeAnglePitcher()
     format_router = FakeFormatRouter()
@@ -188,6 +263,7 @@ def test_approved_path(db, tmp_path):
         db,
         scraper,
         extractor,
+        idea_fit_gate,
         gap_agent,
         angle_pitcher,
         format_router,
@@ -202,11 +278,12 @@ def test_approved_path(db, tmp_path):
 
     event = db.query(TrendingEventRecord).filter_by(id=approved_pitches[0].trending_event_id).one()
     assert event.selected_for_pitching is True
+    # Path A → no bundle persisted.
+    assert event.context_bundle is None
 
     json_files = list(tmp_path.glob("*.json"))
     assert len(json_files) == 1
 
- 
     data = json.loads(json_files[0].read_text())
 
     assert data["routed_backend"] == "visual_satire"
@@ -217,6 +294,7 @@ def test_approved_path(db, tmp_path):
 def test_dry_run_writes_nothing(db, tmp_path):
     scraper = FakeScraper()
     extractor = FakeExtractor()
+    idea_fit_gate = FakeIdeaFitGate()
     gap_agent = FakeGapAgent()
     angle_pitcher = FakeAnglePitcher()
     format_router = FakeFormatRouter()
@@ -225,6 +303,7 @@ def test_dry_run_writes_nothing(db, tmp_path):
         db,
         scraper,
         extractor,
+        idea_fit_gate,
         gap_agent,
         angle_pitcher,
         format_router,
@@ -236,3 +315,84 @@ def test_dry_run_writes_nothing(db, tmp_path):
     assert db.query(TrendingEventRecord).count() == 0
     assert db.query(AnglePitchRecord).count() == 0
     assert len(list(tmp_path.glob("*.json"))) == 0
+
+
+def test_topic_branch_skips_scraper_and_threads_bundle(db, tmp_path):
+    """Path B: --topic → scraper+extractor NOT called; context_agent.gather
+    runs; gap & pitcher receive the bundle; context_bundle column populated."""
+    scraper = FakeScraper()
+    extractor = FakeExtractor()
+    idea_fit_gate = FakeIdeaFitGate()
+    gap_agent = FakeGapAgent()
+    angle_pitcher = FakeAnglePitcher()
+    format_router = FakeFormatRouter()
+    context_agent = FakeContextAgent()
+
+    run_pitch_pipeline(
+        db,
+        scraper,
+        extractor,
+        idea_fit_gate,
+        gap_agent,
+        angle_pitcher,
+        format_router,
+        dry_run=False,
+        choice_provider=pick_first,
+        output_dir=tmp_path,
+        context_agent=context_agent,
+        topic="Wuthering Waves Jinhsi",
+    )
+
+    # Scraper/extractor skipped in Path B.
+    assert scraper.calls == 0, "scraper.fetch must not run in Path B"
+    assert extractor.calls == 0, "extractor.extract must not run in Path B"
+
+    # Agent gathered the topic exactly once.
+    assert context_agent.calls == ["Wuthering Waves Jinhsi"]
+
+    # Gate evaluated the synthesized manual-origin event.
+    assert len(idea_fit_gate.calls) == 1
+    assert idea_fit_gate.calls[0].origin == "manual"
+
+    # Gap & pitcher received the bundle.
+    assert len(gap_agent.calls) == 1
+    assert gap_agent.calls[0][1] is SAMPLE_BUNDLE, "gap must receive the bundle"
+    assert len(angle_pitcher.calls) == 1  # one event → one pitch() call
+    assert angle_pitcher.calls[0][2] is SAMPLE_BUNDLE, "pitcher must receive the bundle"
+
+    # Persisted event row carries the serialized bundle.
+    event_row = db.query(TrendingEventRecord).one()
+    assert event_row.context_bundle is not None
+    assert event_row.context_bundle["summary"] == SAMPLE_BUNDLE.summary
+    assert event_row.context_bundle["key_moments"] == SAMPLE_BUNDLE.key_moments
+    assert event_row.context_bundle["references"] == SAMPLE_BUNDLE.references
+
+    # Approved pitch row exists (pick_first chose angle [1]).
+    approved = db.query(AnglePitchRecord).filter_by(approved=True).all()
+    assert len(approved) == 1
+
+
+def test_topic_branch_without_context_agent_raises(db, tmp_path):
+    """topic set but context_agent=None → ValueError, not a silent scraper run."""
+    scraper = FakeScraper()
+    extractor = FakeExtractor()
+    idea_fit_gate = FakeIdeaFitGate()
+    gap_agent = FakeGapAgent()
+    angle_pitcher = FakeAnglePitcher()
+    format_router = FakeFormatRouter()
+
+    with pytest.raises(ValueError, match="context_agent"):
+        run_pitch_pipeline(
+            db,
+            scraper,
+            extractor,
+            idea_fit_gate,
+            gap_agent,
+            angle_pitcher,
+            format_router,
+            dry_run=True,
+            choice_provider=None,
+            output_dir=tmp_path,
+            context_agent=None,
+            topic="some topic",
+        )

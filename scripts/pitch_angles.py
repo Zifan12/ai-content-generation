@@ -93,6 +93,8 @@ def run_pitch_pipeline(
     choice_provider: Callable[[], str] | None,
     output_dir,
     top_n: int = 3,
+    context_agent=None,
+    topic: str | None = None,
 ) -> dict | None:
     """Run the monitor pipeline, present the slate, and persist the approved angle.
 
@@ -102,6 +104,14 @@ def run_pitch_pipeline(
     -> ``format_router.route`` each angle. The combined angles are printed as one
     numbered slate.
 
+    Path B (--topic): when ``topic`` and ``context_agent`` are provided, the
+    scraper+extractor are skipped; the agent gathers one (event, bundle) pair,
+    the bundle grounds gap+pitch (``analyze(event, bundle)`` /
+    ``pitch(event, gap, bundle)``), and on persist the bundle is written into
+    the ``trending_events.context_bundle`` JSON column. Path A (no topic) is
+    byte-for-byte today's behavior — ``bundle=None`` flows through and the
+    column stays NULL.
+
     In ``dry_run`` the pipeline runs and prints but touches nothing: no DB writes,
     no prompt (``choice_provider`` is never called — passing ``None`` is safe), no
     handoff file. Otherwise every surfaced event and angle is persisted, the user
@@ -109,11 +119,13 @@ def run_pitch_pipeline(
 
     Args:
         db: An open SQLAlchemy session.
-        scraper: Anything with ``fetch() -> list[TrendingEvent]``.
+        scraper: Anything with ``fetch() -> list[TrendingEvent]``.  Unused when
+            ``topic`` is set (Path B skips scraping); may be ``None`` then.
         extractor: Anything with ``extract(events, top_n) -> list[TrendingEvent]``.
+            Unused when ``topic`` is set; may be ``None`` then.
         idea_fit_gate: Anything with ``evaluate(event) -> IdeaFitResult``.
-        gap_agent: Anything with ``analyze(event) -> GapAnalysis``.
-        angle_pitcher: Anything with ``pitch(event, gap) -> AnglePitchSlate``.
+        gap_agent: Anything with ``analyze(event, bundle=None) -> GapAnalysis``.
+        angle_pitcher: Anything with ``pitch(event, gap, bundle=None) -> AnglePitchSlate``.
         format_router: Anything with ``route(angle) -> RoutingDecision``.
         dry_run: When true, run + print only; persist nothing and never prompt.
         choice_provider: Zero-arg callable returning the user's selection as a
@@ -121,14 +133,30 @@ def run_pitch_pipeline(
             ``"r"`` to re-pitch (not implemented in v1, treated as skip). Only
             called when ``dry_run`` is false; may be ``None`` for dry runs.
         output_dir: Directory the handoff JSON is written into (created if absent).
-        top_n: Max events to carry forward from the extractor.
+        top_n: Max events to carry forward from the extractor (Path A only).
+        context_agent: Anything with ``gather(topic) -> (TrendingEvent, ContextBundle)``.
+            Required when ``topic`` is set; ignored otherwise.
+        topic: When set, run Path B (user-supplied topic on-ramp); when ``None``,
+            run Path A (scraper -> extractor -> ...).
 
     Returns:
         The handoff dict written to disk (also returned for convenience) when an
         angle is approved; ``None`` on dry runs, skips, or invalid selections.
     """
-    raw_events = scraper.fetch()
-    events = extractor.extract(raw_events, top_n=top_n)
+    # Path B (user topic) vs Path A (scraper).  bundles keyed by id(event) so
+    # the persist loop can look up the bundle for each event without threading it
+    # through every intermediate structure.
+    bundles: dict[int, "object | None"] = {}
+
+    if topic is not None:
+        if context_agent is None:
+            raise ValueError("context_agent is required when topic is set (Path B)")
+        event, bundle = context_agent.gather(topic)
+        events = [event]
+        bundles[id(event)] = bundle
+    else:
+        raw_events = scraper.fetch()
+        events = extractor.extract(raw_events, top_n=top_n)
 
     # Idea-fit gate: kill stale waves and cheap-meme events before spending LLM credits.
     fit_pairs: list[tuple] = []
@@ -154,11 +182,13 @@ def run_pitch_pipeline(
         return None
 
     # Build the flat, display-ordered slate. One LLM gap + pitch per event; one
-    # routing decision per angle.
+    # routing decision per angle. When the event has a bundle (Path B), it is
+    # forwarded to gap + pitch so their <context> block gets injected.
     displayed: list[dict] = []
     for event, fit in fit_pairs:
-        gap = gap_agent.analyze(event)
-        slate = angle_pitcher.pitch(event, gap)
+        bundle = bundles.get(id(event))
+        gap = gap_agent.analyze(event, bundle)
+        slate = angle_pitcher.pitch(event, gap, bundle)
         for angle in slate.angles:
             decision = format_router.route(angle)
             displayed.append(
@@ -168,6 +198,7 @@ def run_pitch_pipeline(
                     "gap": gap,
                     "angle": angle,
                     "decision": decision,
+                    "bundle": bundle,
                 }
             )
 
@@ -179,13 +210,15 @@ def run_pitch_pipeline(
 
     # Persist every surfaced event once (keyed by object identity so the three
     # angles of one event share a single row), then flush to assign the PKs the
-    # FK and the handoff JSON need.
+    # FK and the handoff JSON need. When a bundle is present (Path B), serialize
+    # it into the context_bundle JSON column.
     event_records: dict[int, TrendingEventRecord] = {}
     now = datetime.now(timezone.utc)
     for entry in displayed:
         event = entry["event"]
         if id(event) not in event_records:
             gap = entry["gap"]
+            bundle = entry.get("bundle")
             record = TrendingEventRecord(
                 run_at=now,
                 source="reddit",
@@ -199,6 +232,7 @@ def run_pitch_pipeline(
                 gap_type=gap.gap_type.value,
                 producibility_score=gap.producibility_score,
                 composite_score=event.trendiness_score,
+                context_bundle=bundle.model_dump() if bundle is not None else None,
                 selected_for_pitching=False,
             )
             db.add(record)
@@ -336,6 +370,14 @@ def main() -> None:
         help="Run + print the slate but persist nothing and don't prompt.",
     )
     parser.add_argument(
+        "--topic",
+        default=None,
+        help="User-supplied topic on-ramp (Path B). When set, skips the scraper "
+        "and runs the context-gathering LangGraph agent to produce a grounded "
+        "ContextBundle before gate/gap/pitch. Costs ~1-2 LLM calls + 1 Apify "
+        "reddit_search (cost-guarded).",
+    )
+    parser.add_argument(
         "--sources",
         default=None,
         help="Comma-separated subreddits to scan (default: the v1 set).",
@@ -387,21 +429,25 @@ def main() -> None:
     # fetched comment). estimates = subreddits × max_posts × (1 + comments_per_post)
     # Refuse to run if estimated cost > $1.00 (one stuck probe in the 2026-06-29
     # session burned ~$9.40 because defaults were 10 srs × 10 posts × 50 comments).
-    _APIFY_COST_PER_ITEM = 0.001844
-    _n_subreddits = len(_DEFAULT_SUBREDDITS) if not args.sources else len(
-        [s.strip() for s in args.sources.split(",")]
-    )
-    _est_items = _n_subreddits * args.max_posts * (1 + args.comments_per_post)
-    _est_cost = _est_items * _APIFY_COST_PER_ITEM
-    if _est_cost > 1.0:
-        sys.exit(
-            f"Refusing to run: estimated Apify cost ${_est_cost:.2f} "
-            f"(threshold $1.00). Items={_est_items} = "
-            f"{_n_subreddits} subreddits × {args.max_posts} posts × "
-            f"({1 + args.comments_per_post} items/post). "
-            f"Pass fewer subreddits (--sources), fewer posts (--max-posts), "
-            f"or fewer comments (--comments-per-post)."
+    # Path B (--topic) bypasses this guard: it uses reddit_search in search-mode
+    # (one topic, not N subreddits), cost-guarded inside the tool itself via the
+    # agent's max_tool_calls ceiling.
+    if args.topic is None:
+        _APIFY_COST_PER_ITEM = 0.001844
+        _n_subreddits = len(_DEFAULT_SUBREDDITS) if not args.sources else len(
+            [s.strip() for s in args.sources.split(",")]
         )
+        _est_items = _n_subreddits * args.max_posts * (1 + args.comments_per_post)
+        _est_cost = _est_items * _APIFY_COST_PER_ITEM
+        if _est_cost > 1.0:
+            sys.exit(
+                f"Refusing to run: estimated Apify cost ${_est_cost:.2f} "
+                f"(threshold $1.00). Items={_est_items} = "
+                f"{_n_subreddits} subreddits × {args.max_posts} posts × "
+                f"({1 + args.comments_per_post} items/post). "
+                f"Pass fewer subreddits (--sources), fewer posts (--max-posts), "
+                f"or fewer comments (--comments-per-post)."
+            )
 
     from src.database import SessionLocal
     from src.monitor.angle_pitcher import AnglePitcher
@@ -413,31 +459,43 @@ def main() -> None:
     from src.providers.llm.anthropic_llm import AnthropicLLM
     from src.rag.embedder import BgeM3Embedder
 
-    subreddits = (
-        [s.strip() for s in args.sources.split(",")]
-        if args.sources
-        else _DEFAULT_SUBREDDITS
-    )
-    scraper = ApifyRedditScraper(
-        subreddits=subreddits,
-        max_posts=args.max_posts,
-        fetch_comments_per_post=args.comments_per_post,
-        top_comments_in_sample=args.top_comments,
-    )
-
-    if args.no_llm:
-        for event in scraper.fetch():
-            print(
-                f"[{event.trendiness_score:.0f}] r/{event.subreddit}: {event.headline}"
-            )
-        return
-
     llm = AnthropicLLM(model="claude-sonnet-5")
-    extractor = EventExtractor(llm=llm)
     idea_fit_gate = IdeaFitGate(llm=llm)
     gap_agent = GapAgent(llm=llm)
     angle_pitcher = AnglePitcher(llm=llm, embedder=BgeM3Embedder())
     format_router = FormatRouter(llm=llm, available_backends=_load_available_backends())
+
+    if args.topic is not None:
+        # Path B: --topic on-ramp. Skip scraper+extractor; run context agent.
+        from src.monitor.context_agent import ContextAgent
+
+        scraper = None
+        extractor = None
+        context_agent = ContextAgent(llm=llm)
+        topic = args.topic
+    else:
+        # Path A: scraper -> extractor.
+        subreddits = (
+            [s.strip() for s in args.sources.split(",")]
+            if args.sources
+            else _DEFAULT_SUBREDDITS
+        )
+        scraper = ApifyRedditScraper(
+            subreddits=subreddits,
+            max_posts=args.max_posts,
+            fetch_comments_per_post=args.comments_per_post,
+            top_comments_in_sample=args.top_comments,
+        )
+        extractor = EventExtractor(llm=llm)
+        context_agent = None
+        topic = None
+
+        if args.no_llm:
+            for event in scraper.fetch():
+                print(
+                    f"[{event.trendiness_score:.0f}] r/{event.subreddit}: {event.headline}"
+                )
+            return
 
     db = SessionLocal()
     try:
@@ -455,6 +513,8 @@ def main() -> None:
             ),
             output_dir=args.output_dir,
             top_n=args.top_n,
+            context_agent=context_agent,
+            topic=topic,
         )
     finally:
         db.close()
