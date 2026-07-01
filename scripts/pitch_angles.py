@@ -459,22 +459,11 @@ def main() -> None:
     from src.providers.llm.anthropic_llm import AnthropicLLM
     from src.rag.embedder import BgeM3Embedder
 
-    llm = AnthropicLLM(model="claude-sonnet-5")
-    idea_fit_gate = IdeaFitGate(llm=llm)
-    gap_agent = GapAgent(llm=llm)
-    angle_pitcher = AnglePitcher(llm=llm, embedder=BgeM3Embedder())
-    format_router = FormatRouter(llm=llm, available_backends=_load_available_backends())
-
-    if args.topic is not None:
-        # Path B: --topic on-ramp. Skip scraper+extractor; run context agent.
-        from src.monitor.context_agent import ContextAgent
-
-        scraper = None
-        extractor = None
-        context_agent = ContextAgent(llm=llm)
-        topic = args.topic
-    else:
-        # Path A: scraper -> extractor.
+    # Path A scraper is built first so --no-llm (a print-only debug path) can
+    # return BEFORE constructing the LLM clients + BGE-M3 embedder below —
+    # none of which it needs. Loading the embedding model into VRAM for a
+    # plain event dump was a regression.
+    if args.topic is None:
         subreddits = (
             [s.strip() for s in args.sources.split(",")]
             if args.sources
@@ -486,16 +475,33 @@ def main() -> None:
             fetch_comments_per_post=args.comments_per_post,
             top_comments_in_sample=args.top_comments,
         )
-        extractor = EventExtractor(llm=llm)
-        context_agent = None
-        topic = None
-
         if args.no_llm:
             for event in scraper.fetch():
                 print(
                     f"[{event.trendiness_score:.0f}] r/{event.subreddit}: {event.headline}"
                 )
             return
+    else:
+        scraper = None
+
+    llm = AnthropicLLM(model="claude-sonnet-5")
+    idea_fit_gate = IdeaFitGate(llm=llm)
+    gap_agent = GapAgent(llm=llm)
+    angle_pitcher = AnglePitcher(llm=llm, embedder=BgeM3Embedder())
+    format_router = FormatRouter(llm=llm, available_backends=_load_available_backends())
+
+    if args.topic is not None:
+        # Path B: --topic on-ramp. Skip scraper+extractor; run context agent.
+        from src.monitor.context_agent import ContextAgent
+
+        extractor = None
+        context_agent = ContextAgent(llm=llm)
+        topic = args.topic
+    else:
+        # Path A: scraper already built above; add the extractor.
+        extractor = EventExtractor(llm=llm)
+        context_agent = None
+        topic = None
 
     db = SessionLocal()
     try:
