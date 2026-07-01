@@ -219,11 +219,23 @@ class IdeaFitGate:
 
         The stale check is free (no LLM).  The LLM is only called when recency
         passes — credit spend is gated behind the cheapest check first.
+
+        Origin-aware branching (Task 6):
+        - ``origin == "scraped"`` -> unchanged: recency kill, fictional hard
+          kill, payoff hard kill.
+        - ``origin == "manual"``    -> skip the recency kill (user-supplied
+          topics have no ``createdAt``; ``_extract_recency_days`` returns
+          ``999.0`` which would wrongly auto-kill every --topic); Check 2
+          (fictional / real-person) becomes WARN-NOT-KILL — a user typing
+          ``--topic "Keanu Reeves"`` has accepted the likeness risk, but it
+          must be surfaced on the slate, not silently passed.  Check 3
+          (payoff) is still a hard kill for both origins.
         """
         recency_days = _extract_recency_days(event)
 
-        # ── Check 1: recency hard sub-gate (no LLM)
-        if recency_days > self._stale_threshold:
+        # ── Check 1: recency hard sub-gate (no LLM) — scraped only
+        # A manual topic has no timestamp; a 999.0-day age must NOT auto-kill it.
+        if event.origin == "scraped" and recency_days > self._stale_threshold:
             return IdeaFitResult(
                 idea_fit=False,
                 mode=ContentMode.other,
@@ -238,18 +250,29 @@ class IdeaFitGate:
 
         judgment = self._judge(event)
 
-        # ── Check 2: fictional & recognisable 
+        # ── Check 2: fictional & recognisable
+        # Scraped -> hard kill (no human in the loop to weigh the warning).
+        # Manual  -> warn-not-kill: pass but surface the legal/platform risk.
         if not judgment.is_fictional_recognizable:
-            return IdeaFitResult(
-                idea_fit=False,
-                mode=ContentMode.other,
-                heat_score=judgment.heat_score,
-                recency_days=recency_days,
-                reason=judgment.reason,
-                kill_reason="not_fictional: subject is not a recognisable fictional character/IP",
-            )
+            if event.origin == "manual":
+                warning = (
+                    f"{judgment.reason} — ⚠ real-person likeness; "
+                    f"legal/platform risk; review before render."
+                )
+                # Still subject to Check 3 (payoff) below; fall through.
+            else:
+                return IdeaFitResult(
+                    idea_fit=False,
+                    mode=ContentMode.other,
+                    heat_score=judgment.heat_score,
+                    recency_days=recency_days,
+                    reason=judgment.reason,
+                    kill_reason="not_fictional: subject is not a recognisable fictional character/IP",
+                )
+        else:
+            warning = None
 
-        # ── Check 3: rendered payoff (not cheap meme) 
+        # ── Check 3: rendered payoff (not cheap meme) — hard kill for both origins
         if not judgment.wants_rendered_payoff:
             return IdeaFitResult(
                 idea_fit=False,
@@ -260,12 +283,15 @@ class IdeaFitGate:
                 kill_reason="cheap_meme: reaction wants a meme/text response, not a rendered video",
             )
 
+        # ── Pass: scrape path = clean pass; manual non-fictional path = pass
+        # with the real-person warning concatenated onto the LLM's reason.
+        reason = judgment.reason if warning is None else warning
         return IdeaFitResult(
             idea_fit=True,
             mode=judgment.mode,
             heat_score=judgment.heat_score,
             recency_days=recency_days,
-            reason=judgment.reason,
+            reason=reason,
             kill_reason=None,
         )
 

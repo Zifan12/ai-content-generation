@@ -26,6 +26,7 @@ def _event(
     days_old: float | None = 3.0,
     headline: str = "Popular Anime Character Gets Controversial Redesign",
     reaction: str = "I wish they kept the original design, it was perfect",
+    origin: str = "scraped",
 ) -> TrendingEvent:
     """Build a minimal TrendingEvent with a controllable post age.
 
@@ -50,7 +51,7 @@ def _event(
         trendiness_score=5000.0,
         virality_window_hours=24.0,
         raw_source_data=raw,
-        origin="scraped",
+        origin=origin,
     )
 
 
@@ -253,3 +254,92 @@ class TestLLMChecks:
         assert not result.idea_fit
         assert result.kill_reason is not None and "no_reactions" in result.kill_reason
         assert llm.call_count == 0
+
+
+# ---------------------------------------------------------------------------
+# Task 6 — origin-aware branching (manual vs scraped)
+# ---------------------------------------------------------------------------
+
+
+class TestManualOrigin:
+    """Manual (--topic) events: skip recency kill, warn-not-kill on real-person."""
+
+    def test_manual_missing_timestamp_not_killed_for_staleness(self):
+        """No createdAt -> recency_days==999, but manual origin must NOT be
+        auto-killed at Check 1; the LLM is reached instead."""
+        llm = _FakeLLM(_passing_judgment())
+        gate = IdeaFitGate(llm=llm, stale_days_threshold=14.0)
+
+        result = gate.evaluate(_event(days_old=None, origin="manual"))
+
+        assert result.idea_fit
+        assert abs(result.recency_days - 999.0) < 1.0, "recency still propagated"
+        assert llm.call_count == 1, "LLM must be reached for manual stale-is-irrelevant path"
+
+    def test_manual_real_person_passes_with_warning(self):
+        """LLM says not fictional (real person).  Manual origin must PASS with
+        idea_fit=True, kill_reason=None, and a real-person warning in reason."""
+        llm = _FakeLLM(
+            _IdeaFitJudgment(
+                is_fictional_recognizable=False,
+                wants_rendered_payoff=True,
+                mode=ContentMode.other,
+                heat_score=0.6,
+                reason="This is about a real athlete, not a fictional character.",
+            )
+        )
+        gate = IdeaFitGate(llm=llm)
+
+        result = gate.evaluate(_event(days_old=2.0, origin="manual"))
+
+        assert result.idea_fit, "manual real-person event must not be hard-killed"
+        assert result.kill_reason is None, "warning lives in reason, not kill_reason"
+        assert "real-person" in result.reason.lower() or "real person" in result.reason.lower(), (
+            f"reason should carry real-person warning, got: {result.reason!r}"
+        )
+
+    def test_manual_cheap_meme_still_killed(self):
+        """Check 3 (payoff) is NOT relaxed for manual — cheap meme still dies."""
+        llm = _FakeLLM(
+            _IdeaFitJudgment(
+                is_fictional_recognizable=False,
+                wants_rendered_payoff=False,
+                mode=ContentMode.other,
+                heat_score=0.4,
+                reason="Reaction is wordplay — no imagined visual scene.",
+            )
+        )
+        gate = IdeaFitGate(llm=llm)
+
+        result = gate.evaluate(_event(days_old=2.0, origin="manual"))
+
+        assert not result.idea_fit
+        assert result.kill_reason is not None and "cheap_meme" in result.kill_reason
+
+    def test_scraped_still_killed_for_staleness(self):
+        """Regression: scraped events with no timestamp still die at Check 1."""
+        llm = _FakeLLM(_passing_judgment())
+        gate = IdeaFitGate(llm=llm, stale_days_threshold=14.0)
+
+        result = gate.evaluate(_event(days_old=None, origin="scraped"))
+
+        assert not result.idea_fit
+        assert llm.call_count == 0, "scraped stale path must short-circuit before LLM"
+
+    def test_scraped_real_person_still_killed(self):
+        """Regression: scraped events judged not-fictional still die at Check 2."""
+        llm = _FakeLLM(
+            _IdeaFitJudgment(
+                is_fictional_recognizable=False,
+                wants_rendered_payoff=True,
+                mode=ContentMode.other,
+                heat_score=0.6,
+                reason="This is about a real athlete.",
+            )
+        )
+        gate = IdeaFitGate(llm=llm)
+
+        result = gate.evaluate(_event(days_old=2.0, origin="scraped"))
+
+        assert not result.idea_fit
+        assert result.kill_reason is not None and "not_fictional" in result.kill_reason
