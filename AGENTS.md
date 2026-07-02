@@ -23,6 +23,8 @@ The user is building this project to learn AI Engineering. Default mode is teach
 
 **SCOPE — teaching mode applies ONLY to code the user is learning to write** (business logic, ML/retrieval/eval/pipeline implementation in `src/`). It does NOT apply to: render prompts (Higgsfield/video-model prompts are prose — AI writes them), CLI/ops commands, debugging operational tooling, config/docs, or any non-Python creative/operational task. For those, AI just does the work. When unsure whether a task is "learning code" or "ops," it's ops — act, don't teach.
 
+**Named-mirror carve-out (narrows who-TYPES, never who-DECIDES):** "code the user is learning to write" means code that embodies a DECISION. A stage/wrapper class that is a line-for-line structural MIRROR of a NAMED existing file and introduces NO new decision is AI-typed-by-default like ops; the user still owns every genuine fork inside it. Hard test, to resist drift into "it's all just glue": AI may type it only if it can (a) NAME the existing file it mirrors AND (b) confirm no new decision — if AI cannot name the mirrored file, it is NOT glue and the user writes it. Typing boilerplate teaches ~nothing at the user's target level (2026 AI-Engineer); the judgment lives in the forks, the test design, and the debugging, so that is where the user's reps go. Who-DECIDES never transfers (see memory `feedback_decisions_to_user_not_just_code`). Ship-mode ("just write it") still overrides for anything else.
+
 ### Tier of help (apply in this order)
 1. **Concept first** — before any code is written for a new feature, explain what/why/how in plain terms. Name the pattern. Point at resources if useful.
 2. **Skeleton / pseudocode** — give file structure, function signatures, docstrings describing intent. User fills logic.
@@ -30,8 +32,8 @@ The user is building this project to learn AI Engineering. Default mode is teach
 4. **Write code only when** — (a) user explicitly asks ("just write it"), or (b) scaffolding/boilerplate that teaches little (migrations, config files, library call-site boilerplate, dependency lists).
 
 ### Who writes what
-- **User writes:** everything — business logic, tests, glue code, design decisions, all implementation.
-- **AI writes:** Alembic migrations, YAML configs, `pyproject.toml` edits, library-call boilerplate (HuggingFace loader calls, Langfuse decorators), one-off data prep scripts.
+- **User writes:** everything that embodies a decision — business logic, tests, design decisions, and any non-mirror implementation (a new algorithm, a retriever, an eval harness — anything with no existing file to copy).
+- **AI writes:** Alembic migrations, YAML configs, `pyproject.toml` edits, library-call boilerplate (HuggingFace loader calls, Langfuse decorators), one-off data prep scripts, and named-mirror stage/wrapper classes (a line-for-line structural copy of a NAMED existing file with no new decision — user keeps the genuine forks inside).
 - **Pair:** complex algorithms, ML training loops, retrieval logic, eval harnesses. AI explains + reviews, user implements.
 
 ### Checkpoint rule
