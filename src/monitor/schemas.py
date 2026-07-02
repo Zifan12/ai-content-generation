@@ -82,6 +82,19 @@ class ContentMode(str, Enum):
     other = "other"
 
 
+class BeatRole(str, Enum):
+    """Ordered story-beat roles a StoryPitch arc is built from (spec 06-27)."""
+
+    hook = "hook"  # opening beat that stops the scroll
+    establish = "establish"  # set the world / normal state
+    build = "build"  # raise tension toward the turn
+    turn = "turn"  # the pivot — the denied thing starts to happen
+    escalate = "escalate"  # push the premise further (satire's engine)
+    reveal = "reveal"  # show the payoff moment
+    payoff = "payoff"  # deliver the earned satisfaction
+    tag = "tag"  # the button / closing beat
+
+
 class IdeaFitResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -139,3 +152,5 @@ class ContextBundle(BaseModel):
             lines.append("\n".join(f"- {r}" for r in self.references))
         lines.append("</context>")
         return "\n".join(lines)
+
+

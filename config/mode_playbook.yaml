@@ -1,0 +1,29 @@
+# Mode playbook — the growable library of wish-patterns (spec 06-27 §2).
+# Adding a mode = adding an entry here. No code change.
+# arc values must be beat roles: hook, establish, build, turn, escalate, reveal, payoff, tag
+wish:
+  description: >
+    Give fans the satisfying version they didn't get. Positive, cathartic —
+    the Homelander "real ending" pattern. The reaction mourns a moment that
+    never happened; the video makes it happen, played straight and epic.
+  arc: [hook, build, turn, payoff]
+  craft_emphasis: >
+    The payoff must be EARNED by a visible turn — the moment the denied thing
+    becomes real on screen. Emotion shown as physical action, never labeled.
+    If the payoff frame could be the first frame, the pitch has no story.
+  example_logline: >
+    Homelander finally goes full rampage in the finale fans were promised —
+    the "real ending" cut, played dead serious.
+satire:
+  description: >
+    Voice the fandom's disappointment as a joke via contrast — the Laufey
+    doing-laundry pattern. Deadpan mundane treatment of the thing fans are
+    mock-mourning. High supply, funny, fast.
+  arc: [hook, establish, escalate, tag]
+  craft_emphasis: >
+    The contrast must LAND IN ONE VISUAL — the gap between epic expectation
+    and mundane reality readable in a single frame. Deadpan execution: the
+    joke is the situation, never a character winking at camera.
+  example_logline: >
+    God of War's fearsome new protagonist Laufey... spends the reveal doing
+    laundry and grocery runs, epic score swelling.
