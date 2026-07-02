@@ -40,8 +40,7 @@ class GapAnalysis(BaseModel):
 
     dominant_emotion: str
     audience_want: str
-    gap_type: GapType
-    producibility_score: float
+    evidence_quotes: list[str] = Field(default_factory=list, max_length=3)
     virality_window_hours: float
     reasoning: str
 

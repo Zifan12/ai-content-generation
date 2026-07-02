@@ -2,7 +2,6 @@ from src.monitor.gap_agent import GapAgent
 from src.monitor.schemas import (
     ContextBundle,
     GapAnalysis,
-    GapType,
     TrendingEvent,
 )
 
@@ -32,8 +31,7 @@ def _sample_analysis() -> GapAnalysis:
     return GapAnalysis(
         dominant_emotion="longing",
         audience_want="to see the dragon actually breathe fire",
-        gap_type=GapType.alternate_reality,
-        producibility_score=0.8,
+        evidence_quotes=["I wish we got to see it actually breathe fire."],
         virality_window_hours=18.0,
         reasoning="The crowd was teased a payoff the footage never delivered.",
     )

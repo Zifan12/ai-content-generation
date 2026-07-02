@@ -64,7 +64,7 @@ def _print_slate(displayed: list[dict]) -> None:  # noqa: C901
             )
             print(
                 f"  {heat_str}trendiness={event.trendiness_score:.2f}  "
-                f"gap={gap.gap_type.value}  want={gap.audience_want}"
+                f"want={gap.audience_want}"
             )
             print("=" * 70)
             last_headline = event.headline
@@ -236,8 +236,6 @@ def run_pitch_pipeline(
                 virality_window_hours=event.virality_window_hours,
                 dominant_emotion=gap.dominant_emotion,
                 audience_want=gap.audience_want,
-                gap_type=gap.gap_type.value,
-                producibility_score=gap.producibility_score,
                 composite_score=event.trendiness_score,
                 context_bundle=bundle.model_dump() if bundle is not None else None,
                 selected_for_pitching=False,
@@ -310,7 +308,6 @@ def run_pitch_pipeline(
         "take": chosen_record.take,
         "routed_backend": chosen_entry["decision"].backend.value,
         "trendiness_score": chosen_entry["event"].trendiness_score,
-        "gap_type": chosen_entry["gap"].gap_type.value,
         "virality_window_hours": chosen_entry["gap"].virality_window_hours,
     }
     db.commit()

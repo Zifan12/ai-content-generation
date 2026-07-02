@@ -24,18 +24,9 @@ Produce a GapAnalysis:
 (e.g. longing, outrage, vindication, grief, glee).
 - audience_want: ONE concrete sentence naming the thing they wish existed, phrased \
 as a makeable visual artifact — not a grievance.
-- gap_type: choose the single best-fitting category:
-    alternate_reality — show the version that should have happened (denied ending, what-if)
-    vindication — prove the side they back was right
-    ridicule — mock the thing/person everyone is piling on
-    explanation — make a confusing event make sense
-    tribute — honor or celebrate something they love
-    speculation — show what happens next
-    solidarity — voice the feeling everyone is sharing
-    other — none of the above fit
-- producibility_score: 0.0-1.0 — how feasible it is to satisfy this want with a \
-single short AI-generated video clip (1.0 = one vivid visual moment; low = needs \
-many shots, real named people, or complex narrative).
+- evidence_quotes: 0-3 SHORT verbatim quotes from the reaction that prove the want. \
+Copy them exactly as written — never invent or paraphrase. Use an empty list if \
+nothing in the reaction states the desire directly.
 - virality_window_hours: how many hours this event stays culturally hot.
 - reasoning: 2-3 sentences naming the gap and why it would resonate.
 

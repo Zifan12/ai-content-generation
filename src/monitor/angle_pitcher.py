@@ -84,7 +84,6 @@ class AnglePitcher:
             f"<gap>\n"
             f"dominant_emotion: {gap.dominant_emotion}\n"
             f"audience_want: {gap.audience_want}\n"
-            f"gap_type: {gap.gap_type.value}\n"
             f"reasoning: {gap.reasoning}\n"
             f"</gap>"
         )
