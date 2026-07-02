@@ -1,21 +1,6 @@
 import pytest
 from pydantic import ValidationError
-from src.monitor.schemas import (
-    GapAnalysis,
-    AnglePitch,
-    AnglePitchSlate,
-)
-
-
-def _make_pitch() -> AnglePitch:
-    return AnglePitch(
-        take="Render the tower falling",
-        format_description="Wide shot, handheld chaos, 8s",
-        render_backend="visual_satire",
-        estimated_cost_credits=2.0,
-        gap_satisfaction_rationale="Delivers the wish-fulfillment moment",
-        legal_flag=False,
-    )
+from src.monitor.schemas import GapAnalysis
 
 
 def test_GapAnalysis():
@@ -62,15 +47,3 @@ def test_extra_field_DNE():
             reasoning="audience explicitly asked for this in comments",
             mood="cheerful",
         )
-
-
-def test_angle_pitch_slate_requires_three():
-
-    pitch1 = _make_pitch()
-    pitch2 = _make_pitch()
-    pitch3 = _make_pitch()
-
-    with pytest.raises(ValidationError):
-        AnglePitchSlate(angles=[pitch1, pitch2])
-
-    assert AnglePitchSlate(angles=[pitch1, pitch2, pitch3])

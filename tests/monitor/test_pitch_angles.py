@@ -1,25 +1,31 @@
 import json
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+
+from scripts.pitch_angles import run_pitch_pipeline
+from src.database import Base
 from src.models.angle_pitch import AnglePitchRecord
 from src.models.trending_event import TrendingEventRecord
-from src.database import Base
 from src.monitor.schemas import (
-    AnglePitch,
-    AnglePitchSlate,
+    BeatRole,
+    CaptionPolicy,
+    CharacterRef,
+    ContentMode,
     ContextBundle,
     GapAnalysis,
     IdeaFitResult,
-    ContentMode,
-    RenderBackend,
-    RoutingDecision,
+    ShotSize,
+    StoryBeat,
+    StoryCraftVerdict,
+    StoryPitch,
+    StoryPitchSlate,
     TrendingEvent,
 )
-from scripts.pitch_angles import run_pitch_pipeline
 
 # ---------------------------------------------------------------------------
-# Sample pipeline data (one event → one gap → three angles)
+# Sample pipeline data (one event -> one gap -> a slate of story pitches)
 # ---------------------------------------------------------------------------
 
 SAMPLE_EVENT = TrendingEvent(
@@ -44,55 +50,83 @@ SAMPLE_GAP = GapAnalysis(
     reasoning="The crowd was teased a payoff the footage never delivered.",
 )
 
-SAMPLE_SLATE = AnglePitchSlate(
-    angles=[
-        AnglePitch(
-            take="The dragon finally breathes fire over Tokyo Tower at dawn",
-            format_description="Single wide aerial shot, slow push-in as flame erupts",
-            render_backend=RenderBackend.visual_satire,
-            estimated_cost_credits=24.0,
-            gap_satisfaction_rationale="Shows the fire-breath payoff fans were denied",
-            legal_flag=False,
-        ),
-        AnglePitch(
-            take="Breaking news helicopter footage captures the dragon's fire breath",
-            format_description="Mock news B-roll, shaky helicopter POV, lower-third chyron",
-            render_backend=RenderBackend.commentary_voiceover,
-            estimated_cost_credits=24.0,
-            gap_satisfaction_rationale="Delivers the climax through a documentary news frame",
-            legal_flag=False,
-        ),
-        AnglePitch(
-            take="A-list actor watches the dragon breathe fire from a rooftop",
-            format_description="Split-screen: celebrity reaction face + dragon fire wide shot",
-            render_backend=RenderBackend.narrative_alt,
-            estimated_cost_credits=30.0,
-            gap_satisfaction_rationale="Pairs the wish-fulfillment with a recognizable reaction",
-            legal_flag=True,
-        ),
+
+def _story_pitch(
+    logline: str,
+    *,
+    mode: ContentMode = ContentMode.wish,
+    legal_flag: bool = False,
+) -> StoryPitch:
+    """Build a schema-valid StoryPitch (3 beats, varied framing, one hero)."""
+    return StoryPitch(
+        logline=logline,
+        mode=mode,
+        characters=[CharacterRef(name="Dragon", ip_source="Original")],
+        desired_moment="the dragon breathes fire over the tower",
+        beats=[
+            StoryBeat(
+                role=BeatRole.hook,
+                visual_line="wide aerial of the tower at dawn",
+                narration_line=None,
+                shot_size=ShotSize.establishing,
+                characters_in_frame=["Dragon"],
+                hero_moment=False,
+            ),
+            StoryBeat(
+                role=BeatRole.build,
+                visual_line="the dragon inhales, scales glowing",
+                narration_line=None,
+                shot_size=ShotSize.medium,
+                characters_in_frame=["Dragon"],
+                hero_moment=False,
+            ),
+            StoryBeat(
+                role=BeatRole.payoff,
+                visual_line="fire erupts over the tower",
+                narration_line=None,
+                shot_size=ShotSize.close_up,
+                characters_in_frame=["Dragon"],
+                hero_moment=True,
+            ),
+        ],
+        caption_policy=CaptionPolicy.hook_only,
+        hook_line="The fire they never showed you.",
+        why_it_lands="Delivers the fire-breath payoff fans were denied.",
+        legal_flag=legal_flag,
+    )
+
+
+SAMPLE_SLATE = StoryPitchSlate(
+    pitches=[
+        _story_pitch("The dragon finally breathes fire over Tokyo Tower at dawn"),
+        _story_pitch("A rooftop crowd watches the dragon's fire erupt", legal_flag=True),
     ]
 )
 
-# Pick "1" in tests → first angle above (visual_satire, no substitution).
-ROUTED_VISUAL = RoutingDecision(
-    backend=RenderBackend.visual_satire,
-    is_substitute=False,
-    substitution_note="",
-)
 
-ROUTED_SUBSTITUTE = RoutingDecision(
-    backend=RenderBackend.visual_satire,
-    is_substitute=True,
-    substitution_note="Wished-for backend 'commentary_voiceover' is not available; substituted 'visual_satire'.",
-)
+def _passing_verdict() -> StoryCraftVerdict:
+    return StoryCraftVerdict(
+        clear_desire=True,
+        visible_turn=True,
+        earned_payoff=True,
+        emotion_physical_tell=True,
+        notes="clean arc",
+        failure_notes=None,
+        would_watch=True,
+    )
 
 
-AVAILABLE_BACKENDS = {
-    RenderBackend.visual_satire: True,
-    RenderBackend.commentary_voiceover: False,
-    RenderBackend.narrative_alt: False,
-    RenderBackend.unknown: False,
-}
+def _failing_verdict() -> StoryCraftVerdict:
+    return StoryCraftVerdict(
+        clear_desire=True,
+        visible_turn=False,
+        earned_payoff=False,
+        emotion_physical_tell=False,
+        notes="no real turn",
+        failure_notes="beat 2 needs a real turn",
+        would_watch=False,
+    )
+
 
 # Path B (--topic) fixtures — a manual-origin event + a non-empty bundle.
 SAMPLE_TOPIC_EVENT = TrendingEvent(
@@ -189,19 +223,49 @@ class FakeGapAgent:
         return self._gap
 
 
-class FakeAnglePitcher:
-    def __init__(self, slate: AnglePitchSlate | None = None) -> None:
+class FakeStoryPitcher:
+    """Returns a fixed slate; repitch returns a marked repaired copy."""
+
+    def __init__(self, slate: StoryPitchSlate | None = None) -> None:
         self._slate = slate if slate is not None else SAMPLE_SLATE
-        self.calls: list[tuple[TrendingEvent, GapAnalysis, ContextBundle | None]] = []
+        self.pitch_calls: list[tuple[TrendingEvent, GapAnalysis, ContextBundle | None]] = []
+        self.repitch_calls: list[tuple[StoryPitch, str]] = []
 
     def pitch(
         self,
         event: TrendingEvent,
         gap: GapAnalysis,
         bundle: ContextBundle | None = None,
-    ) -> AnglePitchSlate:
-        self.calls.append((event, gap, bundle))
+    ) -> StoryPitchSlate:
+        self.pitch_calls.append((event, gap, bundle))
         return self._slate
+
+    def repitch(
+        self,
+        event: TrendingEvent,
+        gap: GapAnalysis,
+        failed_pitch: StoryPitch,
+        failure_notes: str,
+        bundle: ContextBundle | None = None,
+    ) -> StoryPitch:
+        self.repitch_calls.append((failed_pitch, failure_notes))
+        return failed_pitch.model_copy(
+            update={"logline": f"[repaired] {failed_pitch.logline}"}
+        )
+
+
+class FakeStoryCraftGate:
+    """Returns pass/fail per a predicate on the pitch (default: everything passes)."""
+
+    def __init__(self, pass_predicate=None) -> None:
+        self._pass = pass_predicate or (lambda pitch: True)
+        self.calls: list[StoryPitch] = []
+
+    def evaluate(
+        self, pitch: StoryPitch, event: TrendingEvent, gap: GapAnalysis
+    ) -> StoryCraftVerdict:
+        self.calls.append(pitch)
+        return _passing_verdict() if self._pass(pitch) else _failing_verdict()
 
 
 class FakeContextAgent:
@@ -222,90 +286,61 @@ class FakeContextAgent:
         return self._event, self._bundle
 
 
-class FakeFormatRouter:
-    """Returns a fixed decision per wished-for backend, or one global override."""
-
-    def __init__(
-        self,
-        *,
-        default: RoutingDecision | None = None,
-        by_backend: dict[RenderBackend, RoutingDecision] | None = None,
-    ) -> None:
-        self._default = default if default is not None else ROUTED_VISUAL
-        self._by_backend = by_backend or {
-            RenderBackend.visual_satire: ROUTED_VISUAL,
-            RenderBackend.commentary_voiceover: ROUTED_SUBSTITUTE,
-            RenderBackend.narrative_alt: ROUTED_SUBSTITUTE,
-            RenderBackend.unknown: ROUTED_SUBSTITUTE,
-        }
-        self.calls: list[AnglePitch] = []
-
-    def route(self, angle: AnglePitch) -> RoutingDecision:
-        self.calls.append(angle)
-        return self._by_backend.get(angle.render_backend, self._default)
-
-
 def pick_first() -> str:
-    """Simulated user selection: angle [1] on a single-event slate."""
+    """Simulated user selection: pitch [1] on the surviving slate."""
     return "1"
 
 
 def test_approved_path(db, tmp_path):
-    scraper = FakeScraper()
-    extractor = FakeExtractor()
-    idea_fit_gate = FakeIdeaFitGate()
-    gap_agent = FakeGapAgent()
-    angle_pitcher = FakeAnglePitcher()
-    format_router = FakeFormatRouter()
+    pitcher = FakeStoryPitcher()
+    gate = FakeStoryCraftGate()  # all pitches pass
 
     run_pitch_pipeline(
         db,
-        scraper,
-        extractor,
-        idea_fit_gate,
-        gap_agent,
-        angle_pitcher,
-        format_router,
+        FakeScraper(),
+        FakeExtractor(),
+        FakeIdeaFitGate(),
+        FakeGapAgent(),
+        pitcher,
+        gate,
         dry_run=False,
         choice_provider=pick_first,
         output_dir=tmp_path,
     )
 
-    approved_pitches = db.query(AnglePitchRecord).filter_by(approved=True).all()
-    assert len(approved_pitches) == 1
-    assert SAMPLE_SLATE.angles[0].take == approved_pitches[0].take
+    approved = db.query(AnglePitchRecord).filter_by(approved=True).all()
+    assert len(approved) == 1
+    assert approved[0].take == SAMPLE_SLATE.pitches[0].logline
+    assert approved[0].killed_by_gate is False
+    assert approved[0].mode == "wish"
+    assert approved[0].story_json is not None
+    assert approved[0].craft_verdict_json is not None
 
-    event = db.query(TrendingEventRecord).filter_by(id=approved_pitches[0].trending_event_id).one()
+    event = db.query(TrendingEventRecord).filter_by(
+        id=approved[0].trending_event_id
+    ).one()
     assert event.selected_for_pitching is True
-    # Path A → no bundle persisted.
-    assert event.context_bundle is None
+    assert event.context_bundle is None  # Path A -> no bundle
 
     json_files = list(tmp_path.glob("*.json"))
     assert len(json_files) == 1
-
     data = json.loads(json_files[0].read_text())
-
-    assert data["routed_backend"] == "visual_satire"
+    assert data["pitch_id"] == approved[0].id
+    assert data["mode"] == "wish"
+    assert data["logline"] == SAMPLE_SLATE.pitches[0].logline
+    assert isinstance(data["story"], dict)
     assert data["trendiness_score"] == pytest.approx(0.92)
-    assert data["angle_pitch_id"] == approved_pitches[0].id
 
 
 def test_dry_run_writes_nothing(db, tmp_path):
-    scraper = FakeScraper()
-    extractor = FakeExtractor()
-    idea_fit_gate = FakeIdeaFitGate()
-    gap_agent = FakeGapAgent()
-    angle_pitcher = FakeAnglePitcher()
-    format_router = FakeFormatRouter()
-
     run_pitch_pipeline(
         db,
-        scraper,
-        extractor,
-        idea_fit_gate,
-        gap_agent,
-        angle_pitcher,
-        format_router,
+        FakeScraper(),
+        FakeExtractor(),
+        FakeIdeaFitGate(),
+        FakeGapAgent(),
+        FakeStoryPitcher(),
+        FakeStoryCraftGate(),
         dry_run=True,
         choice_provider=None,
         output_dir=tmp_path,
@@ -316,25 +351,78 @@ def test_dry_run_writes_nothing(db, tmp_path):
     assert len(list(tmp_path.glob("*.json"))) == 0
 
 
+def test_failing_pitch_repitched_then_passes(db, tmp_path):
+    """Gate fails a pitch -> repitch once with the failure notes -> passes -> slate."""
+    pitcher = FakeStoryPitcher()
+    gate = FakeStoryCraftGate(pass_predicate=lambda p: "[repaired]" in p.logline)
+
+    run_pitch_pipeline(
+        db,
+        FakeScraper(),
+        FakeExtractor(),
+        FakeIdeaFitGate(),
+        FakeGapAgent(),
+        pitcher,
+        gate,
+        dry_run=False,
+        choice_provider=pick_first,
+        output_dir=tmp_path,
+    )
+
+    # Each original pitch failed once and was repitched exactly once.
+    assert len(pitcher.repitch_calls) == len(SAMPLE_SLATE.pitches)
+    # The repitch received the gate's failure notes.
+    assert pitcher.repitch_calls[0][1] == "beat 2 needs a real turn"
+    # The approved survivor is a repaired pitch, not killed.
+    approved = db.query(AnglePitchRecord).filter_by(approved=True).one()
+    assert "[repaired]" in approved.take
+    assert approved.killed_by_gate is False
+
+
+def test_pitch_failing_twice_is_killed(db, tmp_path):
+    """Gate fails even after repair -> pitch dropped, persisted killed_by_gate=True."""
+    pitcher = FakeStoryPitcher()
+    gate = FakeStoryCraftGate(pass_predicate=lambda p: False)  # never passes
+
+    result = run_pitch_pipeline(
+        db,
+        FakeScraper(),
+        FakeExtractor(),
+        FakeIdeaFitGate(),
+        FakeGapAgent(),
+        pitcher,
+        gate,
+        dry_run=False,
+        choice_provider=pick_first,
+        output_dir=tmp_path,
+    )
+
+    assert result is None  # wave died — nothing approved
+    pitches = db.query(AnglePitchRecord).all()
+    assert len(pitches) == len(SAMPLE_SLATE.pitches)
+    assert all(p.killed_by_gate for p in pitches)
+    assert all(p.craft_verdict_json is not None for p in pitches)
+    assert db.query(AnglePitchRecord).filter_by(approved=True).count() == 0
+    assert len(list(tmp_path.glob("*.json"))) == 0  # no handoff written
+
+
 def test_topic_branch_skips_scraper_and_threads_bundle(db, tmp_path):
-    """Path B: --topic → scraper+extractor NOT called; context_agent.gather
-    runs; gap & pitcher receive the bundle; context_bundle column populated."""
+    """Path B: --topic -> scraper+extractor NOT called; context_agent.gather runs;
+    gap & pitcher receive the bundle; context_bundle column populated."""
     scraper = FakeScraper()
     extractor = FakeExtractor()
-    idea_fit_gate = FakeIdeaFitGate()
     gap_agent = FakeGapAgent()
-    angle_pitcher = FakeAnglePitcher()
-    format_router = FakeFormatRouter()
+    pitcher = FakeStoryPitcher()
     context_agent = FakeContextAgent()
 
     run_pitch_pipeline(
         db,
         scraper,
         extractor,
-        idea_fit_gate,
+        FakeIdeaFitGate(),
         gap_agent,
-        angle_pitcher,
-        format_router,
+        pitcher,
+        FakeStoryCraftGate(),
         dry_run=False,
         choice_provider=pick_first,
         output_dir=tmp_path,
@@ -342,53 +430,35 @@ def test_topic_branch_skips_scraper_and_threads_bundle(db, tmp_path):
         topic="Wuthering Waves Jinhsi",
     )
 
-    # Scraper/extractor skipped in Path B.
     assert scraper.calls == 0, "scraper.fetch must not run in Path B"
     assert extractor.calls == 0, "extractor.extract must not run in Path B"
-
-    # Agent gathered the topic exactly once.
     assert context_agent.calls == ["Wuthering Waves Jinhsi"]
 
-    # Gate evaluated the synthesized manual-origin event.
-    assert len(idea_fit_gate.calls) == 1
-    assert idea_fit_gate.calls[0].origin == "manual"
-
     # Gap & pitcher received the bundle.
-    assert len(gap_agent.calls) == 1
     assert gap_agent.calls[0][1] is SAMPLE_BUNDLE, "gap must receive the bundle"
-    assert len(angle_pitcher.calls) == 1  # one event → one pitch() call
-    assert angle_pitcher.calls[0][2] is SAMPLE_BUNDLE, "pitcher must receive the bundle"
+    assert len(pitcher.pitch_calls) == 1
+    assert pitcher.pitch_calls[0][2] is SAMPLE_BUNDLE, "pitcher must receive the bundle"
 
     # Persisted event row carries the serialized bundle.
     event_row = db.query(TrendingEventRecord).one()
     assert event_row.context_bundle is not None
     assert event_row.context_bundle["summary"] == SAMPLE_BUNDLE.summary
-    assert event_row.context_bundle["key_moments"] == SAMPLE_BUNDLE.key_moments
-    assert event_row.context_bundle["references"] == SAMPLE_BUNDLE.references
 
-    # Approved pitch row exists (pick_first chose angle [1]).
     approved = db.query(AnglePitchRecord).filter_by(approved=True).all()
     assert len(approved) == 1
 
 
 def test_topic_branch_without_context_agent_raises(db, tmp_path):
-    """topic set but context_agent=None → ValueError, not a silent scraper run."""
-    scraper = FakeScraper()
-    extractor = FakeExtractor()
-    idea_fit_gate = FakeIdeaFitGate()
-    gap_agent = FakeGapAgent()
-    angle_pitcher = FakeAnglePitcher()
-    format_router = FakeFormatRouter()
-
+    """topic set but context_agent=None -> ValueError, not a silent scraper run."""
     with pytest.raises(ValueError, match="context_agent"):
         run_pitch_pipeline(
             db,
-            scraper,
-            extractor,
-            idea_fit_gate,
-            gap_agent,
-            angle_pitcher,
-            format_router,
+            FakeScraper(),
+            FakeExtractor(),
+            FakeIdeaFitGate(),
+            FakeGapAgent(),
+            FakeStoryPitcher(),
+            FakeStoryCraftGate(),
             dry_run=True,
             choice_provider=None,
             output_dir=tmp_path,

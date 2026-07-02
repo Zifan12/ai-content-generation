@@ -2,9 +2,9 @@
 
 Strings the whole monitor pipeline together and lets a human approve one angle:
 
-    Reddit scraper -> event extractor -> idea-fit gate -> gap agent -> angle
-    pitcher -> format router -> [human picks one] -> persist + emit a render
-    handoff.
+    Reddit scraper -> event extractor -> idea-fit gate -> gap agent -> story
+    pitcher -> craft gate (+ one bounded repair) -> [human picks a survivor] ->
+    persist + emit a render handoff.
 
 The orchestration lives in ``run_pitch_pipeline`` which takes every component as
 an argument (dependency injection) so it can be driven by fakes in tests with no
@@ -28,27 +28,28 @@ from src.models.angle_pitch import AnglePitchRecord
 from src.models.trending_event import TrendingEventRecord
 
 
-def _print_slate(displayed: list[dict]) -> None:  # noqa: C901
-    """Render the numbered pitch slate to stdout for the human to choose from.
+def _print_slate(displayed: list[dict]) -> None:
+    """Render the numbered story-pitch slate to stdout for the human to choose from.
 
     Args:
-        displayed: The flat, display-ordered list of pitch entries. Each entry is
-            a dict with keys ``event`` (TrendingEvent), ``gap`` (GapAnalysis),
-            ``angle`` (AnglePitch), and ``decision`` (RoutingDecision). The list
-            index + 1 is the selection number the user types.
+        displayed: The flat, display-ordered list of surviving pitch entries (each
+            passed the craft gate). Each entry is a dict with keys ``event``
+            (TrendingEvent), ``gap`` (GapAnalysis), ``pitch`` (StoryPitch), and
+            ``verdict`` (StoryCraftVerdict). The list index + 1 is the selection
+            number the user types.
 
     Side effects:
         Prints only — does not mutate the entries or the DB. The ``⚠ LEGAL FLAG``
-        line is emitted for any angle whose ``legal_flag`` is true, and a
-        ``↪ substituted`` line whenever the router downgraded the wished-for
-        backend (``decision.is_substitute``).
+        line is emitted for any pitch whose ``legal_flag`` is true. Credits are
+        computed by ``estimate_pitch_credits`` (code, never an LLM guess).
     """
+    from src.monitor.story_pitcher import estimate_pitch_credits
+
     last_headline = None
     for i, entry in enumerate(displayed, start=1):
         event = entry["event"]
         gap = entry["gap"]
-        angle = entry["angle"]
-        decision = entry["decision"]
+        pitch = entry["pitch"]
 
         if event.headline != last_headline:
             fit = entry.get("fit")
@@ -69,14 +70,17 @@ def _print_slate(displayed: list[dict]) -> None:  # noqa: C901
             print("=" * 70)
             last_headline = event.headline
 
-        print(f"\n[{i}] {angle.take}")
-        print(f"     format:   {angle.format_description}")
-        print(
-            f"     backend:  {decision.backend.value}  (~{angle.estimated_cost_credits:.0f} cr)"
+        beats_line = " → ".join(
+            f"{beat.role.value}({beat.shot_size.value})" for beat in pitch.beats
         )
-        if decision.is_substitute:
-            print(f"     ↪ substituted: {decision.substitution_note}")
-        if angle.legal_flag:
+        print(f"\n[{i}] {pitch.logline}")
+        print(
+            f"     mode:   {pitch.mode.value}  (~{estimate_pitch_credits(pitch):.0f} cr)"
+        )
+        print(f"     beats:  {beats_line}")
+        if pitch.hook_line:
+            print(f'     hook:   "{pitch.hook_line}"')
+        if pitch.legal_flag:
             print("     ⚠ LEGAL FLAG — depends on a real person / specific IP")
 
 
@@ -86,8 +90,8 @@ def run_pitch_pipeline(
     extractor,
     idea_fit_gate,
     gap_agent,
-    angle_pitcher,
-    format_router,
+    story_pitcher,
+    story_craft_gate,
     *,
     dry_run: bool,
     choice_provider: Callable[[], str] | None,
@@ -100,9 +104,11 @@ def run_pitch_pipeline(
 
     Flow: fetch raw events from ``scraper`` -> ``extractor.extract`` shortlist ->
     ``idea_fit_gate.evaluate`` kills stale / cheap-meme events -> for each
-    surviving event ``gap_agent.analyze`` then ``angle_pitcher.pitch`` (3 angles)
-    -> ``format_router.route`` each angle. The combined angles are printed as one
-    numbered slate.
+    surviving event ``gap_agent.analyze`` then ``story_pitcher.pitch`` (2-3 story
+    pitches). Each pitch is judged by ``story_craft_gate.evaluate``; a failing pitch
+    gets ONE bounded repair re-pitch (``story_pitcher.repitch`` with the verdict's
+    failure_notes) then is re-judged. Pitches that pass are printed as one numbered
+    slate; pitches that fail after repair are dropped and persisted killed_by_gate.
 
     Path B (--topic): when ``topic`` and ``context_agent`` are provided, the
     scraper+extractor are skipped; the agent gathers one (event, bundle) pair,
@@ -125,8 +131,9 @@ def run_pitch_pipeline(
             Unused when ``topic`` is set; may be ``None`` then.
         idea_fit_gate: Anything with ``evaluate(event) -> IdeaFitResult``.
         gap_agent: Anything with ``analyze(event, bundle=None) -> GapAnalysis``.
-        angle_pitcher: Anything with ``pitch(event, gap, bundle=None) -> AnglePitchSlate``.
-        format_router: Anything with ``route(angle) -> RoutingDecision``.
+        story_pitcher: Anything with ``pitch(event, gap, bundle=None) -> StoryPitchSlate``
+            and ``repitch(event, gap, failed_pitch, failure_notes, bundle=None) -> StoryPitch``.
+        story_craft_gate: Anything with ``evaluate(pitch, event, gap) -> StoryCraftVerdict``.
         dry_run: When true, run + print only; persist nothing and never prompt.
         choice_provider: Zero-arg callable returning the user's selection as a
             string — ``"1"``..``"9"`` to approve that angle, ``"s"`` to skip/exit,
@@ -188,40 +195,51 @@ def run_pitch_pipeline(
             print("[dry-run] nothing persisted.")
         return None
 
-    # Build the flat, display-ordered slate. One LLM gap + pitch per event; one
-    # routing decision per angle. When the event has a bundle (Path B), it is
-    # forwarded to gap + pitch so their <context> block gets injected.
+    # gap -> pitch -> craft gate (+ ONE bounded repair re-pitch). Surviving pitches
+    # go on the numbered slate; pitches that still fail after repair are dropped and
+    # persisted killed_by_gate=True as negative examples. When the event has a bundle
+    # (Path B), it is forwarded to gap + pitch/repitch so <context> gets injected.
     displayed: list[dict] = []
+    killed: list[dict] = []
     for event, fit in fit_pairs:
         bundle = bundles.get(id(event))
         gap = gap_agent.analyze(event, bundle)
-        slate = angle_pitcher.pitch(event, gap, bundle)
-        for angle in slate.angles:
-            decision = format_router.route(angle)
-            displayed.append(
-                {
-                    "event": event,
-                    "fit": fit,
-                    "gap": gap,
-                    "angle": angle,
-                    "decision": decision,
-                    "bundle": bundle,
-                }
-            )
+        slate = story_pitcher.pitch(event, gap, bundle)
+        for pitch in slate.pitches:
+            verdict = story_craft_gate.evaluate(pitch, event, gap)
+            if not verdict.passes and verdict.failure_notes:
+                pitch = story_pitcher.repitch(
+                    event, gap, pitch, verdict.failure_notes, bundle
+                )
+                verdict = story_craft_gate.evaluate(pitch, event, gap)
+            entry = {
+                "event": event,
+                "fit": fit,
+                "gap": gap,
+                "pitch": pitch,
+                "verdict": verdict,
+                "bundle": bundle,
+            }
+            (displayed if verdict.passes else killed).append(entry)
 
     _print_slate(displayed)
+    if not displayed:
+        print("\nWave died — every pitch failed the craft gate.")
 
     if dry_run:
         print("\n[dry-run] nothing persisted.")
         return None
 
-    # Persist every surfaced event once (keyed by object identity so the three
-    # angles of one event share a single row), then flush to assign the PKs the
-    # FK and the handoff JSON need. When a bundle is present (Path B), serialize
-    # it into the context_bundle JSON column.
+    # Persist every surfaced event once (keyed by object identity so all pitches of
+    # one event — survivors and gate-killed alike — share a single row), then flush
+    # to assign the PKs the FK and the handoff JSON need. When a bundle is present
+    # (Path B), serialize it into the context_bundle JSON column.
+    from src.monitor.story_pitcher import estimate_pitch_credits
+
+    all_entries = displayed + killed
     event_records: dict[int, TrendingEventRecord] = {}
     now = datetime.now(timezone.utc)
-    for entry in displayed:
+    for entry in all_entries:
         event = entry["event"]
         if id(event) not in event_records:
             gap = entry["gap"]
@@ -244,26 +262,43 @@ def run_pitch_pipeline(
             event_records[id(event)] = record
     db.flush()
 
-    # Persist every angle (approved=None) linked to its event row, parallel to the
-    # display order so the user's number indexes straight into pitch_records.
-    pitch_records: list[AnglePitchRecord] = []
-    for entry in displayed:
-        angle = entry["angle"]
-        decision = entry["decision"]
-        event_record = event_records[id(entry["event"])]
-        record = AnglePitchRecord(
-            trending_event_id=event_record.id,
-            take=angle.take,
-            format_description=angle.format_description,
-            render_backend=decision.backend.value,
-            estimated_cost_credits=angle.estimated_cost_credits,
-            gap_satisfaction_rationale=angle.gap_satisfaction_rationale,
-            legal_flag=angle.legal_flag,
+    def _pitch_record(entry: dict, *, killed_by_gate: bool) -> AnglePitchRecord:
+        """Build an AnglePitchRecord from a pitch entry.
+
+        Stores the full StoryPitch and craft verdict as JSON; ``take`` keeps the
+        logline as the inert writer bridge; legacy format_description/render_backend
+        stay NULL. ``killed_by_gate`` marks pitches the gate dropped after repair.
+        """
+        pitch = entry["pitch"]
+        verdict = entry["verdict"]
+        return AnglePitchRecord(
+            trending_event_id=event_records[id(entry["event"])].id,
+            take=pitch.logline,
+            estimated_cost_credits=estimate_pitch_credits(pitch),
+            gap_satisfaction_rationale=pitch.why_it_lands,
+            legal_flag=pitch.legal_flag,
             approved=None,
+            story_json=pitch.model_dump(mode="json"),
+            mode=pitch.mode.value,
+            craft_verdict_json=verdict.model_dump(mode="json"),
+            killed_by_gate=killed_by_gate,
         )
-        db.add(record)
-        pitch_records.append(record)
+
+    # Survivor pitches are indexable so the user's number maps straight in; killed
+    # pitches are persisted (killed_by_gate=True) as negative examples but not shown.
+    pitch_records: list[AnglePitchRecord] = [
+        _pitch_record(entry, killed_by_gate=False) for entry in displayed
+    ]
+    for pitch_record in pitch_records:
+        db.add(pitch_record)
+    for entry in killed:
+        db.add(_pitch_record(entry, killed_by_gate=True))
     db.flush()
+
+    if not pitch_records:
+        db.commit()
+        print("\nNo surviving pitches to approve — killed pitches saved.")
+        return None
 
     choice = choice_provider().strip().lower() if choice_provider else "s"
 
@@ -304,9 +339,10 @@ def run_pitch_pipeline(
     # Capture the values the handoff needs before commit so an expire-on-commit
     # session can't force a surprise reload mid-write.
     handoff = {
-        "angle_pitch_id": chosen_record.id,
-        "take": chosen_record.take,
-        "routed_backend": chosen_entry["decision"].backend.value,
+        "pitch_id": chosen_record.id,
+        "logline": chosen_record.take,
+        "mode": chosen_record.mode,
+        "story": chosen_entry["pitch"].model_dump(mode="json"),
         "trendiness_score": chosen_entry["event"].trendiness_score,
         "virality_window_hours": chosen_entry["gap"].virality_window_hours,
     }
@@ -314,13 +350,13 @@ def run_pitch_pipeline(
 
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    handoff_path = out_dir / f"pitch_{handoff['angle_pitch_id']}.json"
+    handoff_path = out_dir / f"pitch_{handoff['pitch_id']}.json"
     handoff_path.write_text(json.dumps(handoff, indent=2), encoding="utf-8")
 
-    print(f"\n✓ Approved angle [{choice}] -> {handoff_path}")
+    print(f"\n✓ Approved pitch [{choice}] -> {handoff_path}")
     print(
         f"  Next: uv run python scripts/smoke_content_writer.py "
-        f"--pitch-id {handoff['angle_pitch_id']} --real"
+        f"--pitch-id {handoff['pitch_id']} --real"
     )
     return handoff
 
@@ -369,22 +405,6 @@ _DEFAULT_SUBREDDITS = [
     "television",
     "movies",
 ]
-
-
-def _load_available_backends() -> dict:
-    """Read the render-backend availability flags from config/settings.yaml.
-
-    Returns a dict mapping ``RenderBackend`` members to bool. Unlisted backends
-    default to unavailable.
-    """
-    import yaml
-
-    from src.monitor.schemas import RenderBackend
-
-    repo_root = Path(__file__).resolve().parents[1]
-    settings = yaml.safe_load((repo_root / "config" / "settings.yaml").read_text())
-    flags = (settings or {}).get("render_backends", {})
-    return {backend: bool(flags.get(backend.value, False)) for backend in RenderBackend}
 
 
 def main() -> None:
@@ -506,12 +526,12 @@ def main() -> None:
             )
 
     from src.database import SessionLocal
-    from src.monitor.angle_pitcher import AnglePitcher
     from src.monitor.event_extractor import EventExtractor
     from src.monitor.gap_agent import GapAgent
     from src.monitor.idea_fit_gate import IdeaFitGate
-    from src.monitor.router import FormatRouter
     from src.monitor.scraper import ApifyRedditScraper
+    from src.monitor.story_craft_gate import StoryCraftGate
+    from src.monitor.story_pitcher import StoryPitcher
     from src.providers.llm.anthropic_llm import AnthropicLLM
     from src.rag.embedder import BgeM3Embedder
 
@@ -548,8 +568,8 @@ def main() -> None:
     llm = AnthropicLLM(model="claude-sonnet-5")
     idea_fit_gate = IdeaFitGate(llm=llm)
     gap_agent = GapAgent(llm=llm)
-    angle_pitcher = AnglePitcher(llm=llm, embedder=BgeM3Embedder())
-    format_router = FormatRouter(llm=llm, available_backends=_load_available_backends())
+    story_pitcher = StoryPitcher(llm=llm, embedder=BgeM3Embedder())
+    story_craft_gate = StoryCraftGate(llm=llm)
 
     if args.topic is not None:
         # Path B: --topic on-ramp. Skip scraper+extractor; run context agent.
@@ -572,8 +592,8 @@ def main() -> None:
             extractor,
             idea_fit_gate,
             gap_agent,
-            angle_pitcher,
-            format_router,
+            story_pitcher,
+            story_craft_gate,
             dry_run=args.dry_run,
             choice_provider=(
                 None if args.dry_run else lambda: input("\nPick an angle [#/s/r]: ")

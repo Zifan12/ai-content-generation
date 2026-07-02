@@ -4,24 +4,6 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 
-class GapType(str, Enum):
-    alternate_reality = "alternate_reality"  # show the version that should've happened (denied ending, what-if)
-    vindication = "vindication"  # prove the side they back was right
-    ridicule = "ridicule"  # mock the thing/person everyone's piling on
-    explanation = "explanation"  # make a confusing event make sense
-    tribute = "tribute"  # honor / celebrate something they love
-    speculation = "speculation"  # show what happens next
-    solidarity = "solidarity"  # voice the feeling everyone's sharing
-    other = "other"
-
-
-class RenderBackend(str, Enum):
-    visual_satire = "visual_satire"
-    commentary_voiceover = "commentary_voiceover"
-    narrative_alt = "narrative_alt"
-    unknown = "unknown"
-
-
 class TrendingEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -43,30 +25,6 @@ class GapAnalysis(BaseModel):
     evidence_quotes: list[str] = Field(default_factory=list, max_length=3)
     virality_window_hours: float
     reasoning: str
-
-
-class AnglePitch(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    take: str
-    format_description: str
-    render_backend: RenderBackend
-    estimated_cost_credits: float
-    gap_satisfaction_rationale: str
-    legal_flag: bool
-
-
-class AnglePitchSlate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    angles: list[AnglePitch] = Field(min_length=3, max_length=3)
-
-
-class RoutingDecision(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    backend: RenderBackend
-    is_substitute: bool
-    substitution_note: str | None
 
 
 class DedupVerdict(BaseModel):
@@ -132,7 +90,7 @@ class ContextBundle(BaseModel):
     def to_context_block(self) -> str:
         """Render this bundle as a ``<context>`` block for prompt injection.
 
-        Used by GapAgent and AnglePitcher to ground their prompts in the
+        Used by GapAgent and StoryPitcher to ground their prompts in the
         web-research the context agent gathered.  Keeps the same untrusted-data
         delimiting discipline (tagged block) those prompts already use.
 
@@ -154,10 +112,10 @@ class ContextBundle(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Story-craft models (Stage B, spec 06-27). ADDITIVE: the legacy GapType /
-# RenderBackend / AnglePitch / AnglePitchSlate / RoutingDecision classes and the
-# old GapAnalysis above are deleted/rewritten in their consumer tasks (3 = gap
-# agent, 4 = pitcher/router), not here, so the test suite stays green.
+# Story-craft models (Stage B, spec 06-27). These are THE monitor content models:
+# a pitch is a shootable story (protagonist + ordered beats), judged on craft.
+# The routing-era classes (GapType / RenderBackend / AnglePitch / AnglePitchSlate /
+# RoutingDecision) were removed in the Task 7 orchestration swap.
 # ---------------------------------------------------------------------------
 
 
