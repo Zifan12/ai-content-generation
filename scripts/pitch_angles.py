@@ -99,6 +99,7 @@ def run_pitch_pipeline(
     top_n: int = 3,
     context_agent=None,
     topic: str | None = None,
+    force: bool = False,
 ) -> dict | None:
     """Run the monitor pipeline, present the slate, and persist the approved angle.
 
@@ -147,6 +148,15 @@ def run_pitch_pipeline(
             Required when ``topic`` is set; ignored otherwise.
         topic: When set, run Path B (user-supplied topic on-ramp); when ``None``,
             run Path A (scraper -> extractor -> ...).
+        force: When true, the idea-fit gate becomes ADVISORY instead of a veto:
+            it still runs (its verdict is printed, including the kill reason it
+            would have used), but a killed event proceeds to gap/pitch anyway,
+            marked ``[FORCED]``. Two use cases: (a) a human-seeded Path B topic
+            the user has already judged worth exploring — the human is the
+            final approver anyway; (b) exercising the gap->pitch->craft-gate
+            tail, which an honest, stingy gate can otherwise leave untested for
+            weeks (5 straight kill-only runs, 2026-07-02). The craft gate is
+            NOT bypassed — bad pitches still die there.
 
     Returns:
         The handoff dict written to disk (also returned for convenience) when an
@@ -172,11 +182,24 @@ def run_pitch_pipeline(
         raw_events = scraper.fetch()
         events = extractor.extract(raw_events, top_n=top_n)
 
-    # Idea-fit gate: kill stale waves and cheap-meme events before spending LLM credits.
+    # Idea-fit gate: kill stale waves and cheap-meme events before spending LLM
+    # credits. With force=True the gate still runs (verdict printed for the
+    # record) but a kill no longer stops the event.
     fit_pairs: list[tuple] = []
     for event in events:
         fit = idea_fit_gate.evaluate(event)
         if fit.idea_fit:
+            fit_pairs.append((event, fit))
+        elif force:
+            print(f"\n[FORCED] {event.headline[:70]!r} — gate would have killed:")
+            print(
+                f"         heat={fit.heat_score:.2f}  "
+                f"recency={fit.recency_days:.1f}d  "
+                f"mode={fit.mode.value}"
+            )
+            print(f"         kill_reason: {fit.kill_reason}")
+            if fit.reason:
+                print(f"         llm_reason:   {fit.reason}")
             fit_pairs.append((event, fit))
         else:
             print(f"\n[KILLED] {event.headline[:70]!r}")
@@ -474,6 +497,16 @@ def main() -> None:
         help="Scraper only: print raw scraped events and exit (no gap/pitch/route).",
     )
     parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Path B (--topic) only: make the idea-fit gate advisory instead of "
+        "a veto — its verdict still prints, but a killed event proceeds to "
+        "gap/pitch anyway, marked [FORCED]. The craft gate still applies. Use "
+        "for human-seeded premises you've already judged worth exploring, or "
+        "to exercise the pitch tail when the gate is (correctly) killing "
+        "everything.",
+    )
+    parser.add_argument(
         "--from-dataset",
         default=None,
         metavar="DATASET_ID",
@@ -495,6 +528,15 @@ def main() -> None:
         parser.error(
             "--no-llm and --topic are mutually exclusive: --no-llm is a Path A "
             "scraper-only debug mode; there is no free preview of Path B."
+        )
+
+    # --force is a per-premise human override; on Path A it would bypass the
+    # gate for a whole scraped slate at once, which is a different (and wrong)
+    # product — the gate IS the automation's editorial judgment there.
+    if args.force and args.topic is None:
+        parser.error(
+            "--force requires --topic: the override is for a single human-seeded "
+            "premise (Path B), not for un-gating a whole Path A scan."
         )
 
     # Apify cost guard — harshmaur/reddit-scraper bills $0.002 per returned item
@@ -602,6 +644,7 @@ def main() -> None:
             top_n=args.top_n,
             context_agent=context_agent,
             topic=topic,
+            force=args.force,
         )
     finally:
         db.close()

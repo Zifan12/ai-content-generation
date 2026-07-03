@@ -448,6 +448,69 @@ def test_topic_branch_skips_scraper_and_threads_bundle(db, tmp_path):
     assert len(approved) == 1
 
 
+def _killing_fit() -> IdeaFitResult:
+    return IdeaFitResult(
+        idea_fit=False,
+        mode=ContentMode.other,
+        heat_score=0.2,
+        recency_days=1.0,
+        reason="Reaction is analytical discourse, not a wish for a rendered scene.",
+        kill_reason="cheap_meme: reaction wants a meme/text response",
+    )
+
+
+def test_force_overrides_gate_kill_but_not_craft_gate(db, tmp_path):
+    """--force: a gate-killed event proceeds to gap/pitch anyway (advisory gate),
+    but the craft gate still applies — force is not a quality bypass."""
+    gap_agent = FakeGapAgent()
+    pitcher = FakeStoryPitcher()
+
+    run_pitch_pipeline(
+        db,
+        None,
+        None,
+        FakeIdeaFitGate(fit=_killing_fit()),
+        gap_agent,
+        pitcher,
+        FakeStoryCraftGate(),  # craft gate passes everything here
+        dry_run=False,
+        choice_provider=pick_first,
+        output_dir=tmp_path,
+        context_agent=FakeContextAgent(),
+        topic="Wuthering Waves Jinhsi",
+        force=True,
+    )
+
+    # The gate said kill, but gap/pitch ran and an approval landed.
+    assert len(gap_agent.calls) == 1
+    assert len(pitcher.pitch_calls) == 1
+    assert db.query(AnglePitchRecord).filter_by(approved=True).count() == 1
+
+
+def test_gate_kill_still_kills_without_force(db, tmp_path):
+    """Same killing gate, force absent -> pipeline stops at the gate."""
+    gap_agent = FakeGapAgent()
+
+    result = run_pitch_pipeline(
+        db,
+        None,
+        None,
+        FakeIdeaFitGate(fit=_killing_fit()),
+        gap_agent,
+        FakeStoryPitcher(),
+        FakeStoryCraftGate(),
+        dry_run=False,
+        choice_provider=pick_first,
+        output_dir=tmp_path,
+        context_agent=FakeContextAgent(),
+        topic="Wuthering Waves Jinhsi",
+    )
+
+    assert result is None
+    assert len(gap_agent.calls) == 0
+    assert db.query(AnglePitchRecord).count() == 0
+
+
 def test_topic_branch_without_context_agent_raises(db, tmp_path):
     """topic set but context_agent=None -> ValueError, not a silent scraper run."""
     with pytest.raises(ValueError, match="context_agent"):
