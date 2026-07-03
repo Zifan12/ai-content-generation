@@ -9,9 +9,22 @@ tts:
   active: null
   providers: {}
 
+# Seat -> provider+model for every pipeline LLM call site (spec
+# 2026-07-02-openrouter-mixed-fleet-design.md §3.2). Swapping a seat's model
+# = edit here, no code change. Factory: src/providers/llm/factory.py.
+#
+# Promotion protocol (spec §3.4): a seat moves to a cheap model ONLY after
+# negative-control + parity replay pass. Cheap candidate (Task 1 research,
+# 2026-07-02): google/gemini-2.5-flash-lite ($0.10/M in, 20x cheaper than
+# sonnet; backup google/gemini-2.5-flash). Until promotion, every seat runs
+# sonnet via openrouter (same model as before, one wallet).
 llm:
-  active: null
-  providers: {}
+  context_agent:    {provider: openrouter, model: "anthropic/claude-sonnet-5"}
+  idea_fit_gate:    {provider: openrouter, model: "anthropic/claude-sonnet-5"}
+  gap_agent:        {provider: openrouter, model: "anthropic/claude-sonnet-5"}
+  story_pitcher:    {provider: openrouter, model: "anthropic/claude-sonnet-5"}
+  story_craft_gate: {provider: openrouter, model: "anthropic/claude-sonnet-5"}
+  content_writer:   {provider: openrouter, model: "anthropic/claude-sonnet-5"}
 
 image:
   active: null
