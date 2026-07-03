@@ -28,7 +28,8 @@ from dotenv import load_dotenv
 
 from src.monitor.schemas import GapAnalysis, TrendingEvent
 from src.monitor.story_craft_gate import StoryCraftGate
-from src.providers.llm.anthropic_llm import AnthropicLLM
+from src.providers.llm.factory import llm_for_seat
+from src.providers.llm.openrouter_llm import OpenRouterLLM
 from tests.monitor.fixtures.bad_tableau_pitch import BAD_TABLEAU_PITCH
 
 # Load the API key explicitly rather than relying on src.database's import-time
@@ -78,7 +79,14 @@ def test_real_judge_kills_bad_tableau_pitch():
     If this fails, the gate cannot discriminate — iterate the judge prompt
     before spending on a real --topic run.
     """
-    gate = StoryCraftGate(llm=AnthropicLLM(model="claude-sonnet-5"))
+    # Default: judge with whatever model the story_craft_gate seat is
+    # configured to run in production (providers.yaml) — the negative control
+    # should always validate the REAL configured judge. LIVE_MODEL_OVERRIDE
+    # lets the promotion protocol (spec 3.4) point the same control at a
+    # candidate model via OpenRouter before flipping the YAML.
+    override = os.environ.get("LIVE_MODEL_OVERRIDE")
+    llm = OpenRouterLLM(model=override) if override else llm_for_seat("story_craft_gate")
+    gate = StoryCraftGate(llm=llm)
 
     verdict = gate.evaluate(BAD_TABLEAU_PITCH, LIVE_EVENT, LIVE_GAP)
 

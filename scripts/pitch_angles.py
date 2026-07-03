@@ -574,7 +574,7 @@ def main() -> None:
     from src.monitor.scraper import ApifyRedditScraper
     from src.monitor.story_craft_gate import StoryCraftGate
     from src.monitor.story_pitcher import StoryPitcher
-    from src.providers.llm.anthropic_llm import AnthropicLLM
+    from src.providers.llm.factory import llm_for_seat
     from src.rag.embedder import BgeM3Embedder
 
     # Path A scraper is built first so --no-llm (a print-only debug path) can
@@ -607,22 +607,23 @@ def main() -> None:
     else:
         scraper = None
 
-    llm = AnthropicLLM(model="claude-sonnet-5")
-    idea_fit_gate = IdeaFitGate(llm=llm)
-    gap_agent = GapAgent(llm=llm)
-    story_pitcher = StoryPitcher(llm=llm, embedder=BgeM3Embedder())
-    story_craft_gate = StoryCraftGate(llm=llm)
+    # Per-seat LLMs from config/providers.yaml (AUD-M21): swapping any seat's
+    # provider/model is a YAML edit, not a code change.
+    idea_fit_gate = IdeaFitGate(llm=llm_for_seat("idea_fit_gate"))
+    gap_agent = GapAgent(llm=llm_for_seat("gap_agent"))
+    story_pitcher = StoryPitcher(llm=llm_for_seat("story_pitcher"), embedder=BgeM3Embedder())
+    story_craft_gate = StoryCraftGate(llm=llm_for_seat("story_craft_gate"))
 
     if args.topic is not None:
         # Path B: --topic on-ramp. Skip scraper+extractor; run context agent.
         from src.monitor.context_agent import ContextAgent
 
         extractor = None
-        context_agent = ContextAgent(llm=llm)
+        context_agent = ContextAgent(llm=llm_for_seat("context_agent"))
         topic = args.topic
     else:
         # Path A: scraper already built above; add the extractor.
-        extractor = EventExtractor(llm=llm)
+        extractor = EventExtractor(llm=llm_for_seat("event_extractor"))
         context_agent = None
         topic = None
 

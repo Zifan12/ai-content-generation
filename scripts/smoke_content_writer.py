@@ -30,6 +30,7 @@ load_dotenv("config/.env")
 
 from src.database import SessionLocal  # noqa: E402
 from src.generation.content_writer import ContentWriter  # noqa: E402
+from src.providers.llm.factory import llm_for_seat  # noqa: E402
 from src.generation.executor import execute  # noqa: E402
 from src.generation.premise_generator import PremiseGenerator  # noqa: E402
 from src.generation.render_adapters.adapter import render_jobs  # noqa: E402
@@ -189,7 +190,7 @@ def main() -> None:
         # --- Write ---
         rules = RenderRules()
         print(f"[write] model={model_cli_id}")
-        package = ContentWriter().write(
+        package = ContentWriter(llm=llm_for_seat("content_writer")).write(
             premise,
             rules=rules,
             model_cli_id=model_cli_id,

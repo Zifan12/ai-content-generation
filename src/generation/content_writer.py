@@ -23,6 +23,7 @@ from src.models.transcript import Transcript
 from src.rag.schemas import RetrievalHit
 from src.schemas.generation import ContentPackage
 from src.providers.llm.anthropic_llm import AnthropicLLM
+from src.providers.llm.openrouter_llm import OpenRouterLLM
 
 logger = logging.getLogger(__name__)
 
@@ -281,7 +282,7 @@ class ContentWriter:
     the chosen models natively. Optional retrieved hits ground style/lane only.
     """
 
-    def __init__(self, llm: AnthropicLLM | None = None):
+    def __init__(self, llm: AnthropicLLM | OpenRouterLLM | None = None):
         self.llm = llm or AnthropicLLM(model="claude-sonnet-5")
 
     def write(
