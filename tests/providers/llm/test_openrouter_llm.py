@@ -127,6 +127,40 @@ def test_truncation_raises_truncated_response_error():
         llm.parse("judge this", Verdict, max_tokens=64)
 
 
+def test_constraint_keywords_stripped_from_request_schema():
+    """Regression for the 2026-07-02 parity-replay crash: Pydantic emits
+    constraint keywords (maxItems from a list field's max_length) that
+    Anthropic/Bedrock/Azure reject via OpenRouter's output_config translation
+    ('property maxItems is not supported' -> 400). The wire schema must be
+    sanitized; the constraints still hold client-side via model_validate_json
+    + the corrective-retry loop."""
+    from pydantic import Field
+
+    class Constrained(BaseModel):
+        quotes: list[str] = Field(max_length=3, min_length=1)
+        name: str = Field(max_length=80, pattern=r"^[a-z]+$")
+
+    fake = FakeClient([_Completion('{"quotes": ["a"], "name": "ok"}')])
+    llm = OpenRouterLLM(model="test/model", client=fake)
+
+    result = llm.parse("extract", Constrained)
+
+    assert result.quotes == ["a"]
+    wire_schema = str(fake.requests[0]["response_format"]["json_schema"]["schema"])
+    for keyword in ("maxItems", "minItems", "maxLength", "pattern"):
+        assert keyword not in wire_schema
+    # And the client-side validation still enforces the real constraint.
+    fake2 = FakeClient(
+        [
+            _Completion('{"quotes": ["a","b","c","d"], "name": "ok"}'),  # 4 > max 3
+            _Completion('{"quotes": ["a"], "name": "ok"}'),
+        ]
+    )
+    llm2 = OpenRouterLLM(model="test/model", client=fake2)
+    assert llm2.parse("extract", Constrained).quotes == ["a"]
+    assert len(fake2.requests) == 2  # violation caught client-side, retried
+
+
 def test_parse_with_raw_meta_keys_match_anthropic_contract():
     """raw_meta must have the SAME keys as AnthropicLLM.parse_with_raw so
     downstream consumers never branch on provider."""

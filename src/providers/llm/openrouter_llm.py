@@ -42,6 +42,55 @@ _OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 _VALIDATION_RETRIES = 2
 
 
+# JSON-schema constraint keywords stripped from the WIRE schema before sending.
+# Providers reached through OpenRouter's output_config translation reject them
+# (live 400, 2026-07-02: Anthropic/Bedrock/Azure all refused 'maxItems' for an
+# array — emitted by any Pydantic list field with max_length). Stripping is
+# safe: the full Pydantic model still validates the response client-side, and
+# violations enter the corrective-retry loop.
+_UNSUPPORTED_SCHEMA_KEYWORDS = frozenset(
+    {
+        "maxItems",
+        "minItems",
+        "maxLength",
+        "minLength",
+        "pattern",
+        "format",
+        "minimum",
+        "maximum",
+        "exclusiveMinimum",
+        "exclusiveMaximum",
+        "multipleOf",
+        "uniqueItems",
+    }
+)
+
+
+def _sanitize_schema(node, *, in_properties: bool = False):
+    """Recursively drop constraint keywords providers reject from a JSON schema.
+
+    Returns a new structure; the input is not mutated. Keys directly inside a
+    "properties" (or "$defs"/"definitions") map are FIELD NAMES, not schema
+    keywords — a field literally named "pattern" or "format" must survive, so
+    those maps keep every key and only their values are sanitized.
+    """
+    if isinstance(node, dict):
+        sanitized = {}
+        for key, value in node.items():
+            if not in_properties and key in _UNSUPPORTED_SCHEMA_KEYWORDS:
+                continue
+            child_is_properties = not in_properties and key in (
+                "properties",
+                "$defs",
+                "definitions",
+            )
+            sanitized[key] = _sanitize_schema(value, in_properties=child_is_properties)
+        return sanitized
+    if isinstance(node, list):
+        return [_sanitize_schema(item) for item in node]
+    return node
+
+
 class SchemaValidationExhaustedError(RuntimeError):
     """The model kept returning schema-invalid JSON after all corrective retries.
 
@@ -145,7 +194,7 @@ class OpenRouterLLM:
             "json_schema": {
                 "name": response_model.__name__,
                 "strict": True,
-                "schema": response_model.model_json_schema(),
+                "schema": _sanitize_schema(response_model.model_json_schema()),
             },
         }
 
