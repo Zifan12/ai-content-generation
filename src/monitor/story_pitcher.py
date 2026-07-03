@@ -38,6 +38,15 @@ logger = logging.getLogger(__name__)
 # not a hard gate.
 _DIVERSITY_SIMILARITY_THRESHOLD = 0.7
 
+# A 2-3 pitch slate with full shot-by-shot beats overflows parse()'s shared
+# 1024 default and truncates mid-JSON — same failure class as
+# WRITER_MAX_TOKENS (content_writer.py) and _FINALIZE_MAX_TOKENS
+# (context_agent.py). Hit live on the FIRST-ever StoryPitcher execution
+# (2026-07-02 Task 6 run: TruncatedResponseError at max_tokens=1024) — every
+# earlier run died at the gate before reaching the pitcher. Per-caller
+# override, never raise the shared default.
+_PITCH_MAX_TOKENS = 8192
+
 # Measured Higgsfield credit costs (render_taste_test/MODEL_ROUTING.md): one
 # nano-banana Pro still + one Kling 3.0 5s i2v clip per beat. Computed in code so
 # the cost is deterministic, never an LLM guess.
@@ -198,6 +207,7 @@ class StoryPitcher:
             prompt=user_prompt,
             response_model=StoryPitchSlate,
             system=STORY_SYSTEM_PROMPT,
+            max_tokens=_PITCH_MAX_TOKENS,
         )
 
         self._warn_if_low_diversity(slate)
@@ -237,6 +247,7 @@ class StoryPitcher:
             prompt=user_prompt,
             response_model=StoryPitch,
             system=REPAIR_SYSTEM_PROMPT,
+            max_tokens=_PITCH_MAX_TOKENS,
         )
 
     def _warn_if_low_diversity(self, slate: StoryPitchSlate) -> None:
