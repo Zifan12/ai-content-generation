@@ -19,9 +19,9 @@ tts:
 # sonnet; backup google/gemini-2.5-flash). Until promotion, every seat runs
 # sonnet via openrouter (same model as before, one wallet).
 llm:
-  event_extractor:  {provider: openrouter, model: "anthropic/claude-sonnet-5"}
+  event_extractor:  {provider: openrouter, model: "google/gemini-2.5-flash-lite"}
   context_agent:    {provider: openrouter, model: "anthropic/claude-sonnet-5"}
-  idea_fit_gate:    {provider: openrouter, model: "anthropic/claude-sonnet-5"}
+  idea_fit_gate:    {provider: openrouter, model: "google/gemini-2.5-flash"}
   gap_agent:        {provider: openrouter, model: "anthropic/claude-sonnet-5"}
   story_pitcher:    {provider: openrouter, model: "anthropic/claude-sonnet-5"}
   story_craft_gate: {provider: openrouter, model: "anthropic/claude-sonnet-5"}
