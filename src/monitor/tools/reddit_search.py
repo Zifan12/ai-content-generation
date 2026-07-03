@@ -146,21 +146,28 @@ def reddit_search(
         "maxCommentsCount": max_comments_count,
         "crawlCommentsPerPost": True,
         "maxCommentsPerPost": max_comments_per_post,
-        # "top" alone (no community scope) confirmed 2026-07-01 via real paid
-        # datasets to ignore searchTerms entirely and return generic
-        # Reddit-wide top posts (r/pics, r/MadeMeSmile, r/OnePiece for a
-        # Wistoria-specific query) — despite the actor's own documented input
-        # schema listing "top" as a valid search-mode sort value. Same
-        # failure class as the maxItems bug: documented behavior != actual
-        # behavior, verify by paid probe, not doc trust alone.
-        #
-        # "top" + withinCommunity together confirmed working the same day via
-        # a differential probe (real query vs. garbage query, same community):
-        # garbage query returned zero posts, proving searchTerms is respected
-        # once scoped, and posts came back upvote-ordered. So: "top" only
-        # when a community is known to scope the search, "relevance"
-        # (unscoped, safe default) otherwise.
-        "searchSort": "top" if within_community else "relevance",
+        # Sort/time evidence chain (all live paid probes — this actor's
+        # documented behavior repeatedly diverges from actual, so every value
+        # here is probe-backed, not doc-trusted):
+        # - 2026-07-01: "top" UNSCOPED ignores searchTerms entirely (returned
+        #   r/pics/r/MadeMeSmile for a Wistoria query) → never use it unscoped.
+        # - 2026-07-01: "top" + withinCommunity=r/Wistoria (tiny dedicated sub)
+        #   worked — but only because in a dedicated sub, everything matches.
+        # - 2026-07-02: "top" + withinCommunity=r/anime (mega sub) + no time
+        #   window returned all-time mega-threads (Chainsaw Man Ep 1, zero
+        #   Wistoria) for the same query family: term matching is loose
+        #   (token-level, not phrase) and all-time upvote ranking buries any
+        #   niche thread below maxPostsCount. The 07-01 scoped validation had
+        #   overgeneralized from the dedicated-sub regime.
+        # So: "relevance" always (weights full-term matches, the only sort
+        # that survives both scoped regimes), plus a "month" time window —
+        # this pipeline chases live reaction waves, so a thread older than a
+        # month is never the target, and the window structurally excludes
+        # historic mega-threads. Upvote-consensus signal is NOT lost by this:
+        # it lives in the comments crawled from the found post
+        # (crawlCommentsPerPost), not in the post-discovery ranking.
+        "searchSort": "relevance",
+        "searchTime": "month",
         "includeNSFW": include_nsfw,
         "proxy": {"useApifyProxy": True, "apifyProxyGroups": ["RESIDENTIAL"]},
     }

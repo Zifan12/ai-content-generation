@@ -268,3 +268,31 @@ Track every shipped feature that fails, what was tried, and what fixed it.
      `mutable_fields`; fix the `[]` early return to `([], 0, 0)`; and cover the path with a
      Postgres-dialect test (real container on :5433) rather than in-memory SQLite.
 
+
+### BUG-008 - Context agent retrieved zero on-topic reactions: hub-sub scoping x scoped "top" sort
+- Date opened: 2026-07-02 (found by first Task 8 Step 2 live --topic run: "Wistoria Episode 11,
+  Elfie lost Will to Zeo")
+- Status: fixed (live-probe validated same day)
+- Feature: `ContextAgent._lookup_community` (`src/monitor/context_agent.py`) +
+  `reddit_search` scoped sort (`src/monitor/tools/reddit_search.py`) — the retrieval front-end
+  of the Path B pitch pipeline.
+- Environment: live Apify `harshmaur/reddit-scraper` runs, $1.15 spent, 5 searches, 525 items.
+- Error/behavior: all 5 reddit searches returned all-time r/anime megathreads (Chainsaw Man Ep 1
+  x3, Made in Abyss Ep 13, Spy x Family Ep 1), zero Wistoria content. Gap agent had no relevant
+  evidence; idea-fit gate correctly killed the event (cheap_meme / heat=0.10). Agent burned its
+  retry budget rephrasing the query — the failing variables (sort/time) are not agent-visible.
+- Root cause: TWO-LAYER INTERACTION, neither wrong alone.
+  (1) `_lookup_community` took the FIRST reddit URL from one Tavily search -> r/anime (defensible:
+  r/anime hosts episode megathreads), never considering the dedicated r/Wistoria.
+  (2) scoped `searchSort="top"` + no time window: term matching is token-loose and all-time
+  upvote ranking buries any niche thread below maxPostsCount=5 in a 10M-member sub. The 07-01
+  probe that validated top+scoped ran against tiny r/Wistoria — a dedicated-sub regime where
+  everything matches; the conclusion overgeneralized (BUG-004 kin: probe regimes matter).
+- Attempted fixes:
+  1. FIXED (commit pending this entry): (a) `reddit_search` now pins `searchSort="relevance"` +
+     `searchTime="month"` always (conditional deleted; upvote-consensus signal is unaffected —
+     it lives in crawled comments, not post-discovery ranking); (b) `_lookup_community` collects
+     ALL subreddit candidates and prefers one whose name matches a topic token (Wistoria ->
+     r/Wistoria), falling back to first-candidate. Validation: unit tests (regression tests for
+     both layers) + one $0.23 live probe: same query family, same r/anime scope, new params ->
+     4/5 posts were Wistoria S2 threads including the exact "Episode 11 discussion" target.

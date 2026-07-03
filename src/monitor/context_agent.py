@@ -200,6 +200,19 @@ class ContextAgent:
         from its own knowledge — avoids searching a plausible-sounding but
         nonexistent/wrong subreddit and getting zero results back silently.
 
+        Candidate selection prefers a DEDICATED fan subreddit over a generic
+        hub: the first-reddit-URL-wins heuristic this replaced picked r/anime
+        for a Wistoria topic (2026-07-02 run) because r/anime hosts episode
+        megathreads and ranked first in the Tavily results — a defensible
+        guess that then fed reddit_search a 10M-member haystack where the
+        niche thread lost the ranking contest. A dedicated sub (r/Wistoria)
+        is self-scoping: nearly everything in it matches the topic, so
+        retrieval quality stops depending on search ranking at all. The
+        preference rule is a token match between the topic text and the
+        subreddit name (e.g. "Wistoria" -> r/Wistoria); when no candidate
+        name matches a topic token, fall back to the first candidate, which
+        preserves the old behavior.
+
         Deliberately NOT counted in tavily_calls/max_tool_calls: this is a
         one-time setup step, not part of the plan loop's own research
         budget, so it doesn't eat into the floor/ceiling accounting
@@ -207,14 +220,27 @@ class ContextAgent:
         """
         result = tavily_search(f"{state.topic} reddit subreddit")
 
-        within_community = ""
+        candidates: list[str] = []
         for url in result.urls:
             match = _SUBREDDIT_URL_PATTERN.search(url)
-            if match:
-                within_community = f"r/{match.group(1)}"
+            if match and match.group(1) not in candidates:
+                candidates.append(match.group(1))
+
+        if not candidates:
+            return {"within_community": ""}
+
+        # Tokens of length >= 4 skip connective words ("to", "the") while
+        # keeping IP names; candidate order (Tavily ranking) breaks ties.
+        topic_tokens = [
+            token for token in re.findall(r"[a-z0-9]+", state.topic.lower()) if len(token) >= 4
+        ]
+        chosen = candidates[0]
+        for name in candidates:
+            if any(token in name.lower() for token in topic_tokens):
+                chosen = name
                 break
 
-        return {"within_community": within_community}
+        return {"within_community": f"r/{chosen}"}
 
     @traced(name="context_agent.plan")
     def _plan(self, state: ContextAgentState) -> dict:

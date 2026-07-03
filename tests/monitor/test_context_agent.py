@@ -228,6 +228,79 @@ def test_lookup_community_extracts_subreddit_from_url(monkeypatch):
     assert result == {"within_community": "r/Wistoria"}
 
 
+def test_lookup_community_prefers_dedicated_sub_over_generic_hub(monkeypatch):
+    """Regression for the 2026-07-02 run: the first reddit URL Tavily returned
+    pointed at r/anime (which hosts episode megathreads, so it often ranks
+    first), and first-match-wins scoped the search to a 10M-member haystack.
+    A candidate whose name matches a topic token (Wistoria -> r/Wistoria)
+    must now win over an earlier generic hub."""
+    monkeypatch.setattr(
+        context_agent_module,
+        "tavily_search",
+        lambda query: ToolResult(
+            text="episode discussion threads",
+            urls=[
+                "https://www.reddit.com/r/anime/comments/abc/wistoria_episode_11_discussion/",
+                "https://www.reddit.com/r/Wistoria/comments/def/elfie_and_will/",
+            ],
+        ),
+    )
+    agent = ContextAgent(llm=object())  # llm unused by _lookup_community
+    state = ContextAgentState(
+        topic="Wistoria Episode 11, Elfie lost Will to Zeo",
+        reddit_text="",
+        tavily_text="",
+        reddit_calls=0,
+        tavily_calls=0,
+        apify_cost_estimate=0.0,
+        within_community="",
+        next_action="",
+        next_query="",
+        urls=[],
+        summary="",
+        key_moments=[],
+    )
+
+    result = agent._lookup_community(state)
+
+    assert result == {"within_community": "r/Wistoria"}
+
+
+def test_lookup_community_falls_back_to_first_candidate_when_no_token_match(monkeypatch):
+    """When no candidate subreddit name matches a topic token, the old
+    first-URL behavior is preserved rather than returning nothing."""
+    monkeypatch.setattr(
+        context_agent_module,
+        "tavily_search",
+        lambda query: ToolResult(
+            text="discussion threads",
+            urls=[
+                "https://www.reddit.com/r/television/comments/abc/finale/",
+                "https://www.reddit.com/r/FanTheories/comments/def/finale/",
+            ],
+        ),
+    )
+    agent = ContextAgent(llm=object())  # llm unused by _lookup_community
+    state = ContextAgentState(
+        topic="Show X finale",
+        reddit_text="",
+        tavily_text="",
+        reddit_calls=0,
+        tavily_calls=0,
+        apify_cost_estimate=0.0,
+        within_community="",
+        next_action="",
+        next_query="",
+        urls=[],
+        summary="",
+        key_moments=[],
+    )
+
+    result = agent._lookup_community(state)
+
+    assert result == {"within_community": "r/television"}
+
+
 def test_lookup_community_empty_when_no_reddit_url(monkeypatch):
     monkeypatch.setattr(
         context_agent_module,

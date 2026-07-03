@@ -114,7 +114,7 @@ def test_reddit_search_sets_within_community_when_given():
     assert captured["withinCommunity"] == "r/Wistoria"
 
 
-def test_reddit_search_sort_defaults_to_relevance_when_unscoped():
+def test_reddit_search_sort_relevance_and_month_window_unscoped():
     captured = {}
 
     def fake_fetcher(run_input):
@@ -124,18 +124,24 @@ def test_reddit_search_sort_defaults_to_relevance_when_unscoped():
     reddit_search("Wistoria", item_fetcher=fake_fetcher)
 
     assert captured["searchSort"] == "relevance"
+    assert captured["searchTime"] == "month"
 
 
-def test_reddit_search_sort_switches_to_top_when_scoped():
+def test_reddit_search_sort_relevance_and_month_window_scoped():
+    """Regression for the 2026-07-02 mega-sub failure: scoped searches used
+    "top" with no time window, which returned all-time megathreads (Chainsaw
+    Man Ep 1) instead of the niche on-topic thread. Scoped and unscoped now
+    both pin relevance + a month window."""
     captured = {}
 
     def fake_fetcher(run_input):
         captured.update(run_input)
         return []
 
-    reddit_search("Wistoria", within_community="r/Wistoria", item_fetcher=fake_fetcher)
+    reddit_search("Wistoria", within_community="r/anime", item_fetcher=fake_fetcher)
 
-    assert captured["searchSort"] == "top"
+    assert captured["searchSort"] == "relevance"
+    assert captured["searchTime"] == "month"
 
 
 class _FakeTavilyClient:
