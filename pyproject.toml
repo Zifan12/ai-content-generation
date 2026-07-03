@@ -73,6 +73,9 @@ explicit = true
 [tool.pytest.ini_options]
 pythonpath = ["."]
 asyncio_mode = "auto"
+markers = [
+    "live: hits real paid APIs (Anthropic); each test guards itself with a RUN_LIVE=1 skipif",
+]
 
 [dependency-groups]
 dev = [
