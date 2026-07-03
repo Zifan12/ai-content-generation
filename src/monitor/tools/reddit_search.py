@@ -108,8 +108,15 @@ def reddit_search(
 
     Returns:
         A ``ToolResult``. Its ``text`` is one block per matched post: a
-        ``[POST]`` title line followed by its own comments as indented
-        ``[COMMENT]`` lines, blocks separated by a blank line. Comments are
+        ``[POST | N upvotes]`` title line followed by its own comments as
+        indented ``[COMMENT | N upvotes]`` lines, blocks separated by a blank
+        line. Upvote counts are carried into the text deliberately: they are
+        the only ground-truth "how many humans co-signed this" signal in the
+        pipeline, and every LLM downstream (idea-fit gate, gap agent) weights
+        consensus from them — dropping them (pre-2026-07-02 behavior) made an
+        11-upvote joke thread and a 2,848-upvote wish-meme read as equally
+        representative, causing a wrong gate kill. Items with no readable
+        score fall back to a plain ``[POST]``/``[COMMENT]`` tag. Comments are
         grouped under their post via ``postId`` — the actor's raw item order
         interleaves posts and comments from different threads, so grouping
         (not print order) is what keeps a comment attributed to the right
@@ -191,15 +198,29 @@ def reddit_search(
         bare_post_id = str(post_id).removeprefix("t3_")
         comments_by_post.setdefault(bare_post_id, []).append(item)
 
+    # Vote fields verified against real dataset items (2026-07-02, dataset
+    # O1kl0zYKUbj7U1aJo): posts carry "score" + "upVotes", comments carry
+    # "score" + "commentUpVotes". "score" is common to both; the per-type
+    # field is the fallback.
+    def _tag(kind: str, item: dict, fallback_field: str) -> str:
+        votes = item.get("score")
+        if votes is None:
+            votes = item.get(fallback_field)
+        if votes is None:
+            return f"[{kind}]"
+        return f"[{kind} | {votes} upvotes]"
+
     blocks: list[str] = []
     urls: list[str] = []
     for item in items:
         if item.get("dataType") != "post":
             continue
         bare_id = str(item.get("id") or "").removeprefix("t3_")
-        post_lines = [f"[POST] {item.get('title') or ''}"]
+        post_lines = [f"{_tag('POST', item, 'upVotes')} {item.get('title') or ''}"]
         for comment in comments_by_post.get(bare_id, []):
-            post_lines.append(f"  [COMMENT] {comment.get('body') or ''}")
+            post_lines.append(
+                f"  {_tag('COMMENT', comment, 'commentUpVotes')} {comment.get('body') or ''}"
+            )
         blocks.append("\n".join(post_lines))
         post_url = item.get("postUrl")
         if post_url:

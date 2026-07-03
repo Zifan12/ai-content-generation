@@ -89,6 +89,41 @@ def test_reddit_search_formats_items():
     assert result.urls == ["https://reddit.com/abc"]
 
 
+def test_reddit_search_carries_upvote_counts_into_text():
+    """Regression for the 2026-07-02 wrong gate kill: upvote counts were
+    stripped at formatting, so the gate weighted an 11-upvote joke thread and
+    a 2,848-upvote wish-meme identically. Post and comment lines must carry
+    their scores; items with no readable score fall back to a bare tag."""
+    result = reddit_search(
+        "Wistoria",
+        item_fetcher=lambda run_input: [
+            {
+                "dataType": "post",
+                "id": "t3_meme",
+                "title": "The ultimate Albis experience simulator",
+                "postUrl": "https://reddit.com/meme",
+                "score": 2848,
+            },
+            {
+                "dataType": "comment",
+                "postId": "t3_meme",
+                "body": "meant to be",
+                "commentUpVotes": 9,
+            },
+            {
+                "dataType": "post",
+                "id": "t3_scoreless",
+                "title": "no votes field",
+                "postUrl": "https://reddit.com/scoreless",
+            },
+        ],
+    )
+
+    assert "[POST | 2848 upvotes] The ultimate Albis experience simulator" in result.text
+    assert "[COMMENT | 9 upvotes] meant to be" in result.text
+    assert "[POST] no votes field" in result.text
+
+
 def test_reddit_search_omits_within_community_by_default():
     captured = {}
 
