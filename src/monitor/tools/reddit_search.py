@@ -120,9 +120,14 @@ def reddit_search(
         grouped under their post via ``postId`` — the actor's raw item order
         interleaves posts and comments from different threads, so grouping
         (not print order) is what keeps a comment attributed to the right
-        post. Empty string if nothing matched. Posts with no matched
+        post. Blocks are ordered by post upvote count, highest first (BUG-009),
+        so the downstream character-budget truncation in ``context_agent.gather``
+        keeps the most co-signed reactions rather than whatever the actor's
+        relevance order placed first; ties keep the actor's original order
+        (stable sort). Empty string if nothing matched. Posts with no matched
         comments still get their own block. Its ``urls`` is each matched
-        post's ``postUrl``, in the same order as the text blocks.
+        post's ``postUrl``, in the same order as the (now upvote-ranked) text
+        blocks.
 
     Raises:
         RuntimeError: if no Apify token is configured and no ``item_fetcher``
@@ -210,8 +215,27 @@ def reddit_search(
             return f"[{kind}]"
         return f"[{kind} | {votes} upvotes]"
 
-    blocks: list[str] = []
-    urls: list[str] = []
+    def _upvotes(item: dict, fallback_field: str) -> int:
+        """Post's upvote count as an int for ranking (``score`` → fallback → 0).
+
+        Mirrors ``_tag``'s field priority but returns a sortable number instead
+        of a display string. Missing or uncoercible counts sink to 0, matching
+        the ``ApifyRedditScraper._comment_upvotes`` convention in ``scraper.py``.
+        """
+        raw = item.get("score")
+        if raw is None:
+            raw = item.get(fallback_field)
+        if raw is None:
+            return 0
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return 0
+
+    # One (upvotes, block, url) bundle per post so the upvote count stays glued
+    # to its text and url through the sort below — sorting the blocks alone would
+    # desync the parallel urls list.
+    ranked: list[tuple[int, str, str | None]] = []
     for item in items:
         if item.get("dataType") != "post":
             continue
@@ -221,10 +245,19 @@ def reddit_search(
             post_lines.append(
                 f"  {_tag('COMMENT', comment, 'commentUpVotes')} {comment.get('body') or ''}"
             )
-        blocks.append("\n".join(post_lines))
-        post_url = item.get("postUrl")
-        if post_url:
-            urls.append(post_url)
+        ranked.append((_upvotes(item, "upVotes"), "\n".join(post_lines), item.get("postUrl")))
+
+    # Rank posts by upvote consensus, highest first, so the downstream 2000-char
+    # truncation in context_agent.gather() keeps the most co-signed reactions
+    # instead of whatever relevance order the actor returned first (BUG-009: a
+    # 15-upvote joke thread outranked a 244-upvote sincere thread and survived
+    # the cut). Python's sort is stable, so ties keep the actor's original
+    # relevance order. This ranks WITHIN one reddit_search call; ordering ACROSS
+    # multiple accumulated calls is not handled here.
+    ranked.sort(key=lambda bundle: bundle[0], reverse=True)
+
+    blocks = [block for _, block, _ in ranked]
+    urls = [url for _, _, url in ranked if url]
 
     return ToolResult(text="\n\n".join(blocks).strip(), urls=urls)
 

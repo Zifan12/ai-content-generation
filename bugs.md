@@ -296,3 +296,148 @@ Track every shipped feature that fails, what was tried, and what fixed it.
      r/Wistoria), falling back to first-candidate. Validation: unit tests (regression tests for
      both layers) + one $0.23 live probe: same query family, same r/anime scope, new params ->
      4/5 posts were Wistoria S2 threads including the exact "Episode 11 discussion" target.
+
+### BUG-009 - Context-agent reaction_sample keeps search-relevance order + hard-truncates to 2000 chars, burying the high-upvote signal
+- Date opened: 2026-07-03 (found analyzing the first fully-completed Task 8 tail run, event #7)
+- Status: open (fix in progress, user-written)
+- Feature: `ContextAgent.gather` truncation (`src/monitor/context_agent.py:428-431`, the
+  `reaction = reaction[:2000]` slice) fed by the block-assembly order in `reddit_search`
+  (`src/monitor/tools/reddit_search.py` — posts are emitted in the Apify actor's
+  relevance order, never re-ranked). **Path B (`--topic`) only.** Path A already ranks:
+  `ApifyRedditScraper._pick_reaction_comments` sorts by `commentUpVotes` desc
+  (`src/monitor/scraper.py:310`); Path B's context-agent path never got that treatment.
+- Environment: live `--topic` run, OpenRouter fleet, Postgres event #7
+  ("Wistoria fans imagining what if Elfie won Will instead of Zeo after episode 11").
+- Error/behavior: `reaction_sample` is built by concatenating each `reddit_search` text blob
+  (posts in relevance order) into `state.reddit_text`, then hard-slicing the first 2000 chars in
+  `gather()`. No upvote ranking anywhere on Path B. On event #7 the stored `reaction_sample`
+  (length exactly 2000, ends mid-word) LED with a **15-upvote** joke thread ("Trebuchet / Fortnite
+  battle bus / Assassinate Kreutz") and **truncated away** the **244-upvote** sincere thread
+  ("This episode was so wholesome and peak Wistoria, Will & Elfie are just meant to be"). The gap
+  agent, reading a meme-skewed sample, produced `dominant_emotion="playful longing"` and
+  `audience_want`= the absurd-tools framing; 2 of 3 resulting pitches were meme-flavored (trebuchet
+  launch, permit-paperwork satire). NOT a pitcher or craft-gate defect — the craft gate passed all
+  three on craft (`clear_desire`/`visible_turn`/`earned_payoff`/`emotion_physical_tell` all true);
+  both stages did their jobs on garbage-skewed input. The `--force`d idea-fit gate had itself
+  flagged this topic `cheap_meme` — its instinct was right about the meme skew.
+- Reproduction steps:
+  1. Run `uv run python -m scripts.pitch_angles --topic "<topic mixing a loud low-upvote joke
+     thread with a quieter high-upvote sincere thread>" --force`.
+  2. Dump `event.reaction_sample` from Postgres (latest `TrendingEventRecord`).
+  3. Observe: order is relevance, not upvotes; length capped at 2000; the high-upvote thread is
+     cut off while a low-upvote thread survives.
+- Root cause: truncation is applied to an UNRANKED string, so "which 2000 chars survive" is decided
+  by relevance-of-post-discovery, not by crowd consensus (upvotes) — even though upvotes are the
+  pipeline's designated "how many humans co-signed this" signal (see BUG-008 / the upvote-tagging
+  work). Same single-source-of-truth spirit as BUG-005: Path A ranks by upvotes, Path B silently
+  does not.
+- Attempted fixes:
+  1. (2026-07-03) FIXED (code) in `reddit_search` — Option A, rank where posts are still
+     structured dicts, not after flattening to a string. Added `_upvotes(item, fallback_field)`
+     (mirrors `_tag`'s `score`→fallback priority, coerces to int, missing→0 per the
+     `_comment_upvotes` convention in `scraper.py`); the post loop now builds one
+     `(upvotes, block, url)` bundle per post and `ranked.sort(key=..., reverse=True)` orders them
+     highest-upvote-first before the join (stable sort → ties keep relevance order). `urls` is
+     rebuilt from the sorted bundles, still skipping None. KNOWN LIMITATION recorded in-code: this
+     ranks WITHIN one `reddit_search` call; across-call ordering (the `_act_reddit` string
+     concatenation) is not handled — that needs a structured-accumulation change and is deferred.
+- Date fixed: 2026-07-03 (code); live-validation pending.
+- Validation evidence: offline GREEN — `tests/monitor` 104 passed / 1 skipped, ruff clean on the
+  file, mypy adds 0 new errors (only the pre-existing tavily stub error remains). LIVE pending —
+  re-run event #7's topic and confirm the 244-upvote thread now leads the sample and the
+  gap/pitches shift from "playful/meme" to sincere.
+
+### BUG-010 - Langfuse records no token/cost/model for OpenRouter-seat generations — cost & near-truncation auditing is blind since the fleet migration (BUG-001 regressed for the new provider)
+- Date opened: 2026-07-03 (found doing a per-call Langfuse health audit of the Task 8 tail run)
+- Status: open
+- Feature: `src/providers/llm/openrouter_llm.py` `parse_with_raw` (the `@traced("openrouter_llm.parse")`
+  span). Affects ALL 7 LLM seats now that the fleet routes through OpenRouter (commit `0dece0b` +
+  the seat migration `780bb6e`/`d4da985`/`320da0b`).
+- Environment: Langfuse US cloud (live); observations pulled via the public REST API
+  `GET /api/public/observations?type=GENERATION`.
+- Error/behavior: across 100 recent `openrouter_llm.parse` GENERATION observations, `promptTokens`,
+  `completionTokens`, `totalTokens`, `calculatedTotalCost`, and `model` all come back **null / 0**.
+  The `level`/`statusMessage`, `input`, `output`, and `latency` fields ARE populated (error
+  detection still works — the audit correctly surfaced the two known truncation ERRORs and nothing
+  else). Contrast BUG-001 (closed 2026-06-14): `anthropic_llm.parse` generations DO carry
+  `usage_input_tokens` / `usage_output_tokens`. So the token/cost observability BUG-001 restored is
+  ABSENT for the new provider — a blind spot introduced by the OpenRouter migration. Consequence:
+  a per-call audit cannot see output sizes (the exact signal that would flag a seat sitting near
+  its `max_tokens` — i.e. the next StoryCraftVerdict/StoryPitchSlate-class truncation before it
+  crashes) nor per-seat cost, straight from Langfuse.
+- Reproduction steps:
+  1. Run any pipeline that exercises the OpenRouter seats (all of them now).
+  2. `GET {LANGFUSE_HOST}/api/public/observations?type=GENERATION` with the pk/sk as basic auth.
+  3. Observe `promptTokens`/`completionTokens`/`calculatedTotalCost`/`model` null on every
+     `openrouter_llm.parse` observation.
+- Root cause: SUSPECTED (not yet confirmed at source) — the OpenRouter provider's traced span does
+  not report the response `usage` (and model id) into the current Langfuse observation, whereas the
+  Anthropic path does. To confirm by reading how `anthropic_llm.parse` surfaces usage to Langfuse
+  vs what `openrouter_llm.parse` omits.
+- Attempted fixes:
+  1. None yet. Direction: have `openrouter_llm` report token usage + model into the active
+     observation, mirroring whatever the Anthropic provider does that made BUG-001's fix hold.
+- Date fixed: —
+- Validation evidence: pending — after the fix, the same `/api/public/observations` pull should show
+  populated `promptTokens`/`completionTokens`/`calculatedTotalCost` on `openrouter_llm.parse`.
+
+### BUG-011 - StoryCraftVerdict truncated at the shared max_tokens=1024 default — crashed the first fully-completed Task 8 tail run
+- Date opened: 2026-07-02 (crashed the first live `--topic --force` tail run of the session)
+- Status: closed (fixed + offline & live validated this session)
+- Feature: `StoryCraftGate.evaluate` (`src/monitor/story_craft_gate.py`, the
+  `self.llm.parse(response_model=StoryCraftVerdict, ...)` call) — the per-pitch craft gate, run once
+  per pitch (plus one bounded repair).
+- Environment: OpenRouter fleet, model `anthropic/claude-sonnet-5`, live `--topic --force` run.
+- Error/behavior: `src.providers.llm.anthropic_llm.TruncatedResponseError: Response hit
+  max_tokens=1024 before completing (StoryCraftVerdict, model=anthropic/claude-sonnet-5)`. The
+  `evaluate()` call inherited the shared default `max_tokens` (1024); a real `StoryCraftVerdict`
+  (4 pass/fail dimensions + `notes` + `failure_notes`) exceeds 1024, so the JSON truncated mid-object
+  and the run died at the craft gate — AFTER gate/gap/pitcher had run (and the pitcher's own
+  `e8fbfe5` `_PITCH_MAX_TOKENS` fix had just proven out for the first time). Same failure class as
+  `WRITER_MAX_TOKENS` and `_PITCH_MAX_TOKENS` (see the `shared_max_tokens_truncation` learning): the
+  shared 1024 default truncates a large structured output whenever a per-caller override is missing.
+- Reproduction steps:
+  1. Pre-fix, run the Path B tail (`pitch_angles --topic "<x>" --force`) so it reaches the craft gate
+     on a real pitch.
+  2. Observe `TruncatedResponseError ... max_tokens=1024 ... StoryCraftVerdict` from
+     `story_craft_gate.evaluate`.
+- Root cause: the craft-gate `parse()` call carried no per-caller `max_tokens` override, so it used
+  the shared 1024 default — too small for the verdict schema.
+- Attempted fixes:
+  1. (2026-07-03, user-written) Added a per-caller `max_tokens` constant in `story_craft_gate.py`
+     (mirrors `_PITCH_MAX_TOKENS` / `WRITER_MAX_TOKENS`) and passed it into the `parse()` call. Did
+     NOT raise the shared default — scalpel, not shotgun — so the small classification seats keep
+     their 1024 truncation guard as an early-warning canary.
+- Date fixed: 2026-07-03
+- Validation evidence: offline `tests/monitor` 104 passed / 1 skipped; live
+  `RUN_LIVE=1 pytest tests/monitor/test_story_craft_gate_live.py` 1 passed (a real `StoryCraftVerdict`
+  parse completed via OpenRouter/Sonnet on the exact crashing path); and the subsequent
+  `--topic --force` tail then ran end-to-end, producing 3 craft-passed pitches with no truncation.
+  Closed.
+
+### BUG-012 - StoryPitcher slate has low diversity: 3 near-clone pitches from one gap
+- Date opened: 2026-07-03 (surfaced on the BUG-009-fixed rerun, event #8 Wistoria/Elfie)
+- Status: open
+- Feature: `StoryPitcher.pitch` slate generation (`src/monitor/story_pitcher.py`) — produces the
+  N-pitch slate for one event; a downstream diversity check flags near-duplicate slates.
+- Environment: live `--topic --force` rerun, OpenRouter fleet (pitcher seat = sonnet-via-OpenRouter).
+- Error/behavior: printed `Story slate low diversity: avg pairwise cosine 0.735 >= 0.70 threshold`.
+  All 3 surviving pitches were variations of ONE premise ("Zeo never intervenes → Elfie's decade of
+  devotion → Will's fate"): [1] a duel, [2] a "nobody showed up" satire reveal, [3] a "Will looks
+  back" reveal. Cosmetic variation, not 3 distinct concepts. The craft gate passed each one
+  individually (each is well-built), so this is a SLATE-level quality gap, not a per-pitch one —
+  hits any topic, not just this one. Also NOTE: the check only WARNS; the low-diversity slate still
+  gets persisted and shown.
+- Reproduction steps:
+  1. Run any narrow-gap event through the pitcher (`pitch_angles --topic "<x>" --force`).
+  2. Observe the `low diversity` warning and near-duplicate loglines in the slate.
+- Root cause: SUSPECTED — the pitcher generates N pitches from a single `audience_want`/gap without
+  an explicit inter-pitch diversity constraint, so a narrow gap collapses the slate onto one idea.
+  To confirm: whether the pitcher prompt asks for distinct angles, and whether the diversity check
+  is wired to do anything beyond print a warning.
+- Attempted fixes:
+  1. None yet. Direction: push the pitcher for genuinely distinct angles (vary protagonist / POV /
+     structure across the slate), and/or have the diversity check trigger a re-pitch of the
+     too-similar entries instead of only warning.
+- Date fixed: —
+- Validation evidence: pending.

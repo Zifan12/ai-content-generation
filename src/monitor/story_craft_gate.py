@@ -9,6 +9,8 @@ from src.monitor.schemas import (
 from src.observability.tracing import traced
 from src.providers.llm.anthropic_llm import AnthropicLLM
 
+_STORY_CRAFT_MAX_TOKENS = 8192
+
 STORY_CRAFT_SYSTEM_PROMPT = """You are a story-craft judge for a short-form video studio. You are given ONE \
 story pitch — a logline, a declared mode, and an ordered list of shot beats — \
 plus the trending event and gap analysis it was built from. Your job is to \
@@ -96,6 +98,7 @@ class StoryCraftGate:
             prompt=user_prompt,
             response_model=StoryCraftVerdict,
             system=STORY_CRAFT_SYSTEM_PROMPT,
+            max_tokens=_STORY_CRAFT_MAX_TOKENS,
         )
 
         return verdict
