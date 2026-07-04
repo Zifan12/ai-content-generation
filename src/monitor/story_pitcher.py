@@ -46,7 +46,7 @@ _DIVERSITY_SIMILARITY_THRESHOLD = 0.7
 # (2026-07-02 Task 6 run: TruncatedResponseError at max_tokens=1024) — every
 # earlier run died at the gate before reaching the pitcher. Per-caller
 # override, never raise the shared default.
-_PITCH_MAX_TOKENS = 8192
+_PITCH_MAX_TOKENS = 16384
 
 # Measured Higgsfield credit costs (render_taste_test/MODEL_ROUTING.md): one
 # nano-banana Pro still + one Kling 3.0 5s i2v clip per beat. Computed in code so
@@ -182,7 +182,7 @@ class StoryPitcher:
     def __init__(self, llm: AnthropicLLM | OpenRouterLLM, embedder: TextEmbedder):
         self.llm = llm
         self.embedder = embedder
-        self.playbook_block = _format_playbook()
+        self.playbook_block = _format_playbook(include_example=True)
 
     @traced(name="story_pitcher")
     def pitch(

@@ -52,6 +52,13 @@ RULES:
 - Do not assume any template, example, or "correct" pitch shape — judge the pitch on its own text against the evidence alone.
 """
 
+# The verdict is a full per-evidence-item rubric plus an uncapped CoT reasoning
+# field, which overflows parse()'s shared 1024 default and truncates mid-JSON —
+# the same trap as _PITCH_MAX_TOKENS (story_pitcher.py) and WRITER_MAX_TOKENS.
+# Per-caller override, never raise the shared default. Observed verdicts run
+# ~600-1000+ output tokens; 4096 leaves headroom for a long reasoning walk.
+_GROUNDEDNESS_MAX_TOKENS = 4096
+
 class EvidenceItemVerdict(BaseModel):
     evidence_quote: str
     label: Literal["grounded", "paraphrased", "absent"]
@@ -59,7 +66,7 @@ class EvidenceItemVerdict(BaseModel):
 
 
 class GroundednessVerdict(BaseModel):
-    reasoning: str = Field(max_length=600, description="")
+    reasoning: str = Field(description="")
     swap: bool
     swap_justification: str = Field()
     evidence_items: list[EvidenceItemVerdict]
@@ -119,6 +126,7 @@ class GroundednessJudge:
             prompt,
             response_model=GroundednessVerdict,
             system=SYSTEM_PROMPT,
+            max_tokens=_GROUNDEDNESS_MAX_TOKENS,
         )
 
 
