@@ -29,6 +29,7 @@ from src.monitor.schemas import (
 )
 from src.observability.tracing import traced
 from src.providers.llm.anthropic_llm import AnthropicLLM
+from src.providers.llm.openrouter_llm import OpenRouterLLM
 from src.rag.embedder import TextEmbedder
 
 logger = logging.getLogger(__name__)
@@ -128,12 +129,18 @@ def estimate_pitch_credits(pitch: StoryPitch) -> float:
     return len(pitch.beats) * (_STILL_CREDITS + _CLIP_CREDITS)
 
 
-def _format_playbook() -> str:
+def _format_playbook(include_example: bool = True) -> str:
     """
     Render every mode playbook entry as a text block for prompt injection.
 
     Returns all modes (Option A: the pitcher sees the full menu and picks per
-    pitch), each with its description, default arc, craft emphasis, and example.
+    pitch), each with its description, default arc, and craft emphasis. The
+    per-mode worked example (``example_logline``) is appended only when
+    ``include_example`` is True — the production default, byte-identical to the
+    original single-arg behaviour. The groundedness ablation harness calls with
+    ``include_example=False`` to strip ONLY that one line (holding description,
+    arc, and craft emphasis fixed), so any change in pitch groundedness is
+    attributable to the worked example alone, not to a wholesale playbook change.
     """
     entries = load_mode_playbook()
     blocks = [
@@ -141,8 +148,8 @@ def _format_playbook() -> str:
             f"MODE: {name}\n"
             f"{entry.description}\n"
             f"arc (default beat shape): {', '.join(entry.arc)}\n"
-            f"craft emphasis: {entry.craft_emphasis}\n"
-            f"example logline: {entry.example_logline}"
+            f"craft emphasis: {entry.craft_emphasis}"
+            + (f"\nexample logline: {entry.example_logline}" if include_example else "")
         )
         for name, entry in entries.items()
     ]
@@ -172,8 +179,8 @@ def _event_block(event: TrendingEvent) -> str:
 
 
 class StoryPitcher:
-    def __init__(self, llm, embedder: TextEmbedder):
-        self.llm = llm or AnthropicLLM(model="claude-sonnet-5")
+    def __init__(self, llm: AnthropicLLM | OpenRouterLLM, embedder: TextEmbedder):
+        self.llm = llm
         self.embedder = embedder
         self.playbook_block = _format_playbook()
 
