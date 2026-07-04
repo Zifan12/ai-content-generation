@@ -182,7 +182,12 @@ class StoryPitcher:
     def __init__(self, llm: AnthropicLLM | OpenRouterLLM, embedder: TextEmbedder):
         self.llm = llm
         self.embedder = embedder
-        self.playbook_block = _format_playbook(include_example=True)
+        # Strip the worked example: the groundedness ablation
+        # (scripts/run_pitch_ablation.py) showed the playbook's example_logline
+        # anchors the pitcher toward generic pitches — dropping it raised
+        # grounded / less-generic scores on all three metrics (n=4). Mode + arc
+        # guidance (kept) still steer wish/satire correctly without it.
+        self.playbook_block = _format_playbook(include_example=False)
 
     @traced(name="story_pitcher")
     def pitch(
