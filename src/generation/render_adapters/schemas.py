@@ -52,11 +52,18 @@ class RenderJob(BaseModel):
         duration: Clip length in seconds for video jobs; ``None`` for stills.
             The adapter caps this at the chosen model's ``max_seconds``.
         shot_index: Zero-based index of the shot this job belongs to within the
-            content package, used to order and group jobs back into shots.
+            content package, used to order and group jobs back into shots. For
+            ``"multi_shot"`` jobs this is the first covered shot's index.
+        reference_images: Key-art paths/upload-ids grounding a ``"still"`` job
+            (mandatory grounding, DECISIONS_LOCKED L3); empty for video jobs.
+            CLI 1.1.5: repeated ``--image-references``, max 14.
+        covers_shots: All shot indices a ``"multi_shot"`` job renders (one Kling
+            generation with internal cuts); empty list for single-shot jobs,
+            meaning "just shot_index".
     """
 
     model_cli_id: str
-    kind: Literal["still", "motion", "keyframe"]
+    kind: Literal["still", "motion", "keyframe", "multi_shot"]
     prompt: str
     image_ref: str | None = None
     start_image: str | None = None
@@ -64,3 +71,5 @@ class RenderJob(BaseModel):
     aspect_ratio: str
     duration: int | None = None
     shot_index: int
+    reference_images: list[str] = []
+    covers_shots: list[int] = []
