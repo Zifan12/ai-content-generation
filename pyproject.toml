@@ -73,6 +73,10 @@ explicit = true
 [tool.pytest.ini_options]
 pythonpath = ["."]
 asyncio_mode = "auto"
+# Only our own suite: the cloned reference codebases under ai_video_resources/
+# (MoneyPrinterTurbo, OpenMontage) ship their own tests with deps we don't
+# install (loguru etc.) — collecting them breaks the run (14 errors, 2026-07-05).
+testpaths = ["tests"]
 markers = [
     "live: hits real paid APIs (Anthropic); each test guards itself with a RUN_LIVE=1 skipif",
 ]
