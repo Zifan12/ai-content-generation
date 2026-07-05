@@ -74,4 +74,4 @@ def test_pitch_to_costed_jobs_dry_run(tmp_path):
 
     result = execute(jobs, str(tmp_path), dry_run=True, run_cli=_fake_cli)
     assert result.credits_spent == 15.0  # 2 jobs x fake 7.5
-    assert result.still_path == "" and result.clip_path == ""
+    assert result.still_paths == [] and result.clips == []
