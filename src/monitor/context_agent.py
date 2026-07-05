@@ -6,6 +6,7 @@ then synthesizes a ContextBundle. See docs/superpowers/specs/
 2026-06-30-user-topic-context-agent-design.md for the full design.
 """
 
+import logging
 import re
 from functools import partial
 
@@ -19,8 +20,18 @@ from src.monitor.schemas import (
     TrendingEvent,
 )
 from src.providers.llm.anthropic_llm import AnthropicLLM
-from src.monitor.tools import estimate_cost, reddit_search, tavily_search
+from src.providers.llm.openrouter_llm import OpenRouterLLM
+from src.monitor.tools import (
+    Subreddit,
+    estimate_cost,
+    reddit_search,
+    search_subreddits,
+    tavily_search,
+)
+from src.monitor.tools.subreddit_search import COMMUNITY_SEARCH_COST
 from src.observability.tracing import traced
+
+logger = logging.getLogger(__name__)
 
 _DEFAULT_MAX_TOOL_CALLS = 5
 
@@ -48,11 +59,6 @@ _FINALIZE_MAX_TOKENS = 4096
 _REDDIT_MAX_POSTS = 5
 _REDDIT_MAX_COMMENTS_PER_POST = 20
 _REDDIT_MAX_COMMENTS_COUNT = 10
-
-# Matches a subreddit name out of a reddit.com URL (e.g.
-# "https://www.reddit.com/r/Wistoria/comments/..." -> "Wistoria"), used to
-# extract a within_community guess from tavily_search's result URLs.
-_SUBREDDIT_URL_PATTERN = re.compile(r"reddit\.com/r/([A-Za-z0-9_]+)", re.IGNORECASE)
 
 PLAN_SYSTEM_PROMPT = """You are a research planner for a content pipeline. You are gathering \
 context on a topic by searching Reddit (fan reactions) and the general web (background facts) \
@@ -178,69 +184,68 @@ class ContextAgent:
 
     def __init__(
         self,
-        llm=None,
+        llm: AnthropicLLM | OpenRouterLLM,
         max_tool_calls: int = _DEFAULT_MAX_TOOL_CALLS,
         max_run_apify_cost: float = _DEFAULT_MAX_RUN_APIFY_COST,
     ):
-        self.llm = llm or AnthropicLLM(model="claude-sonnet-5")
+        self.llm = llm
         self.max_tool_calls = max_tool_calls
         self.max_run_apify_cost = max_run_apify_cost
 
     @traced(name="context_agent.lookup_community")
     def _lookup_community(self, state: ContextAgentState) -> dict:
-        """LangGraph node: run once, before the plan loop starts, to guess
-        which subreddit the topic lives in.
+        """LangGraph node: pick the single largest dedicated subreddit for the
+        topic. Runs once before the plan loop.
 
-        BUG-004's root cause (reddit_search's unscoped, whole-Reddit search
-        surfacing unrelated top posts once "top" sort broke relevance
-        filtering) showed that an unscoped search leans entirely on
-        searchTerms text-matching, with no fallback if that's not precise
-        enough. Grounding a within_community guess in a real Tavily search
-        result — rather than having the plan LLM invent a subreddit name
-        from its own knowledge — avoids searching a plausible-sounding but
-        nonexistent/wrong subreddit and getting zero results back silently.
+        ``search_subreddits`` returns communities matching the topic, each with
+        a real ``membersCount``. We drop nsfw communities, keep those whose
+        name or title contains a topic token (the dedicated-ness guard — a
+        title match is load-bearing because a sub's name can be foreign, e.g.
+        r/ShingekiNoKyojin), and scope the search to the biggest survivor. This
+        replaces the earlier Tavily-URL-scrape heuristic that picked a sub by
+        substring + link order (2026-07-04: it chose the niche r/titanfolk over
+        r/ShingekiNoKyojin for an AoT topic).
 
-        Candidate selection prefers a DEDICATED fan subreddit over a generic
-        hub: the first-reddit-URL-wins heuristic this replaced picked r/anime
-        for a Wistoria topic (2026-07-02 run) because r/anime hosts episode
-        megathreads and ranked first in the Tavily results — a defensible
-        guess that then fed reddit_search a 10M-member haystack where the
-        niche thread lost the ranking contest. A dedicated sub (r/Wistoria)
-        is self-scoping: nearly everything in it matches the topic, so
-        retrieval quality stops depending on search ranking at all. The
-        preference rule is a token match between the topic text and the
-        subreddit name (e.g. "Wistoria" -> r/Wistoria); when no candidate
-        name matches a topic token, fall back to the first candidate, which
-        preserves the old behavior.
+        Fail-soft: any failure — the community call raising, no communities
+        returned, or none passing the filter — leaves ``within_community``
+        empty, which routes reddit_search to its unscoped relevance search
+        (BUG-004-validated). A raised call logs a warning (operator should see
+        it); the benign no-dedicated-sub case logs at info. The lookup can only
+        upgrade the search, never crash the run.
 
-        Deliberately NOT counted in tavily_calls/max_tool_calls: this is a
-        one-time setup step, not part of the plan loop's own research
-        budget, so it doesn't eat into the floor/ceiling accounting
-        decide_next_step enforces.
+        Deliberately NOT counted in tavily_calls/max_tool_calls (one-time
+        setup, same as the Tavily call it replaces), but its measured
+        ~$0.035 flat Apify cost IS added to apify_cost_estimate.
         """
-        result = tavily_search(f"{state.topic} reddit subreddit")
-
-        candidates: list[str] = []
-        for url in result.urls:
-            match = _SUBREDDIT_URL_PATTERN.search(url)
-            if match and match.group(1) not in candidates:
-                candidates.append(match.group(1))
-
-        if not candidates:
+        try:
+            communities = search_subreddits(state.topic)
+        except Exception:
+            logger.warning(
+                "search_subreddits failed for topic %r; searching unscoped",
+                state.topic,
+                exc_info=True,
+            )
             return {"within_community": ""}
 
-        # Tokens of length >= 4 skip connective words ("to", "the") while
-        # keeping IP names; candidate order (Tavily ranking) breaks ties.
+        spent = state.apify_cost_estimate + COMMUNITY_SEARCH_COST
+
         topic_tokens = [
             token for token in re.findall(r"[a-z0-9]+", state.topic.lower()) if len(token) >= 4
         ]
-        chosen = candidates[0]
-        for name in candidates:
-            if any(token in name.lower() for token in topic_tokens):
-                chosen = name
-                break
 
-        return {"within_community": f"r/{chosen}"}
+        def _dedicated(sub: Subreddit) -> bool:
+            haystack = f"{sub.name} {sub.title}".lower()
+            return any(token in haystack for token in topic_tokens)
+
+        candidates = [sub for sub in communities if not sub.nsfw and _dedicated(sub)]
+        if not candidates:
+            logger.info(
+                "no dedicated subreddit for topic %r; searching unscoped", state.topic
+            )
+            return {"within_community": "", "apify_cost_estimate": spent}
+
+        chosen = max(candidates, key=lambda sub: sub.members)
+        return {"within_community": f"r/{chosen.name}", "apify_cost_estimate": spent}
 
     @traced(name="context_agent.plan")
     def _plan(self, state: ContextAgentState) -> dict:

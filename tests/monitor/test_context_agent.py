@@ -4,6 +4,7 @@ from src.monitor.tools import estimate_cost
 from src.monitor.tools._types import ToolResult
 import src.monitor.context_agent as context_agent_module
 from src.monitor.context_agent import ContextAgent, build_context_bundle, decide_next_step, ContextAgentState
+from src.monitor.tools.subreddit_search import COMMUNITY_SEARCH_COST, Subreddit
 
 
 def _reddit_call_params() -> dict:
@@ -198,133 +199,78 @@ def test_act_reddit_appends_to_existing_text(monkeypatch):
     }
 
 
-def test_lookup_community_extracts_subreddit_from_url(monkeypatch):
+def _fresh_state(topic):
+    return ContextAgentState(
+        topic=topic, reddit_text="", tavily_text="", reddit_calls=0,
+        tavily_calls=0, apify_cost_estimate=0.0, within_community="",
+        next_action="", next_query="", urls=[], summary="", key_moments=[],
+    )
+
+
+def test_lookup_community_picks_biggest_dedicated(monkeypatch):
     monkeypatch.setattr(
-        context_agent_module,
-        "tavily_search",
-        lambda query: ToolResult(
-            text="Wistoria is discussed on its subreddit.",
-            urls=["https://www.reddit.com/r/Wistoria/", "https://example.com/wiki"],
-        ),
+        context_agent_module, "search_subreddits",
+        lambda topic: [
+            Subreddit("attackontitan", "Attack on Titan", 667068, False),
+            Subreddit("ShingekiNoKyojin", "Shingeki No Kyojin (Attack on Titan)", 2463826, False),
+        ],
     )
-    agent = ContextAgent(llm=object())  # llm unused by _lookup_community
-    state = ContextAgentState(
-        topic="Wistoria",
-        reddit_text="",
-        tavily_text="",
-        reddit_calls=0,
-        tavily_calls=0,
-        apify_cost_estimate=0.0,
-        within_community="",
-        next_action="",
-        next_query="",
-        urls=[],
-        summary="",
-        key_moments=[],
-    )
-
-    result = agent._lookup_community(state)
-
-    assert result == {"within_community": "r/Wistoria"}
+    agent = ContextAgent(llm=object())
+    result = agent._lookup_community(_fresh_state("Attack on Titan finale"))
+    assert result == {
+        "within_community": "r/ShingekiNoKyojin",
+        "apify_cost_estimate": COMMUNITY_SEARCH_COST,
+    }
 
 
-def test_lookup_community_prefers_dedicated_sub_over_generic_hub(monkeypatch):
-    """Regression for the 2026-07-02 run: the first reddit URL Tavily returned
-    pointed at r/anime (which hosts episode megathreads, so it often ranks
-    first), and first-match-wins scoped the search to a 10M-member haystack.
-    A candidate whose name matches a topic token (Wistoria -> r/Wistoria)
-    must now win over an earlier generic hub."""
+def test_lookup_community_matches_on_title_when_name_is_foreign(monkeypatch):
+    # name carries no topic token; only the title does — title match is load-bearing
     monkeypatch.setattr(
-        context_agent_module,
-        "tavily_search",
-        lambda query: ToolResult(
-            text="episode discussion threads",
-            urls=[
-                "https://www.reddit.com/r/anime/comments/abc/wistoria_episode_11_discussion/",
-                "https://www.reddit.com/r/Wistoria/comments/def/elfie_and_will/",
-            ],
-        ),
+        context_agent_module, "search_subreddits",
+        lambda topic: [
+            Subreddit("ShingekiNoKyojin", "Shingeki No Kyojin (Attack on Titan)", 2463826, False)
+        ],
     )
-    agent = ContextAgent(llm=object())  # llm unused by _lookup_community
-    state = ContextAgentState(
-        topic="Wistoria Episode 11, Elfie lost Will to Zeo",
-        reddit_text="",
-        tavily_text="",
-        reddit_calls=0,
-        tavily_calls=0,
-        apify_cost_estimate=0.0,
-        within_community="",
-        next_action="",
-        next_query="",
-        urls=[],
-        summary="",
-        key_moments=[],
-    )
-
-    result = agent._lookup_community(state)
-
-    assert result == {"within_community": "r/Wistoria"}
+    agent = ContextAgent(llm=object())
+    result = agent._lookup_community(_fresh_state("Attack on Titan finale"))
+    assert result["within_community"] == "r/ShingekiNoKyojin"
 
 
-def test_lookup_community_falls_back_to_first_candidate_when_no_token_match(monkeypatch):
-    """When no candidate subreddit name matches a topic token, the old
-    first-URL behavior is preserved rather than returning nothing."""
+def test_lookup_community_drops_nsfw(monkeypatch):
     monkeypatch.setattr(
-        context_agent_module,
-        "tavily_search",
-        lambda query: ToolResult(
-            text="discussion threads",
-            urls=[
-                "https://www.reddit.com/r/television/comments/abc/finale/",
-                "https://www.reddit.com/r/FanTheories/comments/def/finale/",
-            ],
-        ),
+        context_agent_module, "search_subreddits",
+        lambda topic: [
+            Subreddit("TitanNSFW", "Attack on Titan NSFW", 9_000_000, True),  # biggest but nsfw
+            Subreddit("attackontitan", "Attack on Titan", 667068, False),
+        ],
     )
-    agent = ContextAgent(llm=object())  # llm unused by _lookup_community
-    state = ContextAgentState(
-        topic="Show X finale",
-        reddit_text="",
-        tavily_text="",
-        reddit_calls=0,
-        tavily_calls=0,
-        apify_cost_estimate=0.0,
-        within_community="",
-        next_action="",
-        next_query="",
-        urls=[],
-        summary="",
-        key_moments=[],
-    )
-
-    result = agent._lookup_community(state)
-
-    assert result == {"within_community": "r/television"}
+    agent = ContextAgent(llm=object())
+    result = agent._lookup_community(_fresh_state("Attack on Titan"))
+    assert result["within_community"] == "r/attackontitan"
 
 
-def test_lookup_community_empty_when_no_reddit_url(monkeypatch):
+def test_lookup_community_empty_when_none_pass_token(monkeypatch):
+    """BUG-014 invariant preserved: no dedicated sub -> empty -> unscoped
+    fallback, never scope to a big unrelated sub."""
     monkeypatch.setattr(
-        context_agent_module,
-        "tavily_search",
-        lambda query: ToolResult(text="no reddit link here", urls=["https://example.com/wiki"]),
+        context_agent_module, "search_subreddits",
+        lambda topic: [
+            Subreddit("movies", "Movies", 30_000_000, False),
+            Subreddit("television", "Television", 18_000_000, False),
+        ],
     )
-    agent = ContextAgent(llm=object())  # llm unused by _lookup_community
-    state = ContextAgentState(
-        topic="Wistoria",
-        reddit_text="",
-        tavily_text="",
-        reddit_calls=0,
-        tavily_calls=0,
-        apify_cost_estimate=0.0,
-        within_community="",
-        next_action="",
-        next_query="",
-        urls=[],
-        summary="",
-        key_moments=[],
-    )
+    agent = ContextAgent(llm=object())
+    result = agent._lookup_community(_fresh_state("Obsession 2025"))
+    assert result == {"within_community": "", "apify_cost_estimate": COMMUNITY_SEARCH_COST}
 
-    result = agent._lookup_community(state)
 
+def test_lookup_community_fail_soft_on_exception(monkeypatch):
+    def boom(topic):
+        raise RuntimeError("apify down")
+
+    monkeypatch.setattr(context_agent_module, "search_subreddits", boom)
+    agent = ContextAgent(llm=object())
+    result = agent._lookup_community(_fresh_state("Attack on Titan"))
     assert result == {"within_community": ""}
 
 
@@ -421,6 +367,7 @@ def test_run_full_loop(monkeypatch):
         "tavily_search",
         lambda query: ToolResult(text="background: finale aired June 28", urls=["https://example.com/article"]),
     )
+    monkeypatch.setattr(context_agent_module, "search_subreddits", lambda topic: [])
 
     plan_decisions = [
         PlanDecision(next_action="reddit_search", next_query="finale reaction"),
@@ -442,9 +389,9 @@ def test_run_full_loop(monkeypatch):
         key_moments=["showrunner confirms no reunion planned"],
         references=["https://reddit.com/r/x/comments/1", "https://example.com/article"],
         sources=["reddit_search", "tavily_search"],
-        # One reddit call priced at the shared call params (was a hardcoded
-        # 0.86 — the pre-AUD-M1 wrong estimate: 20-post defaults for a 5-post call).
-        apify_cost_estimate=_expected_reddit_call_cost(),
+        # One reddit call priced at the shared call params, plus the one-time
+        # community-lookup Apify cost every Path B run now pays.
+        apify_cost_estimate=COMMUNITY_SEARCH_COST + _expected_reddit_call_cost(),
     )
 
 
@@ -549,6 +496,7 @@ def test_run_floor_override_uses_topic_not_empty_query(monkeypatch):
 
     monkeypatch.setattr(context_agent_module, "reddit_search", fake_reddit_search)
     monkeypatch.setattr(context_agent_module, "tavily_search", fake_tavily_search)
+    monkeypatch.setattr(context_agent_module, "search_subreddits", lambda topic: [])
 
     plan_decisions = [
         PlanDecision(next_action="reddit_search", next_query="finale reaction"),
@@ -564,13 +512,10 @@ def test_run_floor_override_uses_topic_not_empty_query(monkeypatch):
 
     agent.run("Wistoria season 2 finale")
 
-    # First entry is _lookup_community's own upfront tavily call (runs once,
-    # before the loop, regardless of plan decisions); second is the
-    # floor-override call under test.
-    assert recorded_tavily_queries == [
-        "Wistoria season 2 finale reddit subreddit",
-        "Wistoria season 2 finale",
-    ], (
+    # _lookup_community no longer makes a tavily call (it uses search_subreddits
+    # now), so the only recorded tavily query is the floor-override call under
+    # test — which must use the topic, not the empty next_query.
+    assert recorded_tavily_queries == ["Wistoria season 2 finale"], (
         f"floor-override tavily call must use the topic, not empty next_query; "
         f"got {recorded_tavily_queries!r}"
     )
