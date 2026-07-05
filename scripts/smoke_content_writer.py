@@ -8,7 +8,8 @@ and prints the per-job credit estimate. Reference key-art paths are REQUIRED
 
 By default runs dry_run (cost estimate only, no credits spent). --real prints the
 credit table, requires an interactive 'yes', then renders every job (with resume
-manifest), synthesizes narration (OpenAI TTS), and assembles the final mp4.
+manifest), synthesizes narration (Higgsfield text2speech_v2, ~0.15cr/line), and
+assembles the final mp4.
 
 USAGE:
   uv run python scripts/smoke_content_writer.py --pitch-id 12 --refs refs/eve_1.jpg refs/eve_2.jpg
@@ -35,7 +36,7 @@ from src.database import SessionLocal  # noqa: E402
 from src.generation.assembly import assemble  # noqa: E402
 from src.generation.content_writer import ContentWriter  # noqa: E402
 from src.generation.executor import execute  # noqa: E402
-from src.providers.tts.openai_tts import OpenAITTS  # noqa: E402
+from src.providers.tts.higgsfield_tts import HiggsfieldTTS  # noqa: E402
 from src.generation.render_adapters.adapter import render_jobs  # noqa: E402
 from src.generation.render_adapters.rules import RenderRules  # noqa: E402
 from src.models.angle_pitch import AnglePitchRecord  # noqa: E402
@@ -243,7 +244,7 @@ def main() -> None:
                 result,
                 package,
                 str(Path(out_dir) / "final.mp4"),
-                tts=OpenAITTS(),
+                tts=HiggsfieldTTS(),  # ~0.15cr per narration line (measured)
                 bgm_path=args.bgm,
             )
             print(f"\n[FINAL] {final_path}")

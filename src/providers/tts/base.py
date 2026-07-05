@@ -1,9 +1,10 @@
 """Abstract TTS provider seat — narration synthesis for the assembly step.
 
 Mirrors the provider-ABC pattern of src/providers/llm: a minimal interface the
-pipeline codes against, with concrete vendors behind it (OpenAI today; the
-Higgsfield-native text2speech_v2 surfaced in the CLI 1.1.5 catalog is the
-logged alternative — spec 2026-07-04 §6.5 — to compare before locking a voice).
+pipeline codes against, with concrete vendors behind it. Current backend:
+Higgsfield text2speech_v2 (higgsfield_tts.py — D7 amended 2026-07-05, billed in
+render credits, ~0.15cr/line). The seat exists precisely so a vendor swap is one
+new subclass, which is how the OpenAI→Higgsfield flip happened.
 """
 
 from abc import ABC, abstractmethod
