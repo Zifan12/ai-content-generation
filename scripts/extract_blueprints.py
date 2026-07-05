@@ -15,6 +15,7 @@ from src.models.blueprint import BlueprintRecord  # noqa: E402
 from src.models.niche import Niche  # noqa: E402
 from src.models.transcript import Transcript  # noqa: E402
 from src.models.trend import RawContentItem  # noqa: E402
+from src.providers.llm.factory import llm_for_seat  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -89,7 +90,7 @@ def main() -> None:
 
     try:
         items = find_unprocessed(db, args.extractor_version, args.niche_id, args.limit)
-        extractor = BlueprintExtractor()
+        extractor = BlueprintExtractor(llm=llm_for_seat("blueprint_extractor"))
         successes = 0
         failures = 0
 

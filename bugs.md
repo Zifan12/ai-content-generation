@@ -349,7 +349,7 @@ Track every shipped feature that fails, what was tried, and what fixed it.
 
 ### BUG-010 - Langfuse records no token/cost/model for OpenRouter-seat generations — cost & near-truncation auditing is blind since the fleet migration (BUG-001 regressed for the new provider)
 - Date opened: 2026-07-03 (found doing a per-call Langfuse health audit of the Task 8 tail run)
-- Status: open
+- Status: fixed (code applied + offline green; live-trace confirmation pending)
 - Feature: `src/providers/llm/openrouter_llm.py` `parse_with_raw` (the `@traced("openrouter_llm.parse")`
   span). Affects ALL 7 LLM seats now that the fleet routes through OpenRouter (commit `0dece0b` +
   the seat migration `780bb6e`/`d4da985`/`320da0b`).
@@ -370,16 +370,31 @@ Track every shipped feature that fails, what was tried, and what fixed it.
   2. `GET {LANGFUSE_HOST}/api/public/observations?type=GENERATION` with the pk/sk as basic auth.
   3. Observe `promptTokens`/`completionTokens`/`calculatedTotalCost`/`model` null on every
      `openrouter_llm.parse` observation.
-- Root cause: SUSPECTED (not yet confirmed at source) — the OpenRouter provider's traced span does
-  not report the response `usage` (and model id) into the current Langfuse observation, whereas the
-  Anthropic path does. To confirm by reading how `anthropic_llm.parse` surfaces usage to Langfuse
-  vs what `openrouter_llm.parse` omits.
+- Root cause: CONFIRMED at source (2026-07-03). `traced` (`src/observability/tracing.py`) just wraps
+  `langfuse.observe()`, which does NOT populate token usage / model — those must be set explicitly on
+  the observation. NEITHER wrapper did so: `parse_with_raw` computes the counts into `raw` but only
+  `logger.info`s them; it never tells Langfuse. (The Anthropic path only LOOKED fine because Langfuse
+  auto-recognizes the Anthropic SDK client; the openai-SDK-over-OpenRouter transport is not
+  auto-instrumented, so its generations show null.) Two adjacent tracing defects surfaced in the same
+  read: (a) `IdeaFitGate.evaluate` had NO `@traced` span at all — its LLM call showed only as a
+  parentless `openrouter_llm.parse` generation; (b) `@traced(capture_input=True)` auto-captured the
+  `response_model` positional arg — a Pydantic CLASS — which serialized to `<mappingproxy>` /
+  `<member_descriptor>` garbage in every generation's input.
 - Attempted fixes:
-  1. None yet. Direction: have `openrouter_llm` report token usage + model into the active
-     observation, mirroring whatever the Anthropic provider does that made BUG-001's fix hold.
-- Date fixed: —
-- Validation evidence: pending — after the fix, the same `/api/public/observations` pull should show
-  populated `promptTokens`/`completionTokens`/`calculatedTotalCost` on `openrouter_llm.parse`.
+  1. (2026-07-03) In BOTH `parse_with_raw` wrappers (anthropic + openrouter), set the `@traced`
+     decorator `capture_input=False, capture_output=False` and add one
+     `get_client().update_current_generation(input={system,prompt,schema}, output=..., model=self.model,
+     usage_details={input, output})` call — fixes the null usage/model AND the `<mappingproxy>` input
+     together. Also decorated `IdeaFitGate.evaluate` with `@traced(name="idea_fit_evaluate")` (mirrors
+     the other stage spans) so the gate finally gets a named parent span.
+- Date fixed: 2026-07-03 (code applied; live-trace confirmation pending)
+- Validation evidence: offline green — `tests/monitor` + `tests/providers` 127 passed / 1 skipped (the
+  127 exercise `parse_with_raw` with the new `update_current_generation` call in place: returns the
+  parsed model correctly, no crash); ruff clean on all 3 edited files; mypy +0 new (`anthropic_llm.py`
+  holds at its 17 pre-existing Anthropic-SDK typing errors, `openrouter_llm.py` + `idea_fit_gate.py`
+  clean). PENDING: a live pitch run → re-pull `/api/public/observations` and confirm populated
+  `promptTokens`/`completionTokens`/`model`, a named `idea_fit_evaluate` span, and clean
+  (non-`<mappingproxy>`) generation input.
 
 ### BUG-011 - StoryCraftVerdict truncated at the shared max_tokens=1024 default — crashed the first fully-completed Task 8 tail run
 - Date opened: 2026-07-02 (crashed the first live `--topic --force` tail run of the session)
@@ -441,3 +456,84 @@ Track every shipped feature that fails, what was tried, and what fixed it.
      too-similar entries instead of only warning.
 - Date fixed: —
 - Validation evidence: pending.
+
+### BUG-014 - `_lookup_community`'s no-dedicated-subreddit fallback silently reintroduces the exact mega-sub failure BUG-008 fixed
+- Date opened: 2026-07-04 (found building Task 1's fixture set for the pitcher-groundedness-fix
+  plan, `docs/superpowers/plans/2026-07-03-pitcher-groundedness-fix.md`; topic: Obsession (2025)/
+  Nikki Freeman deleted ending)
+- Status: open
+- Feature: `ContextAgent._lookup_community` (`src/monitor/context_agent.py:190-244`) — specifically
+  its "no candidate matches a topic token → fall back to `candidates[0]`" branch (line 238) — plus
+  `reddit_search`'s `searchSort="relevance"` scoped search (`src/monitor/tools/reddit_search.py:181`).
+- Environment: live `--topic "Obsession (2025) fans wishing the movie had kept its deleted alternate
+  ending, where Nikki Freeman gets free instead of the dark fate Bear's wish trapped her in"` run,
+  $0.92 Apify spend (within the $2.00 ceiling), Apify `harshmaur/reddit-scraper` actor.
+- Error/behavior: the persisted `TrendingEventRecord` (id=10)'s `reaction_sample` is entirely about
+  **"A Minecraft Movie" (2025)** — Steve, elytra, the End portal, Jack Black — zero connection to
+  Obsession. `gap_agent`'s `audience_want` (Ender Dragon / End portal rampage) is a CORRECT read of
+  the garbage it was given, not a gap_agent bug. Traced via real Langfuse observations (not
+  inferred): the tool's actual call was `next_query: "Obsession 2025 deleted ending"`,
+  `within_community: "r/shittymoviedetails"` — and the top-ranked result returned from that scoped,
+  `searchSort="relevance"` search was an unrelated 19,512-upvote r/shittymoviedetails post about a
+  different movie entirely.
+- Reproduction steps:
+  1. Run `--topic "<a topic with no dedicated fan subreddit>"` through Path B.
+  2. Pull the real trace: `context_agent.lookup_community`'s output (the chosen `within_community`)
+     and the subsequent `context_agent.act_reddit`'s output (the actual `reddit_text` returned).
+  3. Observe the chosen community has no token match to the topic, and the scoped "relevance" search
+     still returns an off-topic top post from that community.
+- Root cause: CONFIRMED, three-layer trace, all read from current source (not the historical BUG-004/
+  BUG-008 entries alone — verified the code still matches what those entries claim):
+  1. `_lookup_community` (line 222) searches Tavily for `"{topic} reddit subreddit"`, extracts
+     subreddit names from result URLs, and prefers one whose name token-matches the topic
+     (line 239-242) — e.g. "Wistoria" → r/Wistoria. For Obsession (2025), a small recent horror
+     film, no dedicated subreddit exists (or none surfaced in the URLs), so no token match — line
+     238's fallback (`chosen = candidates[0]`) fires, landing on r/shittymoviedetails, Tavily's
+     top-ranked hit for the generic query, unrelated to Obsession specifically.
+  2. The function's OWN docstring (line 213-215) names this exactly: "when no candidate name matches
+     a topic token, fall back to the first candidate, **which preserves the old behavior**" — the
+     old behavior being BUG-008's original bug (first-URL-wins landed on a big generic hub, not a
+     dedicated sub).
+  3. `reddit_search`'s scoped `searchSort="relevance"` (fixed for BUG-008 specifically against
+     r/anime, a large generic subreddit) does not actually solve "big generic subreddit + niche
+     query" — it only reliably works when the community is SELF-SCOPING (small/dedicated, so
+     "everything matches", per `reddit_search.py:166-167`'s own comment). r/shittymoviedetails is
+     the same size/genericity class as r/anime. BUG-008's fix (token-preference + relevance sort)
+     never actually eliminated the underlying mega-sub-relevance problem — it only avoids TRIGGERING
+     it when a dedicated subreddit happens to exist. When none exists, the fallback path walks
+     straight back into the identical failure mode, just against a different generic subreddit.
+- Attempted fixes:
+  1. FIXED (2026-07-04, user-written): went with direction (b) — `_lookup_community`
+     (`context_agent.py:238-247`) now leaves `chosen = None` unless the token-match loop actually
+     finds a match, returning `{"within_community": ""}` in that case instead of falling back to
+     `candidates[0]`. Empty `within_community` routes to `reddit_search`'s unscoped
+     `searchSort="relevance"` path, already validated accurate by BUG-004's own probe. Considered
+     and deferred (a) (a deterministic keyword-presence floor) and a minimum-upvote guard — no
+     evidence yet that either is needed; `idea_fit_gate`'s `heat_score` already exists as the layer
+     that would catch a genuinely low-engagement match, and bundling untested guards violates
+     one-variable-at-a-time debugging discipline. Revisit only if a real case shows the gap.
+     Docstring (`context_agent.py:213-215`) and the stale regression test
+     (`test_lookup_community_falls_back_to_first_candidate_when_no_token_match` →
+     `test_lookup_community_empty_when_no_token_match`, `tests/monitor/test_context_agent.py`)
+     updated to match.
+- Date fixed: 2026-07-04
+- Validation evidence: `tests/monitor/test_context_agent.py` 18/18 passing. Live re-run of the same
+  Obsession topic string: `within_community` came back empty (unscoped), Apify spend dropped to
+  $0.23 (vs $0.92 scoped), and the persisted `TrendingEventRecord`'s `reaction_sample` is genuine,
+  on-topic Obsession discussion (2,892-upvote real post re: Bear/Nikki's fate) — confirmed by direct
+  DB read, not just the console summary line. Unblocks Task 1 of the groundedness-fix plan.
+
+### BUG-013 - GapAnalysis truncated at the shared max_tokens=1024 default — killed the first Task 1 fixture-building Path B run (AOT topic)
+- Date opened: 2026-07-03 (crashed the first real `--topic` run made while building the pitcher-groundedness-fix fixture set, `docs/superpowers/plans/2026-07-03-pitcher-groundedness-fix.md` Task 1)
+- Status: open
+- Feature: `GapAgent.analyze` (`src/monitor/gap_agent.py`, the `self.llm.parse(response_model=GapAnalysis, ...)` call) — runs once per surviving event, before the pitcher.
+- Environment: OpenRouter fleet, model `deepseek/deepseek-v4-pro`, live `--topic "Attack on Titan fans reacting to the series finale backlash"` run (no `--dry-run`; real Apify+LLM spend, $0.92 of the $2.00 context-agent ceiling already spent when it crashed).
+- Error/behavior: `src.providers.llm.anthropic_llm.TruncatedResponseError: Response hit max_tokens=1024 before completing (GapAnalysis, model=deepseek/deepseek-v4-pro)`. Same failure class as `WRITER_MAX_TOKENS` / `_PITCH_MAX_TOKENS` / BUG-011's `StoryCraftVerdict` fix (the `shared_max_tokens_truncation` learning): `analyze()`'s `parse()` call carries no per-caller `max_tokens` override, so it falls back to the shared 1024 default. Did not trip on the earlier Wistoria runs (events 7/8) — truncation is output-length-dependent, and AOT's real GapAnalysis (dominant_emotion, audience_want, evidence_quotes, reasoning) apparently ran long enough to exceed 1024 where Wistoria's happened not to. `gap_agent.py` is the one pipeline seat in this family (`story_pitcher.py` has `_PITCH_MAX_TOKENS=8192`, `story_craft_gate.py` fixed in BUG-011) that never got the per-caller override.
+- Reproduction steps:
+  1. Run `uv run python -m scripts.pitch_angles --topic "<a topic whose real GapAnalysis output runs long>"`.
+  2. Observe `TruncatedResponseError ... max_tokens=1024 ... GapAnalysis` from `gap_agent.analyze`.
+- Root cause: `gap_agent.py`'s `analyze()` `parse()` call has no per-caller `max_tokens` argument — uses the shared 1024 default, same class as BUG-011.
+- Attempted fixes:
+  1. None yet. Direction (mirrors BUG-011's fix exactly): add a per-caller `max_tokens` constant in `gap_agent.py` (e.g. `_GAP_MAX_TOKENS`, matching `_PITCH_MAX_TOKENS`'s 8192) and pass it into the `parse()` call. Do not raise the shared default.
+- Date fixed: —
+- Validation evidence: pending — blocks Task 1 of the groundedness-fix plan until fixed (can't pull a real `GapAnalysis` for any topic whose output happens to run long).

@@ -2,6 +2,14 @@
 from src.monitor.schemas import ContextBundle, GapAnalysis, TrendingEvent
 from src.observability.tracing import traced
 from src.providers.llm.anthropic_llm import AnthropicLLM
+from src.providers.llm.openrouter_llm import OpenRouterLLM
+
+# A real GapAnalysis (dominant_emotion + audience_want + evidence_quotes + reasoning)
+# can exceed parse()'s shared 1024 default and truncate mid-JSON — same failure class
+# as _PITCH_MAX_TOKENS (story_pitcher.py) and BUG-011's StoryCraftVerdict fix
+# (story_craft_gate.py). Hit live on a real --topic run (BUG-013). Per-caller
+# override, never raise the shared default.
+_GAP_MAX_TOKENS = 8192
 
 GAP_SYSTEM_PROMPT = """You are a cultural gap analyst for a short-form video studio.
 
@@ -40,8 +48,8 @@ the material.
 Be specific and concrete. The audience_want must name something a video could actually show."""
 
 class GapAgent:
-    def __init__(self, llm):
-        self.llm = llm or AnthropicLLM(model="claude-sonnet-5")
+    def __init__(self, llm: AnthropicLLM | OpenRouterLLM):
+        self.llm = llm
 
         
     @traced(name="gap_analyze")
@@ -65,6 +73,7 @@ class GapAgent:
             prompt=user_prompt,
             response_model=GapAnalysis,
             system=GAP_SYSTEM_PROMPT,
+            max_tokens=_GAP_MAX_TOKENS,
         )
 
         return analyzed

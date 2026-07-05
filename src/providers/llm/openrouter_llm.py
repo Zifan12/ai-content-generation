@@ -29,7 +29,7 @@ from typing import Type, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
-from src.observability.tracing import traced
+from src.observability.tracing import get_client, traced
 from src.providers.llm.anthropic_llm import TruncatedResponseError
 
 logger = logging.getLogger(__name__)
@@ -148,7 +148,12 @@ class OpenRouterLLM:
             )
         self.client = client
 
-    @traced(name="openrouter_llm.parse", kind="generation")
+    @traced(
+        name="openrouter_llm.parse",
+        kind="generation",
+        capture_input=False,
+        capture_output=False,
+    )
     def parse_with_raw(
         self,
         prompt: str,
@@ -266,6 +271,21 @@ class OpenRouterLLM:
             raw["usage_output_tokens"],
             raw["usage_cache_read_tokens"],
             raw["usage_cache_write_tokens"],
+        )
+
+        # Record a CLEAN input plus usage/model on the Langfuse generation. The
+        # decorator's auto-capture is off: it would otherwise serialize
+        # response_model (a Pydantic CLASS) as <mappingproxy> garbage, and
+        # observe() alone never records token usage/model for the
+        # openai-SDK-over-OpenRouter path (BUG-010 — null tokens/cost/model).
+        get_client().update_current_generation(
+            input={"system": system, "prompt": prompt, "schema": response_model.__name__},
+            output=raw["raw_response"],
+            model=self.model,
+            usage_details={
+                "input": raw["usage_input_tokens"],
+                "output": raw["usage_output_tokens"],
+            },
         )
 
         return parsed, raw

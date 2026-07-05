@@ -282,8 +282,8 @@ class ContentWriter:
     the chosen models natively. Optional retrieved hits ground style/lane only.
     """
 
-    def __init__(self, llm: AnthropicLLM | OpenRouterLLM | None = None):
-        self.llm = llm or AnthropicLLM(model="claude-sonnet-5")
+    def __init__(self, llm: AnthropicLLM | OpenRouterLLM):
+        self.llm = llm
 
     def write(
         self,

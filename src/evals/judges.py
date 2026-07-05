@@ -23,6 +23,7 @@ REPRODUCIBILITY:
 from pydantic import BaseModel, Field
 from typing import Literal
 from src.providers.llm.anthropic_llm import AnthropicLLM
+from src.providers.llm.openrouter_llm import OpenRouterLLM
 
 
 SYSTEM_PROMPT = """You are an expert TikTok content strategist evaluating AI-generated video scripts.
@@ -53,8 +54,8 @@ class ScriptQualityJudge:
     LLM-as-judge scoring TikTok scripts on a 1-5 quality scale.
     """
 
-    def __init__(self, model: str = "claude-sonnet-5"):
-        self.llm = AnthropicLLM(model=model)
+    def __init__(self, llm: AnthropicLLM | OpenRouterLLM):
+        self.llm = llm
 
     def judge(self, video_stats: dict, script: str) -> JudgeVerdict:
         """

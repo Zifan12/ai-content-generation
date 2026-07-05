@@ -8,6 +8,7 @@ from src.monitor.schemas import (
 )
 from src.observability.tracing import traced
 from src.providers.llm.anthropic_llm import AnthropicLLM
+from src.providers.llm.openrouter_llm import OpenRouterLLM
 
 _STORY_CRAFT_MAX_TOKENS = 8192
 
@@ -67,8 +68,8 @@ judge it only as material."""
 
 
 class StoryCraftGate:
-    def __init__(self, llm, playbook_path="config/mode_playbook.yaml"):
-        self.llm = llm or AnthropicLLM(model="claude-sonnet-5")
+    def __init__(self, llm: AnthropicLLM | OpenRouterLLM, playbook_path="config/mode_playbook.yaml"):
+        self.llm = llm
         self.playbook = load_mode_playbook(playbook_path)
 
     @traced(name="story_craft_evaluate")

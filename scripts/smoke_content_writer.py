@@ -2,13 +2,13 @@
 End-to-end smoke for the single-shot pipeline (premise → write → render_jobs → execute).
 
 By default runs dry_run (cost estimate only, no credits spent). Pass --real to
-execute a live Higgsfield render. A premise is auto-generated via PremiseGenerator
-(n=1) unless --premise supplies one manually.
+execute a live Higgsfield render. Exactly one of --premise or --pitch-id is
+required.
 
 USAGE:
-  uv run python scripts/smoke_content_writer.py                     # dry run, auto premise
   uv run python scripts/smoke_content_writer.py --premise "..."     # dry run, named premise
-  uv run python scripts/smoke_content_writer.py --real              # LIVE render (~60cr)
+  uv run python scripts/smoke_content_writer.py --pitch-id 12       # dry run, from approved pitch
+  uv run python scripts/smoke_content_writer.py --real --premise "..."           # LIVE render (~60cr)
   uv run python scripts/smoke_content_writer.py --real --model veo3_1 --premise "..."
 
 OUTPUT:
@@ -32,7 +32,6 @@ from src.database import SessionLocal  # noqa: E402
 from src.generation.content_writer import ContentWriter  # noqa: E402
 from src.providers.llm.factory import llm_for_seat  # noqa: E402
 from src.generation.executor import execute  # noqa: E402
-from src.generation.premise_generator import PremiseGenerator  # noqa: E402
 from src.generation.render_adapters.adapter import render_jobs  # noqa: E402
 from src.generation.render_adapters.rules import RenderRules  # noqa: E402
 from src.models.angle_pitch import AnglePitchRecord  # noqa: E402
@@ -72,19 +71,19 @@ def _git_sha() -> str:
 def _build_parser() -> argparse.ArgumentParser:
     """Build the smoke-script argument parser.
 
-    ``--premise`` and ``--pitch-id`` are mutually exclusive: you either hand-feed
-    a premise string or pull an approved angle's ``take`` from the DB, never both.
-    Omitting both auto-generates a premise via PremiseGenerator. argparse enforces
-    the exclusion itself (exits with code 2 if both are passed).
+    ``--premise`` and ``--pitch-id`` are mutually exclusive and one is required:
+    you either hand-feed a premise string or pull an approved angle's ``take``
+    from the DB, never both, never neither. argparse enforces both constraints
+    (exits with code 2 if zero or both are passed).
     """
     parser = argparse.ArgumentParser(
         description="End-to-end smoke for the single-shot pipeline."
     )
-    source = parser.add_mutually_exclusive_group()
+    source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument(
         "--premise",
         default=None,
-        help="One-line premise to develop. Omit to auto-generate via PremiseGenerator.",
+        help="One-line premise to develop.",
     )
     source.add_argument(
         "--pitch-id",
@@ -128,12 +127,11 @@ def load_pitch(db, pitch_id: int) -> AnglePitchRecord:
 def resolve_premise_and_model(args, db) -> tuple[str, str]:
     """Resolve the premise string and motion model from the chosen source.
 
-    Three mutually-exclusive sources, in priority order:
+    Two mutually-exclusive sources, exactly one required (enforced by argparse):
       1. ``--pitch-id`` — load the approved angle and use its ``take`` as the
          premise; the motion model comes from the routed ``render_backend``
          (visual_satire -> veo3_1).
       2. ``--premise`` — the supplied string, with ``--model``.
-      3. neither — auto-generate one premise via PremiseGenerator, with ``--model``.
 
     Args:
         args: Parsed argparse namespace (uses ``pitch_id``, ``premise``, ``model``).
@@ -150,19 +148,8 @@ def resolve_premise_and_model(args, db) -> tuple[str, str]:
         print(f"{pitch.take}\n")
         return pitch.take, model_cli_id
 
-    if args.premise:
-        print(f"[premise] (supplied)\n{args.premise}\n")
-        return args.premise, args.model
-
-    print("[premise] generating via PremiseGenerator (n=1)…")
-    premise_set = PremiseGenerator().generate(n=1)
-    premise = premise_set.premises[0].premise
-    why = premise_set.premises[0].why_arresting
-    print(f"  {premise}")
-    if why:
-        print(f"  -> {why}")
-    print()
-    return premise, args.model
+    print(f"[premise] (supplied)\n{args.premise}\n")
+    return args.premise, args.model
 
 
 def main() -> None:

@@ -12,7 +12,7 @@ import time
 from anthropic import Anthropic, BadRequestError
 from pydantic import BaseModel
 from typing import TypeVar, Type
-from src.observability.tracing import traced
+from src.observability.tracing import get_client, traced
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +78,12 @@ class AnthropicLLM:
         self.client = Anthropic(timeout=timeout_seconds)
         self._cache_ttl = cache_ttl
 
-    @traced(name="anthropic_llm.parse", kind="generation")
+    @traced(
+        name="anthropic_llm.parse",
+        kind="generation",
+        capture_input=False,
+        capture_output=False,
+    )
     def parse_with_raw(
         self,
         prompt: str,
@@ -172,6 +177,21 @@ class AnthropicLLM:
             raw["usage_output_tokens"],
             raw["usage_cache_read_tokens"],
             raw["usage_cache_write_tokens"],
+        )
+
+        # Record a CLEAN input plus usage/model on the Langfuse generation. The
+        # decorator's auto-capture is off: it would otherwise serialize
+        # response_model (a Pydantic CLASS) as <mappingproxy> garbage. Setting
+        # usage/model explicitly keeps both wrapper seats reporting identically
+        # rather than relying on SDK auto-recognition (BUG-010).
+        get_client().update_current_generation(
+            input={"system": system, "prompt": prompt, "schema": response_model.__name__},
+            output=raw["raw_response"],
+            model=self.model,
+            usage_details={
+                "input": response.usage.input_tokens,
+                "output": response.usage.output_tokens,
+            },
         )
 
         return parsed, raw

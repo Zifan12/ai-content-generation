@@ -26,11 +26,10 @@ def llm_for_seat(
     """Build the configured LLM wrapper for a named pipeline seat.
 
     Args:
-        seat: Seat name as it appears under the ``llm:`` block — one of
-            ``context_agent``, ``idea_fit_gate``, ``gap_agent``,
-            ``story_pitcher``, ``story_craft_gate``, ``content_writer``
-            (the set is defined by the YAML, not hardcoded here, so adding a
-            seat is also config-only plus its call site).
+        seat: Seat name as it appears under the ``llm:`` block in
+            ``config/providers.yaml`` — the set is defined by that YAML, not
+            hardcoded here, so adding a seat is a config edit plus wiring its
+            call site through this function, not a change to this file.
         config_path: Path to the providers YAML; overridable for tests.
 
     Returns:

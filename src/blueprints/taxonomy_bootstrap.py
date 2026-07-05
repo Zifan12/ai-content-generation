@@ -32,7 +32,7 @@ from sqlalchemy import select
 
 from src.database import SessionLocal
 from src.models.blueprint import BlueprintRecord
-from src.providers.llm.anthropic_llm import AnthropicLLM  # noqa: E402
+from src.providers.llm.factory import llm_for_seat  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -92,7 +92,7 @@ def main():
     if len(distinct) < 3:
         raise SystemExit("Not enough distinct values to cluster (need ≥3).")
 
-    llm = AnthropicLLM(model="claude-sonnet-5")
+    llm = llm_for_seat("taxonomy_bootstrap")
 
     prompt=(
         f"Field: {args.field}\n\n"

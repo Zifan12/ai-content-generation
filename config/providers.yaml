@@ -9,23 +9,35 @@ tts:
   active: null
   providers: {}
 
-# Seat -> provider+model for every pipeline LLM call site (spec
-# 2026-07-02-openrouter-mixed-fleet-design.md §3.2). Swapping a seat's model
-# = edit here, no code change. Factory: src/providers/llm/factory.py.
+# Seat -> provider+model for EVERY pipeline LLM call site — the single source
+# of truth for which model a seat runs (spec 2026-07-02-openrouter-mixed-fleet
+# -design.md §3.2, extended by 2026-07-03-openrouter-only-llm-wiring-refactor
+# -design.md). Swapping a seat's model = edit here, no code change. Every
+# class that uses an LLM requires an injected `llm` with NO hardcoded
+# fallback — src/providers/llm/factory.py's llm_for_seat() is the only way a
+# seat gets wired, so this file is authoritative. (config/settings.yaml does
+# NOT carry a model for any seat — if you see one there, it's dead.)
 #
-# Promotion protocol (spec §3.4): a seat moves to a cheap model ONLY after
-# negative-control + parity replay pass. Cheap candidate (Task 1 research,
-# 2026-07-02): google/gemini-2.5-flash-lite ($0.10/M in, 20x cheaper than
-# sonnet; backup google/gemini-2.5-flash). Until promotion, every seat runs
-# sonnet via openrouter (same model as before, one wallet).
+# provider: openrouter routes every model below through one wallet. provider:
+# anthropic (AnthropicLLM, native API) is supported but dormant — zero seats
+# use it today; kept as a fallback option if OpenRouter's json_schema
+# enforcement ever misbehaves for a seat (Anthropic's messages.parse enforces
+# schema server-side; OpenRouter's is provider/model-dependent).
+#
+# Promotion protocol (spec §3.4): a seat moves to a cheaper model ONLY after
+# negative-control + parity replay pass.
 llm:
-  event_extractor:  {provider: openrouter, model: "google/gemini-2.5-flash-lite"}
-  context_agent:    {provider: openrouter, model: "anthropic/claude-sonnet-5"}
-  idea_fit_gate:    {provider: openrouter, model: "google/gemini-2.5-flash"}
-  gap_agent:        {provider: openrouter, model: "anthropic/claude-sonnet-5"}
-  story_pitcher:    {provider: openrouter, model: "anthropic/claude-sonnet-5"}
-  story_craft_gate: {provider: openrouter, model: "anthropic/claude-sonnet-5"}
-  content_writer:   {provider: openrouter, model: "anthropic/claude-sonnet-5"}
+  event_extractor:     {provider: openrouter, model: "google/gemini-2.5-flash-lite"}
+  context_agent:       {provider: openrouter, model: "google/gemini-2.5-flash"}
+  idea_fit_gate:       {provider: openrouter, model: "google/gemini-2.5-flash"}
+  gap_agent:           {provider: openrouter, model: "deepseek/deepseek-v4-pro"}
+  story_pitcher:       {provider: openrouter, model: "deepseek/deepseek-v4-pro"}
+  story_craft_gate:    {provider: openrouter, model: "deepseek/deepseek-v4-pro"}
+  content_writer:      {provider: openrouter, model: "deepseek/deepseek-v4-pro"}
+  blueprint_extractor: {provider: openrouter, model: "deepseek/deepseek-v4-pro"}
+  taxonomy_bootstrap:  {provider: openrouter, model: "deepseek/deepseek-v4-pro"}
+  eval_judge:          {provider: openrouter, model: "anthropic/claude-sonnet-5"}
+  groundedness_judge:  {provider: openrouter, model: "google/gemini-2.5-flash"}
 
 image:
   active: null

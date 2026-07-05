@@ -18,6 +18,7 @@ class is fully testable without network calls.
 from src.monitor.schemas import DedupVerdict, TrendingEvent
 from src.observability.tracing import traced
 from src.providers.llm.anthropic_llm import AnthropicLLM
+from src.providers.llm.openrouter_llm import OpenRouterLLM
 
 
 _DEDUP_SYSTEM_PROMPT = """You are a deduplication judge for a trending-events pipeline. You are given two \
@@ -67,17 +68,15 @@ class EventExtractor:
     and return a list, so they compose cleanly in sequence.
     """
 
-    def __init__(self, llm):
+    def __init__(self, llm: AnthropicLLM | OpenRouterLLM):
         """Store the LLM used for dedup judgments.
 
         Args:
-            llm: An AnthropicLLM (or test fake) exposing a ``parse(prompt,
-                response_model, system=...)`` method that returns a validated
-                Pydantic instance. If falsy, a default Sonnet client is built —
-                Sonnet is used because the "same event?" judgment benefits from
-                stronger reasoning than Haiku, though this can be tuned.
+            llm: An AnthropicLLM/OpenRouterLLM (or test fake) exposing a
+                ``parse(prompt, response_model, system=...)`` method that
+                returns a validated Pydantic instance.
         """
-        self.llm = llm or AnthropicLLM(model="claude-sonnet-5")
+        self.llm = llm
 
     @staticmethod
     def _sort_and_cap(events: list[TrendingEvent], top_n: int) -> list[TrendingEvent]:

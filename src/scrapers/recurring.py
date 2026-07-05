@@ -12,9 +12,10 @@ from src.scrapers.tiktok import TikTokScraper
 from src.database import SessionLocal
 from src.models.niche import Niche
 from src.models.transcript import Transcript  
-from src.blueprints.extractor import BlueprintExtractor 
+from src.blueprints.extractor import BlueprintExtractor
 from src.models.extractor_response import ExtractorResponse
 from src.blueprints.pricing import compute_response_cost
+from src.providers.llm.factory import llm_for_seat
 
 class BudgetExceeded(Exception): 
     pass 
@@ -105,7 +106,7 @@ def run_niche_scrape(niche_id: int, session_factory: Callable[[], Session] = Ses
             result["items_inserted"] = inserted
             result["items_updated"] = updated
 
-            extractor = BlueprintExtractor()
+            extractor = BlueprintExtractor(llm=llm_for_seat("blueprint_extractor"))
 
             for item in items:
                 transcript = _get_transcript_text(db, item.id)

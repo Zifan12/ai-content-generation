@@ -29,7 +29,6 @@ render_backends:
 context_agent:
   max_tool_calls: 5      # hard ceiling — agent EMITs regardless when hit (cost cap)
   min_reactions: 3       # rubric: >= this many distinct fan reactions = "enough"
-  model: claude-sonnet-4-6
 
 # RAG (retrieval-augmented generation) — P2
 rag:

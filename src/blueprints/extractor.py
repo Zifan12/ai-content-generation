@@ -14,6 +14,7 @@ from src.models.trend import RawContentItem
 from src.models.extractor_response import ExtractorResponse
 from src.observability.tracing import traced
 from src.providers.llm.anthropic_llm import AnthropicLLM
+from src.providers.llm.openrouter_llm import OpenRouterLLM
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -206,8 +207,8 @@ class BlueprintExtractor:
     responses via reparse_from_cache() without re-calling the API.
     """
 
-    def __init__(self, llm: AnthropicLLM | None = None):
-        self.llm = llm or AnthropicLLM(model="claude-sonnet-5")
+    def __init__(self, llm: AnthropicLLM | OpenRouterLLM):
+        self.llm = llm
 
     @traced(name="blueprints.extract", kind="generation")
     def extract(self, item: RawContentItem, transcript_text: str | None, niche_label: str, db: Session) -> Blueprint:

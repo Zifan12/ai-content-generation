@@ -29,6 +29,9 @@ from datetime import datetime, timezone
 from pydantic import BaseModel, ConfigDict
 
 from src.monitor.schemas import ContentMode, IdeaFitResult, TrendingEvent
+from src.observability.tracing import traced
+from src.providers.llm.anthropic_llm import AnthropicLLM
+from src.providers.llm.openrouter_llm import OpenRouterLLM
 
 logger = logging.getLogger(__name__)
 
@@ -192,9 +195,10 @@ class IdeaFitGate:
     """Screen a TrendingEvent for idea-fit before spending LLM / render credits.
 
     Args:
-        llm: An AnthropicLLM (or test fake) with a ``parse(prompt, response_model,
-            system=...)`` method.  Defaults to Sonnet — the fictional /
-            rendered-payoff distinction is nuanced enough to need it.
+        llm: An AnthropicLLM/OpenRouterLLM (or test fake) with a
+            ``parse(prompt, response_model, system=...)`` method — the
+            fictional / rendered-payoff distinction is nuanced enough to
+            need a capable model.
         stale_days_threshold: Events older than this are auto-killed without
             calling the LLM (default 14 days).  A stale wave cannot be fixed
             by render quality — this was BUG-002's root cause.
@@ -202,19 +206,14 @@ class IdeaFitGate:
 
     def __init__(
         self,
-        llm=None,
+        llm: AnthropicLLM | OpenRouterLLM,
         *,
         stale_days_threshold: float = _STALE_DAYS_DEFAULT,
     ) -> None:
-        if llm is None:
-            from src.providers.llm.anthropic_llm import (
-                AnthropicLLM,
-            )  # lazy: not needed in tests
-
-            llm = AnthropicLLM(model="claude-sonnet-5")
         self.llm = llm
         self._stale_threshold = stale_days_threshold
 
+    @traced(name="idea_fit_evaluate")
     def evaluate(self, event: TrendingEvent) -> IdeaFitResult:
         """Run all three checks and return a verdict with full provenance.
 

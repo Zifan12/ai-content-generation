@@ -28,6 +28,7 @@ from src.models.eval import EvalRun # noqa: E402
 from src.models.niche import Niche # noqa: E402
 from src.models.transcript import Transcript# noqa: E402
 from src.models.trend import RawContentItem # noqa: E402
+from src.providers.llm.factory import llm_for_seat # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -64,7 +65,7 @@ def main():
     parser.add_argument("--dataset-version", default="v1")
     args = parser.parse_args()
 
-    extractor = BlueprintExtractor()
+    extractor = BlueprintExtractor(llm=llm_for_seat("blueprint_extractor"))
     db = SessionLocal()
 
     try:
