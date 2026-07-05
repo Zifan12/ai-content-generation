@@ -215,51 +215,5 @@ class MultiShotPackage(BaseModel):
         return self
 
 
-# ---------------------------------------------------------------------------
-# LEGACY single-shot classes (retired paradigm, 2026-06-22 design).
-# Still imported by src/generation/content_writer.py and render_adapters/adapter.py;
-# DELETED when plan Tasks 4/5 rewrite those files (Task 1's deletion criterion
-# transfers there — see docs/superpowers/plans/2026-07-04-multishot-writer-render-
-# redesign.md). Do not use in new code.
-# ---------------------------------------------------------------------------
-
-
-class Shot(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    """LEGACY — the retired single-shot paradigm's only visual segment."""
-
-    start_keyframe: str
-    motion: str
-    end_keyframe: str | None = None
-
-
-class ContentPackage(BaseModel):
-    """LEGACY — the retired single-shot content kit. See module note above."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    shot: Shot
-    model_cli_id: str = Field(
-        description="Motion model CLI id the prompts target (e.g. veo3_1)."
-    )
-    premise: str = Field(description="Source one-line premise; code-set provenance.")
-    mood_anchor: str = Field(
-        description="Palette + lighting + realism + uncanny register; appended to opening still."
-    )
-    onscreen_text: list[str] = Field(
-        description="Hook line(s) for manual overlay at upload; empty only if textless."
-    )
-    caption: str = Field(description="TikTok caption posted with the video.")
-    hashtags: list[str] = Field(description="Discovery hashtags for the post.")
-    voiceover: str | None = Field(
-        default=None,
-        description="Rare diegetic dialogue, or null if no spoken line.",
-    )
-    grounding_hit_ids: list[int] = Field(
-        default_factory=list,
-        description="content_item_ids of grounding winners; code-set, not LLM-generated.",
-    )
-    rationale: str | None = Field(
-        default=None,
-        description="Optional explanation of the creative choices made.",
-    )
+# The legacy single-shot Shot/ContentPackage classes (2026-06-22 paradigm) were
+# deleted 2026-07-05 with the Tasks 4/5 rewrites — no remaining importers.

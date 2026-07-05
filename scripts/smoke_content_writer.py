@@ -1,21 +1,22 @@
 """
-End-to-end smoke for the single-shot pipeline (premise → write → render_jobs → execute).
+End-to-end smoke for the multi-shot pipeline (pitch → write → render_jobs → cost).
 
-By default runs dry_run (cost estimate only, no credits spent). Pass --real to
-execute a live Higgsfield render. Exactly one of --premise or --pitch-id is
-required.
+Loads an approved AnglePitchRecord's FULL story (story_json → StoryPitch — the
+Stage-1/Stage-2 bridge), runs the two-call writer, composes grouped render jobs,
+and prints the per-job credit estimate. Reference key-art paths are REQUIRED
+(grounding is mandatory, DECISIONS_LOCKED L3).
+
+By default runs dry_run (cost estimate only, no credits spent). --real is blocked
+until the executor's multi-group loop lands (plan Task 6).
 
 USAGE:
-  uv run python scripts/smoke_content_writer.py --premise "..."     # dry run, named premise
-  uv run python scripts/smoke_content_writer.py --pitch-id 12       # dry run, from approved pitch
-  uv run python scripts/smoke_content_writer.py --real --premise "..."           # LIVE render (~60cr)
-  uv run python scripts/smoke_content_writer.py --real --model veo3_1 --premise "..."
+  uv run python scripts/smoke_content_writer.py --pitch-id 12 --refs refs/eve_1.jpg refs/eve_2.jpg
+  uv run python scripts/smoke_content_writer.py --pitch-id 12 --refs refs/*.jpg --real   # blocked until Task 6
 
 OUTPUT:
-  Prints the full ContentPackage (still prompt, motion prompt, hook text, caption,
-  hashtags, credit estimate). In --real mode also prints the local still/clip paths
-  and whether the clip carries native audio.
-  A timestamped transcript of the run is saved to output/smoke_runs/.
+  Prints the full MultiShotPackage (per-shot prompts, routing, groups, narration,
+  caption) and the dry-run credit table. A timestamped transcript of the run is
+  saved to output/smoke_runs/.
 """
 
 import argparse
@@ -30,17 +31,12 @@ load_dotenv("config/.env")
 
 from src.database import SessionLocal  # noqa: E402
 from src.generation.content_writer import ContentWriter  # noqa: E402
-from src.providers.llm.factory import llm_for_seat  # noqa: E402
 from src.generation.executor import execute  # noqa: E402
 from src.generation.render_adapters.adapter import render_jobs  # noqa: E402
 from src.generation.render_adapters.rules import RenderRules  # noqa: E402
 from src.models.angle_pitch import AnglePitchRecord  # noqa: E402
-
-# Routed render backend -> motion model CLI id. v1 only ships visual_satire,
-# which renders as a single Veo 3.1 shot; unknown backends fall back to veo3_1.
-_BACKEND_TO_MODEL = {
-    "visual_satire": "veo3_1",
-}
+from src.monitor.schemas import StoryPitch  # noqa: E402
+from src.providers.llm.factory import llm_for_seat  # noqa: E402
 
 
 class _Tee:
@@ -71,35 +67,30 @@ def _git_sha() -> str:
 def _build_parser() -> argparse.ArgumentParser:
     """Build the smoke-script argument parser.
 
-    ``--premise`` and ``--pitch-id`` are mutually exclusive and one is required:
-    you either hand-feed a premise string or pull an approved angle's ``take``
-    from the DB, never both, never neither. argparse enforces both constraints
-    (exits with code 2 if zero or both are passed).
+    ``--pitch-id`` is the only content source (the free-text --premise mode
+    retired with the single-shot product — the writer's input is a judged
+    StoryPitch; manual topics enter upstream via pitch_angles.py --topic).
+    ``--refs`` is required: every character still must be grounded on key-art.
     """
     parser = argparse.ArgumentParser(
-        description="End-to-end smoke for the single-shot pipeline."
-    )
-    source = parser.add_mutually_exclusive_group(required=True)
-    source.add_argument(
-        "--premise",
-        default=None,
-        help="One-line premise to develop.",
-    )
-    source.add_argument(
-        "--pitch-id",
-        type=int,
-        default=None,
-        help="Pull the premise from an approved AnglePitchRecord by id (news-reactive handoff).",
+        description="End-to-end smoke for the multi-shot pipeline."
     )
     parser.add_argument(
-        "--model",
-        default="veo3_1",
-        help="Motion model CLI id (default: veo3_1). Ignored when --pitch-id sets it from the backend.",
+        "--pitch-id",
+        type=int,
+        required=True,
+        help="Approved AnglePitchRecord id; its story_json is the writer's input.",
+    )
+    parser.add_argument(
+        "--refs",
+        nargs="+",
+        required=True,
+        help="Reference key-art image paths that ground every still (>=1).",
     )
     parser.add_argument(
         "--real",
         action="store_true",
-        help="Run a live Higgsfield render. Default is dry_run (cost estimate only).",
+        help="Live render — BLOCKED until the multi-group executor (plan Task 6).",
     )
     return parser
 
@@ -124,37 +115,46 @@ def load_pitch(db, pitch_id: int) -> AnglePitchRecord:
     return pitch
 
 
-def resolve_premise_and_model(args, db) -> tuple[str, str]:
-    """Resolve the premise string and motion model from the chosen source.
+def resolve_pitch(args, db) -> tuple[StoryPitch, int]:
+    """Load and re-inflate the approved pitch's full story (the Stage-1 bridge).
 
-    Two mutually-exclusive sources, exactly one required (enforced by argparse):
-      1. ``--pitch-id`` — load the approved angle and use its ``take`` as the
-         premise; the motion model comes from the routed ``render_backend``
-         (visual_satire -> veo3_1).
-      2. ``--premise`` — the supplied string, with ``--model``.
+    Reads ``story_json`` — the complete StoryPitch the pitcher persisted — and
+    validates it back into the typed model. A row with NULL story_json (a
+    pre-Stage-B legacy pitch) is a hard error, NOT a fallback to the ``take``
+    logline: the logline path silently discarded the beat structure (the exact
+    gap the 2026-07-04 redesign closes) and its ``render_backend`` companion
+    column is always NULL now, which made every render default to veo3_1.
 
     Args:
-        args: Parsed argparse namespace (uses ``pitch_id``, ``premise``, ``model``).
-        db: An open SQLAlchemy session, required only for the ``--pitch-id`` path
-            (may be ``None`` otherwise).
+        args: Parsed argparse namespace (uses ``pitch_id``).
+        db: An open SQLAlchemy session.
 
     Returns:
-        ``(premise, model_cli_id)`` ready to hand to ``ContentWriter.write``.
-    """
-    if args.pitch_id is not None:
-        pitch = load_pitch(db, args.pitch_id)
-        model_cli_id = _BACKEND_TO_MODEL.get(pitch.render_backend, "veo3_1")
-        print(f"[premise] (from approved pitch #{args.pitch_id}, backend={pitch.render_backend})")
-        print(f"{pitch.take}\n")
-        return pitch.take, model_cli_id
+        ``(story_pitch, pitch_id)`` ready for ``ContentWriter.write``.
 
-    print(f"[premise] (supplied)\n{args.premise}\n")
-    return args.premise, args.model
+    Raises:
+        SystemExit: if the row is missing, or its story_json is NULL.
+    """
+    record = load_pitch(db, args.pitch_id)
+    if record.story_json is None:
+        raise SystemExit(
+            f"AnglePitchRecord {args.pitch_id} has no story_json (pre-Stage-B "
+            "legacy row) — re-pitch it; the logline-only path is retired."
+        )
+    pitch = StoryPitch.model_validate(record.story_json)
+    print(f"[pitch] #{args.pitch_id}: {pitch.logline}")
+    print(f"[pitch] mode={pitch.mode.value} beats={len(pitch.beats)}\n")
+    return pitch, args.pitch_id
 
 
 def main() -> None:
-    """Parse args, run the single-shot pipeline, print the package and render result."""
+    """Parse args, run pitch → write → jobs → dry-run cost, print everything."""
     args = _build_parser().parse_args()
+    if args.real:
+        raise SystemExit(
+            "--real is blocked: the executor's multi-group loop is plan Task 6. "
+            "Run without --real for the dry-run cost table."
+        )
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     sha = _git_sha()
@@ -164,65 +164,62 @@ def main() -> None:
     record_file.write(f"# smoke_content_writer run\n# timestamp: {ts}\n# git_sha: {sha}\n\n")
     record_file.flush()
 
-    # A DB session is only needed for the --pitch-id handoff path.
-    db = SessionLocal() if args.pitch_id is not None else None
-
+    db = SessionLocal()
     original_stdout = sys.stdout
     sys.stdout = _Tee(original_stdout, record_file)
 
     try:
-        # --- Premise + model (supplied / auto / from approved pitch) ---
-        premise, model_cli_id = resolve_premise_and_model(args, db)
+        pitch, pitch_id = resolve_pitch(args, db)
 
-        # --- Write ---
         rules = RenderRules()
-        print(f"[write] model={model_cli_id}")
+        print("[write] two-call multi-shot writer")
         package = ContentWriter(llm=llm_for_seat("content_writer")).write(
-            premise,
+            pitch,
             rules=rules,
-            model_cli_id=model_cli_id,
+            reference_image_paths=list(args.refs),
+            pitch_id=pitch_id,
         )
 
-        # --- Package dump ---
         print("=" * 70)
-        print(f"PREMISE:       {package.premise}")
-        print(f"MODEL:         {package.model_cli_id}")
-        print(f"MOOD ANCHOR:   {package.mood_anchor}")
+        print(f"STYLE ANCHOR:  {package.style_anchor}")
+        print(f"ANCHORS:       {package.anchors_block}")
+        print(f"GROUPS:        {package.consistency_groups}")
+        print(f"REFS:          {package.reference_image_paths}")
+        for i, shot in enumerate(package.shots):
+            print("-" * 70)
+            print(
+                f"SHOT {i} [{shot.beat_role.value}] {shot.duration_seconds}s "
+                f"tag={shot.motion_tag.value} model={shot.model_cli_id}"
+            )
+            print(f"  STILL:  {shot.still_prompt}")
+            print(f"  MOTION: {shot.motion_prompt}")
+            if shot.narration_line:
+                print(f"  VO:     {shot.narration_line}")
         print("-" * 70)
-        print(f"START KEYFRAME:\n  {package.shot.start_keyframe}")
-        print(f"\nMOTION:\n  {package.shot.motion}")
-        if package.shot.end_keyframe:
-            print(f"\nEND KEYFRAME:\n  {package.shot.end_keyframe}")
-        print("-" * 70)
-        print(f"HOOK TEXT:     {package.onscreen_text}")
+        print(f"HOOK TEXT:     {package.hook_text}")
         print(f"CAPTION:       {package.caption}")
         print(f"HASHTAGS:      {package.hashtags}")
-        if package.voiceover:
-            print(f"VOICEOVER:     {package.voiceover}")
+        if package.music_brief:
+            print(f"MUSIC:         {package.music_brief}")
         if package.rationale:
             print(f"RATIONALE:     {package.rationale}")
         print("=" * 70 + "\n")
 
-        # --- Render jobs + execute ---
         jobs = render_jobs(package, rules)
+        print(f"[jobs] {len(jobs)} render jobs:")
+        for job in jobs:
+            covers = job.covers_shots or [job.shot_index]
+            print(f"  {job.kind:<10} {job.model_cli_id:<15} shots={covers} duration={job.duration}")
+
         out_dir = str(Path("output/smoke_runs") / f"render_{ts}_{sha}")
-
-        mode = "REAL RENDER" if args.real else "DRY RUN (cost estimate only)"
-        print(f"[execute] {mode}")
-        result = execute(jobs, out_dir, dry_run=not args.real)
-
-        print("\n[result]")
-        print(f"  credits_spent: {result.credits_spent}")
-        if args.real:
-            print(f"  still_path:    {result.still_path}")
-            print(f"  clip_path:     {result.clip_path}")
-            print(f"  has_audio:     {result.has_audio}")
+        print("\n[execute] DRY RUN (cost estimate only)")
+        result = execute(jobs, out_dir, dry_run=True)
+        print(f"\n[result] credits_spent estimate: {result.credits_spent}")
 
     finally:
         sys.stdout = original_stdout
         record_file.close()
-        if db is not None:
-            db.close()
+        db.close()
         print(f"\n[record saved] {record_path}")
 
 

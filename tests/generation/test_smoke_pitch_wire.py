@@ -1,12 +1,16 @@
-"""Task 10 — verify the smoke script's --pitch-id handoff path.
+"""Task 9 (partial) — verify the smoke script's --pitch-id story_json bridge.
 
-Two behaviors are pinned:
-  1. resolve_premise_and_model(--pitch-id) loads the approved AnglePitchRecord and
-     returns its ``take`` as the premise plus the backend-derived motion model.
-  2. --pitch-id and --premise are mutually exclusive at the argparse layer.
+Pinned behaviors:
+  1. resolve_pitch(--pitch-id) loads the approved AnglePitchRecord, re-inflates
+     ``story_json`` into a validated StoryPitch, and returns it with the id —
+     the Stage-1 → Stage-2 bridge.
+  2. A NULL story_json (pre-Stage-B legacy row) is a HARD SystemExit, never a
+     silent fallback to the ``take`` logline (that path discarded the beats and
+     defaulted every render to veo3_1 via the always-NULL render_backend column).
+  3. The parser requires --pitch-id AND --refs (grounding mandatory).
 
-The resolver takes the DB session as an argument, so these run against an in-memory
-SQLite fixture with no Postgres and no LLM/render calls.
+The resolver takes the DB session as an argument, so these run against an
+in-memory SQLite fixture with no Postgres and no LLM/render calls.
 """
 
 import argparse
@@ -16,10 +20,12 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from scripts.smoke_content_writer import _build_parser, resolve_premise_and_model
+from scripts.smoke_content_writer import _build_parser, resolve_pitch
 from src.database import Base
 from src.models.angle_pitch import AnglePitchRecord
 from src.models.trending_event import TrendingEventRecord
+from src.monitor.schemas import StoryPitch
+from tests.helpers.story_pitch import build_story_pitch
 
 
 @pytest.fixture
@@ -40,13 +46,13 @@ def db():
     engine.dispose()
 
 
-def _seed_approved_pitch(db, *, take: str, backend: str = "visual_satire") -> AnglePitchRecord:
-    """Insert a parent event + one approved angle pitch and return the pitch."""
+def _seed_pitch(db, *, story_json) -> AnglePitchRecord:
+    """Insert a parent event + one approved pitch (story_json as given)."""
     event = TrendingEventRecord(
         run_at=datetime.now(timezone.utc),
         source="reddit",
-        headline="Dragon spotted circling Tokyo Tower at dawn",
-        reaction_sample="I wish we got to see it actually breathe fire.",
+        headline="Stellar Blade sequel reveal detonates the subreddit",
+        reaction_sample="I wish we got the confrontation scene.",
         trendiness_score=0.92,
         virality_window_hours=18.0,
         selected_for_pitching=True,
@@ -56,32 +62,51 @@ def _seed_approved_pitch(db, *, take: str, backend: str = "visual_satire") -> An
 
     pitch = AnglePitchRecord(
         trending_event_id=event.id,
-        take=take,
-        format_description="Single wide aerial shot, slow push-in as flame erupts",
-        render_backend=backend,
-        estimated_cost_credits=24.0,
-        gap_satisfaction_rationale="Shows the fire-breath payoff fans were denied",
+        take="Eve gets the ending the fans wanted.",
+        estimated_cost_credits=45.0,
+        gap_satisfaction_rationale="Renders the beat the reveal denied.",
         legal_flag=False,
         approved=True,
+        story_json=story_json,
     )
     db.add(pitch)
     db.flush()
     return pitch
 
 
-def test_pitch_id_feeds_take_as_premise(db):
-    pitch = _seed_approved_pitch(
-        db, take="The dragon finally breathes fire over Tokyo Tower at dawn"
-    )
-    args = argparse.Namespace(pitch_id=pitch.id, premise=None, model="veo3_1")
+def test_resolve_pitch_reinflates_story_json(db):
+    source = build_story_pitch(4)
+    record = _seed_pitch(db, story_json=source.model_dump(mode="json"))
+    args = argparse.Namespace(pitch_id=record.id)
 
-    premise, model_cli_id = resolve_premise_and_model(args, db)
+    pitch, pitch_id = resolve_pitch(args, db)
 
-    assert premise == pitch.take
-    assert model_cli_id == "veo3_1"
+    assert isinstance(pitch, StoryPitch)
+    assert pitch_id == record.id
+    assert len(pitch.beats) == 4
+    assert pitch.hook_line == "the ending they cut"
 
 
-def test_pitch_id_and_premise_are_mutually_exclusive():
+def test_null_story_json_is_a_hard_error_not_a_fallback(db):
+    record = _seed_pitch(db, story_json=None)
+    args = argparse.Namespace(pitch_id=record.id)
+
+    with pytest.raises(SystemExit, match="no story_json"):
+        resolve_pitch(args, db)
+
+
+def test_missing_pitch_row_exits_loudly(db):
+    args = argparse.Namespace(pitch_id=999)
+    with pytest.raises(SystemExit, match="No AnglePitchRecord"):
+        resolve_pitch(args, db)
+
+
+def test_parser_requires_pitch_id_and_refs():
     parser = _build_parser()
     with pytest.raises(SystemExit):
-        parser.parse_args(["--pitch-id", "1", "--premise", "manual override"])
+        parser.parse_args(["--refs", "a.jpg"])  # no pitch-id
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--pitch-id", "1"])  # no refs
+    args = parser.parse_args(["--pitch-id", "1", "--refs", "a.jpg", "b.jpg"])
+    assert args.pitch_id == 1
+    assert args.refs == ["a.jpg", "b.jpg"]

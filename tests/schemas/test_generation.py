@@ -19,10 +19,8 @@ from pydantic import ValidationError
 from src.generation.render_adapters.rules import RenderRules
 from src.monitor.schemas import BeatRole
 from src.schemas.generation import (
-    ContentPackage,
     MotionTag,
     MultiShotPackage,
-    Shot,
     ShotDraft,
     ShotPlanDraft,
     ShotSpec,
@@ -235,36 +233,4 @@ def test_package_round_trip_json():
     assert restored == package
 
 
-# ---------------------------------------------------------------------------
-# LEGACY single-shot tests — deleted with the legacy classes at Tasks 4/5.
-# ---------------------------------------------------------------------------
-
-
-def _valid_shot() -> Shot:
-    return Shot(
-        start_keyframe="Handheld phone POV, kitchen counter, a glass of water mid-spill.",
-        motion="Water freezes in place as it pours. Audio: sharp tap of ice forming.",
-    )
-
-
-def _valid_legacy_package() -> ContentPackage:
-    return ContentPackage(
-        shot=_valid_shot(),
-        model_cli_id="veo3_1",
-        premise="Water freezes mid-pour in a normal kitchen.",
-        mood_anchor="Cool daylight, desaturated phone footage, photoreal, uncanny stillness.",
-        onscreen_text=["wait is this real??"],
-        caption="I still don't know what I filmed.",
-        hashtags=["surreal", "fyp"],
-    )
-
-
-def test_legacy_content_package_round_trip_json():
-    package = _valid_legacy_package()
-    restored = ContentPackage.model_validate_json(package.model_dump_json())
-    assert restored == package
-
-
-def test_legacy_shot_missing_motion_raises():
-    with pytest.raises(ValidationError):
-        Shot(start_keyframe="Close-up of a hand on a doorknob.")
+# Legacy single-shot tests deleted 2026-07-05 with the Shot/ContentPackage classes.
