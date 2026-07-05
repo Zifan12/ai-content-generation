@@ -17,7 +17,7 @@
 
 meta:
   schema_version: 0
-  verified_against_higgsfield: "2026-06-18"
+  verified_against_higgsfield: "2026-07-04"   # CLI 1.1.5 param sweep (was 2026-06-18 on CLI 0.2.3). NOTE: on 1.1.5 the i2v seed flag is --start-image (old --image is GONE on kling3_0/veo3_1; kling gained --end-image); nano_banana_2 references = repeated --image-references (alias --image), max 14.
   source_root: "ai_video_resources/"
   # Models present in the guides but NOT exposed by Higgsfield CLI — do not
   # route to these even though the guides praise them:
@@ -82,26 +82,35 @@ models:
       character_first_rule: "methodology/12 §L96: describe WHO before what they do — lead with named/aged/clothed subject ('a mid-30s woman with short dark hair and a navy coat walks…'), not 'a woman speaks while walking'."
       cli_negatives: "No negative_prompt param on Higgsfield veo3_1 (verified). Fold exclusions into positive motion phrasing."
     notes:   # human-facing audit notes — NOT prompt material; builders read `dialect`, never `notes`
-      cli_negatives_conflict: "⚠️ UNRESOLVED (2026-06-20): three guides — image-video-director/01 (registry, L175), /03 (L75), /05 (L26) — all say Veo 3.1 natively SUPPORTS negativePrompt (comma-separated descriptors, NOT 'no/don't'). The dialect.cli_negatives line claims Higgsfield's veo3_1 has none. Both can hold (Higgsfield may not expose the native param), but 'verified' is unconfirmed against the CLI. ACTION: run `higgsfield model get veo3_1`, then resolve — keep positive-folding if absent, else add the comma-descriptor form. Do NOT trust either side until render-checked."
+      cli_negatives_conflict: "RESOLVED 2026-07-04 (`higgsfield model get veo3_1`, CLI 1.1.5): Higgsfield exposes NO negative-prompt param on veo3_1 (params: aspect_ratio, duration 4/6/8, prompt, quality, start_image, variant). The guides' claim is about Veo's native API, which Higgsfield does not surface. KEEP positive-folding. Also new on 1.1.5: `variant` param (default veo-3-1-fast), i2v seed via --start-image."
 
   kling3_0:
     cli_id: kling3_0
     display: "Kling v3.0"
     source: "methodology/18 + 09 + 06"
-    ratings: { physics: 4, audio: 4, consistency: 5, cinematic: 3, max_seconds: 15 }
+    ratings: { physics: 4, audio: 4, consistency: 5, cinematic: 3, max_seconds: 15, max_shots: 6 }   # max_shots: doc 18 §5 + spike-confirmed 2026-07-04
     emits_audio: true   # native audio (audio 4/5)
     best_for: [multi_shot, character_consistency, shot_reverse_shot, transformation, chinese_dialogue]
     variants: [kling3_0_turbo, kling3_0_motion_control, kling2_6]
+    # evidence 2026-07-04 (OWN renders ×2, render_taste_test/kling_multishot_spike/PLAN.md §8):
+    # Higgsfield kling3_0 DOES cut internally in one generation — but ONLY in the native
+    # grammar below. Seedance-style "SHOT N [Xs-Ys]:" labels rendered ONE continuous move
+    # (attempt-1 failure, 30cr); native "Shot N (Xs-Ys):" + explicit angle-change verbs cut
+    # frame-accurately at the requested boundaries (attempt 2, 20cr, cuts at 2.96s/5.96s).
+    # Identity across internal cuts: user-judged only SLIGHTLY better than independent
+    # grounded stills (PARTIAL-ACCEPT) — accepted launch mechanism, not a solved problem.
     dialect:
       style: "Coverage grammar + multi-shot structure (up to 6 shots / 15s). @-reference syntax. cfg_scale tunable."
       cfg_scale: "Higher = stricter prompt adherence; lower = more improvisation."
       consistency_rule: "Strongest cross-shot consistency. Reuse identity/anchor strings VERBATIM across shots."
+      multi_shot_grammar: "LOAD-BEARING (spike 2026-07-04): 'Shot N (Xs-Ys): [angle] + [action] + [environment]. Audio: [...]' with explicit angle-change verbs ('Change angle to...', 'Switch to...'). Any other label format renders a continuous move instead of cuts."
+      multi_shot_limits: "≤500 chars per shot; ≥3s per shot; ≤6 shots / 15s (4-5 recommended); prefer ~10s total over 15s for consistency; multi-shot is mutually exclusive with start+end-frame; ≤4 reference images."   # doc 18 §5 L181-194
 
   seedance_2_0:
     cli_id: seedance_2_0
     display: "Seedance 2.0"
     source: "methodology/15 + 19 + 06"
-    ratings: { physics: 3, audio: 4, consistency: 4, cinematic: 4, max_seconds: 20 }
+    ratings: { physics: 3, audio: 4, consistency: 4, cinematic: 4, max_seconds: 20, max_shots: 10 }   # max_shots: methodology/15 L83 (≤10 shots within 15s)
     emits_audio: true   # native audio (audio 4/5)
     best_for: [narrative_arc, multi_shot_story, transformation, multimodal_reference]
     variants: [seedance1_5]
@@ -139,6 +148,7 @@ models:
 routing:
   impossible_physics: [minimax_hailuo, seedance_2_0, veo3_1]   # NOT veo-first: Veo physics 3/5, fails impossible end-states (2026-06-18 evidence)
   fluid_motion:       [minimax_hailuo, veo3_1, seedance_2_0]   # water/fire/smoke — Hailuo is physics king
+  spectacle:          [seedance_2_0, kling3_0]                 # per-beat narrative/epic spectacle — MODEL_ROUTING.md spectacle row + 2026-07-04 redesign spec D5 (multi_shot_story is a whole-video concept; this is the beat-level tag)
   transformation:     [seedance_2_0, kling3_0]                 # melt/morph/grow — Pika unavailable, Seedance/Kling next
   multi_shot_story:   [seedance_2_0, kling3_0]
   character_consistency: [kling3_0, seedance_2_0]              # Kling strongest cross-shot
@@ -277,5 +287,6 @@ open_questions:
   # RESOLVED 2026-06-21 (CONFIRMED, own CLI i2v render): minimax_hailuo HOLDS the impossible 'edges stay
   # full' pool drain to the final frame — see the minimax_hailuo `evidence` note above. Veo failed 3×.
   - "Does keyframe_start_end fix Veo's impossible-end-state failure? (untested)"
+  - "seedance_2_0_mini appeared in the CLI 1.1.5 catalog (2026-07-04) — likely a cheaper Seedance tier; needs `model get` + a ratings row before it can join routing."
   - "Per-model Higgsfield credit costs for the routing table (only Veo ~22cr/8s confirmed on Higgsfield). NOTE: image-video-director/01 gives NATIVE-API per-second pricing — Kling ~$0.029/s (cheapest), Grok $0.05/s, Sora $0.30-0.50/s — but these are provider list prices, NOT Higgsfield credit costs; still need `higgsfield model get` per model to map to credits."
   - "Higgsfield-native models (cinematic_studio_*, soul_*) not yet mapped to routing — may beat generic models for surreal_hyperreal."

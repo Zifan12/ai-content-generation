@@ -127,6 +127,25 @@ class RenderRules:
         """
         return self.data["models"][cli_id]["ratings"]["max_seconds"]
 
+    def max_shots(self, cli_id: str) -> int:
+        """Return the maximum internal shots one generation supports for a model.
+
+        Convenience accessor for the ``ratings.max_shots`` value of a model's
+        config block — the per-generation shot cap the router uses when sizing
+        consistency groups (a Kling group must not exceed the model's own
+        multi-shot limit). Reading it from the YAML rather than hardcoding keeps
+        model swaps (e.g. a future Seedance 2.5) config-only.
+
+        As with ``max_seconds``, an unknown cli_id — or a model with no
+        ``ratings.max_shots`` entry (single-shot-only models) — is treated as a
+        programming error and surfaces loudly rather than returning a default.
+
+        Raises:
+            KeyError: if ``cli_id`` is not a model defined in the YAML, or that
+                model has no ``ratings.max_shots`` entry.
+        """
+        return self.data["models"][cli_id]["ratings"]["max_shots"]
+
     def emits_audio(self, cli_id: str) -> bool:
         """Return whether a model generates its own native audio track.
 
