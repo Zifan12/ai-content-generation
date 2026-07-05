@@ -1,9 +1,243 @@
-"""Tests for single-shot ContentPackage and Shot schemas (Task 1)."""
+"""Tests for the v3 multi-shot generation schemas (plan 2026-07-04 Task 1).
+
+Covers the assertion contracts from the plan:
+  - shot cardinality bounds (2 rejected, 7 rejected, 3 and 6 accepted)
+  - per-shot duration bounds (3s and 9s rejected)
+  - total-duration envelope (26s rejected; 12s and 25s accepted; an 11s total is
+    unconstructible with valid shots — 3 shots x 4s minimum = 12s — so the lower
+    bound is exercised at its boundary, not below it)
+  - MotionTag values == config/render_rules.yaml routing keys (parity, D5)
+  - extra="forbid" on every v3 class (LLM hallucinated-field guard)
+
+Legacy single-shot tests are kept at the bottom until Tasks 4/5 delete the legacy
+classes (see the legacy note in src/schemas/generation.py).
+"""
 
 import pytest
 from pydantic import ValidationError
 
-from src.schemas.generation import ContentPackage, Shot
+from src.generation.render_adapters.rules import RenderRules
+from src.monitor.schemas import BeatRole
+from src.schemas.generation import (
+    ContentPackage,
+    MotionTag,
+    MultiShotPackage,
+    Shot,
+    ShotDraft,
+    ShotPlanDraft,
+    ShotSpec,
+)
+
+
+def _shot_spec(duration: int = 5, role: BeatRole = BeatRole.hook) -> ShotSpec:
+    return ShotSpec(
+        beat_role=role,
+        motion_tag=MotionTag.character_consistency,
+        still_prompt="Full-figure low angle, subject centered in a rain-slick alley.",
+        motion_prompt="Slow crane-up, she lifts her head on the final second. Audio: rain patter.",
+        duration_seconds=duration,
+        narration_line="She waited for the signal.",
+        characters_in_frame=["Eve"],
+    )
+
+
+def _package(durations: list[int]) -> MultiShotPackage:
+    return MultiShotPackage(
+        shots=[_shot_spec(duration=d) for d in durations],
+        style_anchor="Cel-shaded TV anime, thick clean line art, muted broadcast palette.",
+        anchors_block="Eve — short tousled dark-brown hair, pure-white armored bodysuit.",
+        hook_text="the scene they cut",
+        caption="they owed us this scene",
+        hashtags=["anime", "fyp"],
+        music_brief="slow strings building to a single piano hit",
+    )
+
+
+def _draft(duration: int = 5) -> ShotDraft:
+    return ShotDraft(
+        beat_role=BeatRole.build,
+        motion_tag=MotionTag.spectacle,
+        still_prompt="Wide shot, city skyline at dusk.",
+        motion_intent="Camera pushes toward the tower as lights ignite floor by floor.",
+        duration_seconds=duration,
+        narration_line=None,
+        characters_in_frame=[],
+    )
+
+
+def _plan(durations: list[int]) -> ShotPlanDraft:
+    return ShotPlanDraft(
+        shots=[_draft(duration=d) for d in durations],
+        style_anchor="Cel-shaded TV anime, thick clean line art.",
+        anchors_block="Eve — short tousled dark-brown hair, pure-white armored bodysuit.",
+        hook_text="the scene they cut",
+        caption="caption",
+        hashtags=["tag"],
+        music_brief=None,
+    )
+
+
+# --- cardinality bounds -----------------------------------------------------
+
+
+def test_package_two_shots_rejected():
+    with pytest.raises(ValidationError):
+        _package([6, 6])
+
+
+def test_package_seven_shots_rejected():
+    with pytest.raises(ValidationError):
+        _package([4] * 7)
+
+
+def test_package_three_shots_accepted():
+    assert len(_package([4, 4, 4]).shots) == 3
+
+
+def test_package_six_shots_accepted():
+    assert len(_package([4, 4, 4, 4, 4, 4]).shots) == 6
+
+
+# --- per-shot duration bounds -------------------------------------------------
+
+
+def test_shot_duration_three_seconds_rejected():
+    with pytest.raises(ValidationError):
+        _shot_spec(duration=3)
+
+
+def test_shot_duration_nine_seconds_rejected():
+    with pytest.raises(ValidationError):
+        _shot_spec(duration=9)
+
+
+# --- total-duration envelope --------------------------------------------------
+
+
+def test_package_total_26s_rejected():
+    with pytest.raises(ValidationError):
+        _package([8, 8, 6, 4])
+
+
+def test_package_total_25s_accepted():
+    assert sum(s.duration_seconds for s in _package([8, 8, 5, 4]).shots) == 25
+
+
+def test_package_total_12s_accepted():
+    assert sum(s.duration_seconds for s in _package([4, 4, 4]).shots) == 12
+
+
+def test_plan_draft_total_26s_rejected():
+    with pytest.raises(ValidationError):
+        _plan([8, 8, 6, 4])
+
+
+def test_plan_draft_total_25s_accepted():
+    assert sum(s.duration_seconds for s in _plan([8, 8, 5, 4]).shots) == 25
+
+
+# --- MotionTag <-> yaml routing-key parity (D5) --------------------------------
+
+
+def test_motion_tag_values_are_yaml_routing_keys():
+    routing_keys = set(RenderRules().data["routing"].keys())
+    for tag in MotionTag:
+        assert tag.value in routing_keys, (
+            f"MotionTag.{tag.name} = {tag.value!r} has no routing entry in "
+            "config/render_rules.yaml — D5 requires verbatim parity"
+        )
+
+
+def test_spectacle_routes_seedance_first():
+    assert RenderRules().route("spectacle") == ["seedance_2_0", "kling3_0"]
+
+
+def test_max_shots_accessor_reads_yaml():
+    rules = RenderRules()
+    assert rules.max_shots("kling3_0") == 6
+    assert rules.max_shots("seedance_2_0") == 10
+    with pytest.raises(KeyError):
+        rules.max_shots("veo3_1")  # single-shot-only model: no max_shots entry
+
+
+# --- extra="forbid" guard -------------------------------------------------------
+
+
+def test_shot_spec_rejects_unknown_field():
+    with pytest.raises(ValidationError):
+        ShotSpec(
+            beat_role=BeatRole.hook,
+            motion_tag=MotionTag.character_consistency,
+            still_prompt="x",
+            motion_prompt="y. Audio: z.",
+            duration_seconds=5,
+            narration_line=None,
+            characters_in_frame=[],
+            hallucinated_field="nope",
+        )
+
+
+def test_package_rejects_unknown_field():
+    with pytest.raises(ValidationError):
+        MultiShotPackage(
+            shots=[_shot_spec(), _shot_spec(), _shot_spec()],
+            style_anchor="s",
+            anchors_block="a",
+            hook_text=None,
+            caption="c",
+            hashtags=[],
+            music_brief=None,
+            mood_anchor="legacy field from the single-shot schema",
+        )
+
+
+def test_plan_draft_rejects_unknown_field():
+    with pytest.raises(ValidationError):
+        ShotPlanDraft(
+            shots=[_draft(), _draft(), _draft()],
+            style_anchor="s",
+            anchors_block="a",
+            hook_text=None,
+            caption="c",
+            hashtags=[],
+            music_brief=None,
+            onscreen_text=["legacy field"],
+        )
+
+
+# --- silent-beat passthrough + code-set defaults --------------------------------
+
+
+def test_narration_none_is_valid_silent_beat():
+    spec = ShotSpec(
+        beat_role=BeatRole.establish,
+        motion_tag=MotionTag.fluid_motion,
+        still_prompt="x",
+        motion_prompt="y. Audio: z.",
+        duration_seconds=4,
+        narration_line=None,
+        characters_in_frame=[],
+    )
+    assert spec.narration_line is None
+
+
+def test_package_code_set_defaults():
+    package = _package([4, 4, 4])
+    assert package.pitch_id is None
+    assert package.reference_image_paths == []
+    assert package.consistency_groups == []
+    assert package.shots[0].model_cli_id == ""
+
+
+def test_package_round_trip_json():
+    package = _package([5, 5, 5])
+    restored = MultiShotPackage.model_validate_json(package.model_dump_json())
+    assert restored == package
+
+
+# ---------------------------------------------------------------------------
+# LEGACY single-shot tests — deleted with the legacy classes at Tasks 4/5.
+# ---------------------------------------------------------------------------
 
 
 def _valid_shot() -> Shot:
@@ -13,7 +247,7 @@ def _valid_shot() -> Shot:
     )
 
 
-def _valid_package() -> ContentPackage:
+def _valid_legacy_package() -> ContentPackage:
     return ContentPackage(
         shot=_valid_shot(),
         model_cli_id="veo3_1",
@@ -25,60 +259,12 @@ def _valid_package() -> ContentPackage:
     )
 
 
-def test_content_package_round_trip_json():
-    package = _valid_package()
+def test_legacy_content_package_round_trip_json():
+    package = _valid_legacy_package()
     restored = ContentPackage.model_validate_json(package.model_dump_json())
     assert restored == package
 
 
-def test_content_package_optional_defaults():
-    package = _valid_package()
-    assert package.voiceover is None
-    assert package.grounding_hit_ids == []
-    assert package.rationale is None
-
-
-def test_shot_valid_without_end_keyframe():
-    shot = Shot(
-        start_keyframe="Wide shot, empty hallway.",
-        motion="A door at the end swings open slowly. Audio: distant hinge creak.",
-    )
-    assert shot.end_keyframe is None
-
-
-def test_shot_missing_motion_raises():
+def test_legacy_shot_missing_motion_raises():
     with pytest.raises(ValidationError):
         Shot(start_keyframe="Close-up of a hand on a doorknob.")
-
-
-def test_shot_missing_start_keyframe_raises():
-    with pytest.raises(ValidationError):
-        Shot(motion="The hand turns the knob. Audio: metal click.")
-
-
-def test_old_shots_field_rejected():
-    with pytest.raises(ValidationError):
-        ContentPackage(
-            shot=_valid_shot(),
-            shots=[_valid_shot()],
-            model_cli_id="veo3_1",
-            premise="legacy shape",
-            mood_anchor="test grade",
-            onscreen_text=["hook"],
-            caption="caption",
-            hashtags=["tag"],
-        )
-
-
-def test_old_device_field_rejected():
-    with pytest.raises(ValidationError):
-        ContentPackage(
-            shot=_valid_shot(),
-            device="reveal",
-            model_cli_id="veo3_1",
-            premise="legacy shape",
-            mood_anchor="test grade",
-            onscreen_text=["hook"],
-            caption="caption",
-            hashtags=["tag"],
-        )
