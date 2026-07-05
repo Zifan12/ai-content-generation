@@ -6,17 +6,19 @@ Stage-1/Stage-2 bridge), runs the two-call writer, composes grouped render jobs,
 and prints the per-job credit estimate. Reference key-art paths are REQUIRED
 (grounding is mandatory, DECISIONS_LOCKED L3).
 
-By default runs dry_run (cost estimate only, no credits spent). --real is blocked
-until the executor's multi-group loop lands (plan Task 6).
+By default runs dry_run (cost estimate only, no credits spent). --real prints the
+credit table, requires an interactive 'yes', then renders every job (with resume
+manifest), synthesizes narration (OpenAI TTS), and assembles the final mp4.
 
 USAGE:
   uv run python scripts/smoke_content_writer.py --pitch-id 12 --refs refs/eve_1.jpg refs/eve_2.jpg
-  uv run python scripts/smoke_content_writer.py --pitch-id 12 --refs refs/*.jpg --real   # blocked until Task 6
+  uv run python scripts/smoke_content_writer.py --pitch-id 12 --refs refs/eve_1.jpg --real
+  uv run python scripts/smoke_content_writer.py --pitch-id 12 --refs refs/eve_1.jpg --real --bgm music.mp3
 
 OUTPUT:
   Prints the full MultiShotPackage (per-shot prompts, routing, groups, narration,
-  caption) and the dry-run credit table. A timestamped transcript of the run is
-  saved to output/smoke_runs/.
+  caption) and the credit table; in --real mode also the per-clip paths and the
+  assembled final.mp4. A timestamped transcript is saved to output/smoke_runs/.
 """
 
 import argparse
@@ -30,8 +32,10 @@ from dotenv import load_dotenv
 load_dotenv("config/.env")
 
 from src.database import SessionLocal  # noqa: E402
+from src.generation.assembly import assemble  # noqa: E402
 from src.generation.content_writer import ContentWriter  # noqa: E402
 from src.generation.executor import execute  # noqa: E402
+from src.providers.tts.openai_tts import OpenAITTS  # noqa: E402
 from src.generation.render_adapters.adapter import render_jobs  # noqa: E402
 from src.generation.render_adapters.rules import RenderRules  # noqa: E402
 from src.models.angle_pitch import AnglePitchRecord  # noqa: E402
@@ -90,7 +94,14 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--real",
         action="store_true",
-        help="Live render — BLOCKED until the multi-group executor (plan Task 6).",
+        help="Live render + assembly. Prints the credit table first and requires "
+        "an interactive 'yes' before any paid call.",
+    )
+    parser.add_argument(
+        "--bgm",
+        default=None,
+        help="Optional ready-made BGM audio file mixed at 0.2 volume (Sonilo "
+        "generation not wired — cost unmeasured, spec §6.4).",
     )
     return parser
 
@@ -150,11 +161,6 @@ def resolve_pitch(args, db) -> tuple[StoryPitch, int]:
 def main() -> None:
     """Parse args, run pitch → write → jobs → dry-run cost, print everything."""
     args = _build_parser().parse_args()
-    if args.real:
-        raise SystemExit(
-            "--real is blocked: the executor's multi-group loop is plan Task 6. "
-            "Run without --real for the dry-run cost table."
-        )
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     sha = _git_sha()
@@ -213,8 +219,35 @@ def main() -> None:
 
         out_dir = str(Path("output/smoke_runs") / f"render_{ts}_{sha}")
         print("\n[execute] DRY RUN (cost estimate only)")
-        result = execute(jobs, out_dir, dry_run=True)
-        print(f"\n[result] credits_spent estimate: {result.credits_spent}")
+        estimate = execute(jobs, out_dir, dry_run=True)
+        print(f"\n[result] credits_spent estimate: {estimate.credits_spent}")
+
+        if args.real:
+            # Explicit confirm between the printed cost table and any paid call
+            # (DECISIONS_LOCKED L7 — no silent spends).
+            answer = input(
+                f"\nSpend ~{estimate.credits_spent} credits on this render? "
+                "Type 'yes' to proceed: "
+            )
+            if answer.strip().lower() != "yes":
+                raise SystemExit("Aborted before any paid call — nothing spent.")
+
+            print("\n[execute] REAL RENDER")
+            result = execute(jobs, out_dir)
+            print(f"  stills: {result.still_paths}")
+            for clip in result.clips:
+                print(f"  clip shots={clip.shot_indices} audio={clip.has_audio} -> {clip.clip_path}")
+
+            print("\n[assemble] concat + narration + hook card")
+            final_path = assemble(
+                result,
+                package,
+                str(Path(out_dir) / "final.mp4"),
+                tts=OpenAITTS(),
+                bgm_path=args.bgm,
+            )
+            print(f"\n[FINAL] {final_path}")
+            print("Post-gate reminder: AIGC label at upload; judge on evie I1/I2 + C1/C2.")
 
     finally:
         sys.stdout = original_stdout
