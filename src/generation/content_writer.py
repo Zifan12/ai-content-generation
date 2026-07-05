@@ -1,341 +1,351 @@
 """
-Content writer (P3): turns a premise into a validated single-shot ContentPackage.
+Content writer (P3, v3 multi-shot): turns a StoryPitch into a MultiShotPackage.
 
-ContentWriter.write is model-aware one-pass generation: one structured-output LLM
-call produces one ~8s vertical clip's full kit (opening still + motion prompts,
-hook text, caption, hashtags). Render dialects from config/render_rules.yaml are
-injected into the user prompt so start_keyframe and motion are native to the
-chosen image and video models.
+Two structured-output LLM calls with deterministic code between (spec 2026-07-04
+§2.2 — the two-call design keeps routing assertable and failures addressable):
 
-Optional RAG grounding (retrieved viral neighbors) supplies aesthetic descriptors,
-hook subtype, and transcript when present — never captions (hashtag dumps, not
-signal). Imagination-only runs omit hits entirely.
+  call 1 (PLAN):    pitch beats -> ShotPlanDraft (per-beat still prompts,
+                    model-agnostic motion intents, motion tags, narration polish,
+                    package-level style/anchor/caption fields)
+  code (ROUTE):     router.route_shots stamps each shot's model from the yaml
+                    routing table; router.consistency_groups computes which
+                    contiguous shots render as ONE Kling multi-shot generation
+  call 2 (DIALECT): per distinct routed model, motion intents -> model-native
+                    motion prompts in that model's dialect block from
+                    config/render_rules.yaml
+
+The writer TRUSTS CODE OVER THE LLM at every seam: beat_role / characters_in_frame
+are copied from the pitch (never the draft's echo), silence is preserved (a beat
+with narration_line=None stays silent even if the draft invents a line), the model
+id comes from the router, hook_text comes from the gate-judged pitch.hook_line, and
+provenance (pitch_id / reference_image_paths / consistency_groups) is code-set.
+
+anchors_block and style_anchor are package-level fields composed into prompts by
+the ADAPTER (D10) — call 1 is explicitly instructed to keep them OUT of per-shot
+prompts, and the adapter appends them deterministically so the identity sentence is
+byte-identical across every still.
+
+RAG grounding (hits/_hydrate_hits) was removed with the found-footage register
+(D15) — the winners corpus grounded a retired lane and had no live callers.
 """
 
 import json
 import logging
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from pydantic import BaseModel, ConfigDict
+
+from src.generation.render_adapters.router import (
+    RoutingDecision,
+    consistency_groups,
+    route_shots,
+)
 from src.generation.render_adapters.rules import RenderRules
-from src.models.trend import RawContentItem
-from src.models.transcript import Transcript
-from src.rag.schemas import RetrievalHit
-from src.schemas.generation import ContentPackage
-from src.providers.llm.anthropic_llm import AnthropicLLM
-from src.providers.llm.openrouter_llm import OpenRouterLLM
+from src.monitor.schemas import StoryPitch
+from src.schemas.generation import (
+    MultiShotPackage,
+    ShotPlanDraft,
+    ShotSpec,
+)
 
 logger = logging.getLogger(__name__)
 
-# Single-shot packages are smaller than the retired 3-segment chain, but headroom
-# is harmless and writer-owned — raising it never touches the judge or extractor,
-# which share the same parse() default (1024).
+# Explicit per-caller override of the shared parse() default (1024) — big packages
+# truncate silently at the default (bitten 3x, memory feedback_shared_max_tokens).
 WRITER_MAX_TOKENS = 8192
 
-SYSTEM_PROMPT = """\
+PLAN_SYSTEM_PROMPT = """\
 <role>
-You are a short-form vertical-video creative director for TikTok, working in the
-"is this real?!" lane: caught-on-camera, found-footage clips that look like a
-real phone captured something that cannot quite be real. You turn one premise
-into a single content package ready to produce and post.
+You are the story-to-screen developer for a channel that renders the scene a
+fandom is currently begging to see. The finished video must read as a DELETED
+SCENE OR OFFICIAL CLIP from the source work itself — matched to that work's own
+visual register — not as "an AI video of the character in our world."
 </role>
 
 <inputs>
 You receive:
-1. A premise — the one idea this video delivers, supplied by the user. Develop
-   THIS premise; never substitute your own.
-2. A STILL DIALECT block — the image-model prompting rules for the opening frame
-   (directive-stack order, camera kit, authentic-imperfection, composition
-   traps). Obey it when you write start_keyframe.
-3. A MOTION DIALECT block — the prompting grammar for the specific video model
-   this clip targets (its preferred structure, light/audio rules, what it drowns
-   on). Obey it when you write motion.
-4. OPTIONALLY, a set of real TikTok videos that went viral in this lane —
-   described by aesthetic descriptors, hook subtype, and a transcript when one
-   exists. EVIDENCE of what works, never material to copy. They may be absent;
-   when absent, lean on the dialects and the premise alone.
+1. A STORY PITCH (JSON) — a judged, approved story: logline, mode (wish/satire),
+   characters, desired_moment, and 3-6 ordered beats. Each beat has a role
+   (hook/establish/build/turn/escalate/reveal/payoff/tag), a visual_line (what the
+   camera sees), an optional narration_line, a shot_size, and characters_in_frame.
+   Develop THIS story. Never substitute your own.
+2. A STILL DIALECT block — the image-model prompting rules for opening stills
+   (directive-stack order, spatial mapping, camera kit, light naming, composition
+   traps). Obey it in every still_prompt.
+3. A MOTION CRAFT block — universal motion-prompt rules (one move + one action,
+   countable beats, emotion as visible physical tells, banned dead words).
 </inputs>
 
 <task>
-Produce one complete content package for ONE continuous ~8 second vertical video:
-a single uncut take of a believable dramatic micro-event that makes a scrolling
-viewer stop and ask "wait — is this real?!". No cuts, no edits, no montage — one
-camera, one moment, caught as if by accident. Something small happens and PAYS
-OFF inside the eight seconds; the payoff is what earns the replay.
-
-The register is found-footage realism, NOT spectacle. The clip should read as a
-real capture of an almost-impossible moment, not as an obviously-generated
-"epic" render. The uncanny lands hardest when everything else looks mundane and
-true.
+Produce a ShotPlanDraft: exactly ONE shot per pitch beat, in the same order, plus
+the package-level creative fields. This plan is later converted per-model and
+rendered as 3-6 clips assembled into one 12-25 second vertical video.
 </task>
 
-<grounding_rule>
-When examples are present, they show you the mechanics that earned views — the
-aesthetic, the hook variant, what was said. Transfer the MECHANIC onto the
-premise; never reuse a winner's topic, subject, or wording. The topic is always
-the supplied premise. When no examples are present, this rule is moot — invent
-freely within the lane.
-</grounding_rule>
+<per_shot_rules>
+- still_prompt: the shot's opening frame as an IMAGE prompt in the STILL DIALECT.
+  Subject-first, literal spatial layout, honor the beat's shot_size, name the
+  physical light source. Describe the CHARACTER ONLY BY ROLE OR ACTION POSITION
+  (e.g. "the swordswoman mid-lunge") — do NOT write identity descriptions (name,
+  hair, outfit) and do NOT write art-style words. Identity and style are appended
+  by the system from the anchors_block and style_anchor you provide once; a second
+  in-prompt description fights the appended one and causes drift.
+- motion_intent: the shot's movement in plain craft language, model-agnostic:
+  ONE camera move + ONE subject action, expressed as countable beats with timing,
+  plus the concrete diegetic sounds of the moment (name actual sounds, never
+  "ambient sounds"). No music. No style or palette words. Between adjacent shots,
+  author a MATCH CUT: end this shot on a shape or motion the next shot opens on.
+- motion_tag: classify what the shot NEEDS rendered — fluid/water physics
+  (fluid_motion), physically impossible held states (impossible_physics),
+  melt/morph/grow (transformation), epic scale spectacle (spectacle), or ordinary
+  character action where cross-shot identity matters most (character_consistency —
+  the default for character beats).
+- duration_seconds: 4-8 per shot, total 12-25. Give the payoff beat air; keep the
+  hook snappy. Prefer keeping contiguous same-cast character beats within about
+  10 seconds combined (they render as one consistency group).
+- narration_line: polish the beat's narration into spoken-word text at a budget of
+  at most 2.2 words per second of the shot. A beat whose narration_line is null is
+  a deliberate silent beat — return null for it, never invent narration.
+</per_shot_rules>
 
-<fields>
-Fill every field.
-
-<shot>
-ONE shot. It has two prompts you write and one optional third:
-
-start_keyframe — the single opening still, the 3-second scroll-stop frame and the
-world's DNA. This is an IMAGE-model prompt: write it in the STILL DIALECT. Lead
-with the subject and its identity, then the hard framing/spatial layout, then the
-camera kit (lens, light source + direction). Found-footage framing beats polished
-composition — a slightly off, handheld, real-phone angle reads truer than a
-perfect one. NO palette or grade words (the mood_anchor owns the grade, appended
-at render). NO motion words (movement is the motion field). Express scale with
-adjectives only (colossal, towering); never measure against a named real object,
-or the image model fuses that object into the frame. Vertical 9:16.
-
-motion — the one continuous movement that animates the still over ~8s and lands
-the payoff. This is the VIDEO-model i2v prompt: write it in the MOTION DIALECT.
-The input still already carries the look, so do NOT restate palette, scene, or
-style here — describe only camera move, subject action, timing, and audio. ONE
-camera move + ONE subject action; if something moves fast, name the single
-element that moves fast, never the whole frame. Build to the payoff with a move
-that REVEALS rather than buries it — a pull-back, a tilt-up, a hold that lets the
-impossible thing resolve on camera. Do not push in and lose the very thing the
-clip is about. End the take deliberately (the moment completes, or holds) — no
-hanging action.
-
-  Audio: line — the motion MUST contain an "Audio:" line describing concrete
-  diegetic sound, in the MOTION DIALECT's audio form. Name the actual sounds the
-  scene would make (footstep on gravel, distant traffic, a sharp wet crack), not
-  "ambient sounds". NO music — this is a real capture, not a scored edit.
-
-end_keyframe (optional) — a target final frame, ONLY when the payoff is a
-specific visual state the motion must land precisely (a transformation step, a
-reveal's end state). Write it as the opening frame moments later with ONLY the
-action advanced — same world, same camera, a minimal delta. Most single-shot
-clips do NOT need one; leave it null unless the payoff demands a pinned end state.
-</shot>
-
-<mood_anchor>
-One line: palette, light quality + direction, realism register, and uncanny
-register. Appended at render to the still (and end_keyframe if present), so it
-must describe only what is TRUE for the whole take. Name a light SOURCE only when
-it is lit the entire time (sun, sky, room light) — never a light that ignites
-mid-take. Favor authentic-capture cues (natural grain, slight underexposure,
-practical light); never quality incantations ("masterpiece", "8K", "cinematic").
-</mood_anchor>
-
-<onscreen_text>
-Exactly one short, punchy hook line in almost every case — the "is this real?!"
-/ "wait what just happened" text that rides over the clip (added manually at
-upload). One string in the list. Return an empty list ONLY for a deliberately
-textless clip.
-</onscreen_text>
-
-<caption>
-The TikTok caption. Native creator voice, not corporate. May seed a
-comment-driving question or open loop.
-</caption>
-
-<hashtags>
-A small mix: one or two broad-reach tags plus a couple of niche / topic tags. No
-hashtag walls.
-</hashtags>
-
-<voiceover>
-Leave null unless a person ON CAMERA actually speaks a line as part of the
-captured moment (then it is diegetic dialogue, not narration). This lane is not
-narrated — do not invent voiceover to fill the field.
-</voiceover>
-
-<rationale>
-One or two sentences: what makes this premise read as believable-but-impossible,
-and how the motion's payoff lands the "is this real?!" beat. For debugging and
-eval.
-</rationale>
-
-<provenance>
-Do not populate model_cli_id, premise, or grounding_hit_ids — the system sets
-those itself.
-</provenance>
-</fields>
+<package_rules>
+- style_anchor: ONE line naming the source work's visual register concretely (for
+  an anime: its animation style, line quality, palette family, broadcast grade;
+  for a game/live-action register: its cinematography). This is appended to every
+  still, so it must be true for every shot.
+- anchors_block: one identity sentence per character who appears on screen — name,
+  hair, outfit category + primary color, and one recognition trait, matched to the
+  supplied reference art era. This is prepended to every still verbatim.
+- caption: native creator voice for the fandom, may seed a comment-driving question.
+- hashtags: a small mix — one or two broad tags plus a couple of fandom tags.
+- music_brief: one line describing the score that fits the mode and source (or
+  null for no music).
+- hook_text: ignore — the system takes the hook from the approved pitch.
+</package_rules>
 
 <constraints>
-  - Develop the supplied premise — never substitute your own concept.
-  - ONE continuous take, ~8s, vertical 9:16, photoreal found-footage register.
-    No cuts, no montage, no scene jumps.
-  - start_keyframe in the still dialect; motion in the motion dialect; obey both
-    blocks you were given rather than a generic style.
-  - The clip must PAY OFF on camera inside the take — the reveal/event resolves
-    visibly. A pretty static frame where nothing happens is the failure.
-  - The motion must REVEAL the payoff, not bury it (no push-in that loses the
-    concept).
-  - motion carries an Audio: line of concrete diegetic sound; no music.
-  - Write what is visibly on screen. A word that names a feeling instead of a
-    visible thing gives the renderer nothing to draw. Cut empty adjectives (epic,
-    amazing, beautiful, stunning); replace each with the concrete subject, light,
-    or action it stood for.
+- Exactly one shot per beat, same order. Emotion must be a visible physical tell.
+- Cut empty adjectives (epic, amazing, stunning); write the concrete subject,
+  light, or action they stood for.
+- The payoff must happen ON SCREEN in its shot — a pretty frame where nothing
+  resolves is the failure mode.
 </constraints>
 """
 
-def _hydrate_hits(hits: list[RetrievalHit], db: Session) -> list[dict]:
+DIALECT_SYSTEM_PROMPT = """\
+<role>
+You are a prompt translator for ONE specific AI video model. You convert
+model-agnostic motion intents into that model's native prompt grammar — nothing
+more. You add no new creative content.
+</role>
+
+<inputs>
+1. A MODEL DIALECT block (JSON) — the target model's prompting grammar, structure
+   rules, and (if present) multi_shot_grammar and multi_shot_limits.
+2. A SHOT LIST — for each shot: its index, beat role, duration in seconds, its
+   consistency group (shots in the same group render as ONE multi-shot generation),
+   and its motion_intent.
+</inputs>
+
+<task>
+Return one motion prompt per shot, in the same order, in the model's dialect.
+</task>
+
+<rules>
+- These are image-to-video prompts: the input still already carries the look.
+  Describe ONLY camera movement, subject action, timing, and audio. Never
+  re-describe the still's contents, palette, or style.
+- Preserve each intent's single camera move + single subject action and its
+  countable beats. Do not add moves, subjects, or style words.
+- Every prompt MUST end with a concrete diegetic "Audio:" line naming actual
+  sounds (never "ambient sounds"). No music.
+- If the dialect has multi_shot_grammar and a shot belongs to a multi-member
+  group: write that shot's line in the group grammar's member form — starting
+  with an explicit angle/framing statement (non-first members open with an
+  angle-change verb like "Change angle to" / "Switch to"), then the action, then
+  the Audio: line — but do NOT write the "Shot N (Xs-Ys):" label itself; the
+  system prepends labels and computed timestamps. Respect multi_shot_limits.
+  Single-member shots use the model's normal i2v form.
+- Respect any per-shot character limits the dialect declares.
+</rules>
+"""
+
+
+class DialectConversion(BaseModel):
+    """Call 2's structured output: model-native motion prompts, one per input shot,
+    in the same order. Count is validated against the request — a mismatch fails
+    loud rather than mis-assigning prompts to shots."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    motion_prompts: list[str]
+
+
+def _build_plan_envelope(pitch: StoryPitch, rules: RenderRules) -> str:
+    """Assemble call 1's user prompt: pitch JSON + still dialect + motion craft.
+
+    The PLAN_SYSTEM_PROMPT promises these three labeled inputs; dialect blocks are
+    serialized with json.dumps so their full rule text lands verbatim (reference
+    material, not JSON to echo).
     """
-    Build per-hit grounding payloads: transcript from the DB, aesthetic_descriptors
-    and hook_subtype from each hit's blueprint_data.
-
-    Only transcripts need a DB round-trip (captions are deliberately not fetched —
-    no usable signal). A hit with no transcript row gets transcript=None; absence is
-    carried truthfully so _build_envelope decides whether to render a transcript line.
-    """
-
-    ids = [h.content_item_id for h in hits]
-
-    stmt = (
-        select(RawContentItem.id, Transcript.text)
-        .outerjoin(Transcript, RawContentItem.id == Transcript.content_item_id)
-        .where(RawContentItem.id.in_(ids))
+    return "\n\n".join(
+        [
+            f"Story pitch:\n{pitch.model_dump_json(indent=2)}",
+            f"Still dialect:\n{json.dumps(rules.still_dialect(), indent=2)}",
+            f"Motion craft:\n{json.dumps(rules.data['motion_craft'], indent=2)}",
+        ]
     )
 
-    rows = db.execute(stmt).all()
 
-    lookup = {id: (text) for id, text in rows}
-
-    out = []
-    for hit in hits:
-        # A hit whose RawContentItem row no longer exists (stale RAG index
-        # entry) degrades to transcript=None — the same handled state as a
-        # row with no transcript — instead of a KeyError killing the whole
-        # write() call (audit issue 13). Logged so index drift is visible.
-        if hit.content_item_id not in lookup:
-            logger.warning(
-                "RAG hit %s has no RawContentItem row (stale index entry) — "
-                "grounding without transcript",
-                hit.content_item_id,
-            )
-        text = lookup.get(hit.content_item_id)
-        out.append({
-            "transcript": text,
-            "aesthetic_descriptors": hit.blueprint_data.get("aesthetic_descriptors", None),
-            "hook_subtype": hit.blueprint_data.get("hook_subtype", None),
-        })  
-    return out
-    
-def _build_envelope(
-    premise: str,
-    still_dialect: dict,
-    motion_dialect: dict,
-    hydrated_hits: list | None,
+def _build_dialect_envelope(
+    model_cli_id: str,
+    shot_indices: list[int],
+    plan: ShotPlanDraft,
+    groups: list[list[int]],
+    rules: RenderRules,
 ) -> str:
+    """Assemble call 2's user prompt for one model: dialect block + its shot list.
+
+    Each shot line carries index, beat role, duration, its consistency-group
+    membership (so multi-member Kling shots are written in the group grammar with
+    cumulative timestamps), and the motion_intent to convert. Groups are described
+    by their member indices; single-member groups mean normal i2v form.
     """
-    Assemble the single-shot user prompt: the premise to develop, the two dialect
-    blocks the writer must obey, and (optionally) the retrieved winners.
-
-    The SYSTEM_PROMPT promises the model four labeled inputs, so this emits them as
-    labeled sections it can find: the premise (the WHAT), the still dialect (the
-    image-model rules for start_keyframe), the motion dialect (the chosen video
-    model's grammar for motion), and one block per retrieved winner when grounding
-    is supplied. The two dialects are serialized with json.dumps so their full
-    rule text — including nested sub-blocks like a model's physics_keywords — lands
-    verbatim in the prompt; the model reads them as reference, not as JSON to echo.
-
-    Grounding is optional: when hydrated_hits is None or empty, no Examples section
-    is emitted and the writer leans on the dialects and premise alone. Each winner
-    block always carries its aesthetic descriptors and hook subtype (the
-    always-present signal) and adds a transcript line only when that winner has one.
-
-    Returns:
-        The joined prompt string (sections separated by blank lines).
-    """
-
-    parts = [
-        f"Premise:\n{premise}",
-        f"Still dialect:\n{json.dumps(still_dialect, indent=2)}",
-        f"Motion dialect:\n{json.dumps(motion_dialect, indent=2)}",
-    ]
-
-    if hydrated_hits:
-        for i, hit in enumerate(hydrated_hits, 1):
-            aesthetic_descriptors = (
-                ", ".join(hit["aesthetic_descriptors"])
-                if hit["aesthetic_descriptors"]
-                else "n/a"
-            )
-            hook_subtype = hit["hook_subtype"] if hit["hook_subtype"] else "unknown"
-
-            lines = [f"Example {i} — a real video that went viral with these mechanics:"]
-            if hit["transcript"] is not None:
-                lines.append(f"Transcript: {hit['transcript']}")
-            lines.append(f"Aesthetic descriptors: {aesthetic_descriptors}")
-            lines.append(f"Hook subtype: {hook_subtype}")
-
-            parts.append("\n".join(lines))
-
-    return "\n\n".join(parts)
+    group_of = {index: group for group in groups for index in group}
+    lines = [f"Model dialect ({model_cli_id}):"]
+    lines.append(json.dumps(rules.model(model_cli_id)["dialect"], indent=2))
+    lines.append("")
+    lines.append("Shots to convert (return prompts in this order):")
+    for index in shot_indices:
+        shot = plan.shots[index]
+        group = group_of.get(index, [index])
+        membership = (
+            f"group {group} (multi-shot generation, {len(group)} shots)"
+            if len(group) > 1
+            else "single-shot generation"
+        )
+        lines.append(
+            f"- shot_index={index} beat_role={shot.beat_role.value} "
+            f"duration={shot.duration_seconds}s {membership}\n"
+            f"  motion_intent: {shot.motion_intent}"
+        )
+    return "\n".join(lines)
 
 
 class ContentWriter:
-    """
-    Generates a validated single-shot ContentPackage from a premise via one
-    structured-output LLM call.
+    """Turns a judged StoryPitch into a validated MultiShotPackage.
 
-    Injects still and motion render dialects from RenderRules so prompts target
-    the chosen models natively. Optional retrieved hits ground style/lane only.
+    Two structured-output calls on the injected llm seat, with the deterministic
+    router between them (module docstring). Construction takes the llm only;
+    rules and grounding references arrive per-write call.
     """
 
-    def __init__(self, llm: AnthropicLLM | OpenRouterLLM):
+    def __init__(self, llm):
         self.llm = llm
 
     def write(
         self,
-        premise: str,
+        pitch: StoryPitch,
         *,
         rules: RenderRules,
-        model_cli_id: str = "veo3_1",
-        hits: list[RetrievalHit] | None = None,
-        db: Session | None = None,
-    ) -> ContentPackage:
-        """
-        Generate one ContentPackage for a single-shot clip from the given premise.
+        reference_image_paths: list[str],
+        pitch_id: int | None = None,
+    ) -> MultiShotPackage:
+        """Generate one MultiShotPackage from an approved StoryPitch.
 
-        Builds a user prompt from the premise, still dialect, motion dialect for
-        model_cli_id, and (when hits is not None) hydrated winner examples; runs
-        structured output; then code-sets premise, model_cli_id, and
-        grounding_hit_ids (never trusted from the LLM).
+        Runs the plan call, validates one-shot-per-beat cardinality, routes and
+        groups the shots in code, runs one dialect call per distinct routed model,
+        then assembles the package with code-set provenance.
 
         Args:
-            premise: The one-line idea this video delivers (from PremiseGenerator
-                or hand-fed). The writer develops THIS premise, not a substitute.
-            rules: Loaded render_rules.yaml — still_dialect and per-model dialect.
-            model_cli_id: Motion model the motion prompt targets (default veo3_1).
-                Caller/router may override; stamps package.model_cli_id after parse.
-            hits: Optional retrieved viral neighbors for style/lane grounding.
-                When None, generation is imagination-only.
-            db: Required when hits is not None — used to fetch transcripts.
+            pitch: The approved StoryPitch (loaded from AnglePitchRecord.story_json).
+            rules: Loaded render_rules.yaml view (dialects + routing + caps).
+            reference_image_paths: Key-art files that will ground every still —
+                stamped into the package for the adapter/executor (grounding is
+                mandatory, DECISIONS_LOCKED L3; emptiness is NOT validated here —
+                the render layer owns that gate).
+            pitch_id: AnglePitchRecord id for provenance, when written from the DB.
 
         Returns:
-            A validated ContentPackage ready for the thin render adapter.
+            A validated MultiShotPackage with len(pitch.beats) shots.
 
         Raises:
-            TypeError: from SQLAlchemy if hits is provided but db is None.
+            ValueError: if the plan's shot count differs from the pitch's beat
+                count, or a dialect call returns a prompt count that differs from
+                its request (fail loud over mis-assignment).
         """
-
-        if hits is not None:
-            if db is None:
-                raise ValueError("db is required when hits is provided (transcripts need a DB round-trip)")
-            hydrated = _hydrate_hits(hits, db)
-        else:
-            hydrated = None
-
-        envelope = _build_envelope(
-            premise,
-            still_dialect=rules.still_dialect(),
-            motion_dialect=rules.model(model_cli_id)["dialect"],
-            hydrated_hits=hydrated,
+        plan = self.llm.parse(
+            _build_plan_envelope(pitch, rules),
+            ShotPlanDraft,
+            system=PLAN_SYSTEM_PROMPT,
+            max_tokens=WRITER_MAX_TOKENS,
         )
+        if len(plan.shots) != len(pitch.beats):
+            raise ValueError(
+                f"plan produced {len(plan.shots)} shots for {len(pitch.beats)} "
+                "beats — one shot per beat is the contract"
+            )
 
-        package = self.llm.parse(envelope, ContentPackage, system=SYSTEM_PROMPT, max_tokens=WRITER_MAX_TOKENS)
-        package.premise = premise
-        package.model_cli_id = model_cli_id
-        package.grounding_hit_ids = [h.content_item_id for h in hits] if hits is not None else []
+        decisions: list[RoutingDecision] = route_shots(plan.shots, rules)
+        groups = consistency_groups(plan.shots, decisions, rules)
+        for decision in decisions:
+            logger.info("routing: %s", decision.reason)
 
-        return package
+        # Batch call 2 per distinct routed model, preserving shot order per model.
+        indices_by_model: dict[str, list[int]] = {}
+        for decision in decisions:
+            indices_by_model.setdefault(decision.model_cli_id, []).append(
+                decision.shot_index
+            )
+
+        motion_prompts: dict[int, str] = {}
+        for model_cli_id, shot_indices in indices_by_model.items():
+            conversion = self.llm.parse(
+                _build_dialect_envelope(model_cli_id, shot_indices, plan, groups, rules),
+                DialectConversion,
+                system=DIALECT_SYSTEM_PROMPT,
+                max_tokens=WRITER_MAX_TOKENS,
+            )
+            if len(conversion.motion_prompts) != len(shot_indices):
+                raise ValueError(
+                    f"dialect call for {model_cli_id} returned "
+                    f"{len(conversion.motion_prompts)} prompts for "
+                    f"{len(shot_indices)} shots"
+                )
+            for index, prompt in zip(shot_indices, conversion.motion_prompts):
+                motion_prompts[index] = prompt
+
+        # Assemble ShotSpecs — code copies the pitch's own beat facts (role, cast,
+        # silence) rather than trusting the draft's echo of them.
+        shots = []
+        for index, (beat, draft, decision) in enumerate(
+            zip(pitch.beats, plan.shots, decisions)
+        ):
+            narration = (
+                draft.narration_line if beat.narration_line is not None else None
+            )
+            shots.append(
+                ShotSpec(
+                    beat_role=beat.role,
+                    motion_tag=draft.motion_tag,
+                    still_prompt=draft.still_prompt,
+                    motion_prompt=motion_prompts[index],
+                    duration_seconds=draft.duration_seconds,
+                    narration_line=narration,
+                    characters_in_frame=list(beat.characters_in_frame),
+                    model_cli_id=decision.model_cli_id,
+                )
+            )
+
+        return MultiShotPackage(
+            shots=shots,
+            style_anchor=plan.style_anchor,
+            anchors_block=plan.anchors_block,
+            hook_text=pitch.hook_line,  # gate-judged text wins over the draft's
+            caption=plan.caption,
+            hashtags=plan.hashtags,
+            music_brief=plan.music_brief,
+            rationale=plan.rationale,
+            pitch_id=pitch_id,
+            reference_image_paths=list(reference_image_paths),
+            consistency_groups=groups,
+        )
