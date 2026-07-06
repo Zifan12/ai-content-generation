@@ -4,32 +4,39 @@ Content generation schemas — the multi-shot writer's structured-output contrac
 PIPELINE ROLE:
   StoryPitch (Stage 1, src/monitor/schemas.py, loaded from AnglePitchRecord.story_json)
   →  ContentWriter.write()  →  MultiShotPackage (this file)  →  render adapter
-  (grouped RenderJobs)  →  executor (grounded stills + i2v / Kling multi-shot)
-  →  assembly (concat + TTS narration + BGM + hook card)  →  one 12–25s 9:16 video.
+  (ONE prose-chained scene prompt)  →  executor (ONE Seedance generation)
+  →  assembly (TTS narration + BGM + hook card + tail-fade)  →  one 10–25s 9:16 video.
 
 WHY THIS FILE EXISTS:
   MultiShotPackage is the schema the LLM fills via structured output (in two calls —
-  see spec §2.2: ShotPlanDraft is call 1's output; the final package is assembled in
-  code after routing + call 2). Pydantic validation is the guard rail: a package that
-  breaks the product envelope (shot count, per-shot duration, total duration) is
-  rejected, not silently rendered.
+  ShotPlanDraft is call 1's output; call 2 writes per-shot scene lines; the final
+  package is assembled in code). Pydantic validation is the guard rail: a package
+  that breaks the product envelope (shot count, per-shot estimate, total duration)
+  is rejected, not silently rendered.
 
-PARADIGM (multi-shot source-style, spec 2026-07-04, extends content spec 2026-06-27 §4/§5):
-  One video = 3–6 shots, one per StoryBeat, 12–25s total, vertical 9:16, register =
-  SOURCE-STYLE-MATCHED (reads as footage from the source show; found-footage retired).
-  Per-shot model routing via MotionTag (values = config/render_rules.yaml routing keys
-  VERBATIM — the router calls rules.route(tag.value) with no mapping layer).
+PARADIGM (motion-native scene lane, spec 2026-07-06, supersedes the still-first
+  multi-shot paradigm of spec 2026-07-04):
+  One video = ONE Seedance generation of 3–6 prose-chained shots, 10–25s total
+  (v1 target: one 10s generation), vertical 9:16, register = SOURCE-STYLE-MATCHED.
+  No per-shot model routing, no breakout shots, no Kling fallback (D3) — MotionTag
+  survives as shot metadata only (legacy router consumes it until Task-10 deletion,
+  and it stays a free labeled feature for P4).
 
   The writer's output is render-agnostic TEXT. anchors_block and style_anchor are
-  package-level and composed into prompts BY THE ADAPTER in code (D10) — shot prompts
-  must NOT contain them (an LLM asked to repeat an anchor verbatim across six prompts
-  eventually paraphrases, which is the identity-drift trigger).
+  package-level and composed into the scene prompt BY THE ADAPTER in code — shot
+  scene lines must NOT contain them (an LLM asked to repeat an anchor verbatim
+  across six lines eventually paraphrases, which is the identity-drift trigger).
 
-  Narration is real TTS audio mixed at assembly (D7); there is no on-camera dialogue
-  field at launch (06-27 §4 bans lip-sync). hook_text is burned at assembly (D9),
-  never baked into a render.
+  Per-shot seconds are an INTERNAL estimate (narration word-budget math only) and
+  NEVER appear in prompt text (D2 — bracketed timestamps are rejected by the
+  Higgsfield CLI, measured 2026-07-06). Duration reaches the model exclusively as
+  the CLI --duration parameter, read from config/render_rules.yaml scene_lane.
 
-  Full decision log: docs/superpowers/specs/2026-07-04-multishot-writer-render-redesign.md §5.
+  Narration is real TTS audio mixed at assembly; native audio keeps concrete SFX,
+  music is suppressed in-prompt ("no music") and added at assembly (D5). hook_text
+  is burned at assembly, never baked into a render.
+
+  Full decision log: docs/superpowers/specs/2026-07-06-motion-native-render-refactor.md.
 """
 
 from enum import Enum
@@ -38,8 +45,9 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from src.monitor.schemas import BeatRole
 
-# Product envelope (06-27 spec §4): total assembled runtime bounds in seconds.
-TOTAL_SECONDS_MIN = 12
+# Product envelope (D1, 2026-07-06 motion-native spec — floor relaxed 12→10 so a
+# single 10s Seedance generation validates): total runtime bounds in seconds.
+TOTAL_SECONDS_MIN = 10
 TOTAL_SECONDS_MAX = 25
 
 
@@ -57,11 +65,13 @@ class Register(str, Enum):
 
 
 class MotionTag(str, Enum):
-    """Per-shot content classification the router consumes (D4/D5).
+    """Per-shot content classification — METADATA ONLY in the scene lane (D3).
 
-    Values are config/render_rules.yaml `routing:` keys VERBATIM, so
-    rules.route(tag.value) needs no mapping layer — parity is enforced by test.
-    The writer classifies WHAT the shot needs; code decides WHICH model renders it.
+    The scene lane renders everything in one Seedance generation, so nothing
+    routes on this tag anymore. It survives because (a) the legacy still-first
+    router consumes it until the Task-10 deletion, and (b) it is a free labeled
+    feature for P4. Values remain config/render_rules.yaml `routing:` keys
+    VERBATIM (parity enforced by test) so the legacy path stays green.
     """
 
     fluid_motion = "fluid_motion"
@@ -76,29 +86,32 @@ class ShotSpec(BaseModel):
 
     Attributes:
       beat_role: Copied from the source StoryBeat (hook/establish/.../payoff/tag).
-      motion_tag: LLM-classified shot-content tag; the router maps it to a model.
-      still_prompt: Image prompt for this shot's grounded opening still. Carries NO
-        anchors and NO style words — the adapter prepends anchors_block and appends
-        style_anchor + global constraints in code (D10).
-      motion_prompt: Model-native i2v prompt — camera + subject action + timing +
-        a concrete "Audio:" line ONLY (i2v rule: never re-describe the still).
-        For shots inside a Kling consistency group this is the per-shot line the
-        adapter labels `Shot N (Xs-Ys):` (native grammar, spike-proven 2026-07-04).
-      duration_seconds: 4–8s (DECISIONS_LOCKED L2 clip cap).
+      motion_tag: LLM-classified shot-content tag — metadata only in the scene
+        lane (D3); the legacy router still reads it until Task-10 deletion.
+      still_prompt: LEGACY (still-first lane, D4) — unpopulated by the scene lane,
+        defaults to None, deleted in the Task-10 cleanup along with the old
+        adapter/executor branches that read it.
+      scene_line: Call 2's Seedance prose line for this shot — one camera move +
+        one subject action (separated) + a concrete "Audio:" event. Carries NO
+        anchors, NO style words, NO seconds/timestamps (D2) — the adapter chains
+        lines with "Then cut to" and composes identity/style/constraints in code.
+      duration_seconds: 2–8s INTERNAL estimate (narration word-budget math only);
+        NEVER enters prompt text — duration reaches the model exclusively as the
+        CLI --duration parameter (D2).
       narration_line: TTS narration text for this shot, or None for a silent beat
         (passthrough from StoryBeat.narration_line). Budget ≤ 2.2 words × duration.
       characters_in_frame: Copied from the source StoryBeat.
-      model_cli_id: CODE-SET by the router after parsing (never trusted from the
-        LLM); "" until routed.
+      model_cli_id: CODE-SET after parsing (never trusted from the LLM); "" until
+        set. Scene lane: always the scene_lane.model from render_rules.yaml.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     beat_role: BeatRole
     motion_tag: MotionTag
-    still_prompt: str
-    motion_prompt: str
-    duration_seconds: int = Field(ge=4, le=8)
+    still_prompt: str | None = None   # legacy still-first lane (D4) — dies in Task 10
+    scene_line: str
+    duration_seconds: int = Field(ge=2, le=8)
     narration_line: str | None
     characters_in_frame: list[str]
     model_cli_id: str = ""
@@ -108,18 +121,17 @@ class ShotDraft(BaseModel):
     """Call-1 draft of one shot: classified and planned, but not yet model-native.
 
     motion_intent is a model-AGNOSTIC action/camera/timing/audio description; call 2
-    converts it into the routed model's dialect (becoming ShotSpec.motion_prompt).
-    still_prompt IS final here — the still model (nano_banana_2) never varies, so the
-    still dialect is model-independent and call 1 can finish it.
+    converts it into a Seedance prose line (becoming ShotSpec.scene_line). The draft
+    carries NO still_prompt — the scene lane renders no stills, so call 1 never
+    spends tokens writing image prompts (dropped 2026-07-06, D4).
     """
 
     model_config = ConfigDict(extra="forbid")
 
     beat_role: BeatRole
     motion_tag: MotionTag
-    still_prompt: str
     motion_intent: str
-    duration_seconds: int = Field(ge=4, le=8)
+    duration_seconds: int = Field(ge=2, le=8)
     narration_line: str | None
     characters_in_frame: list[str]
 
@@ -146,12 +158,12 @@ class ShotPlanDraft(BaseModel):
 
     @model_validator(mode="after")
     def _check_total_duration(self) -> "ShotPlanDraft":
-        """Reject plans whose summed shot durations leave the 12–25s product envelope."""
+        """Reject plans whose summed shot estimates leave the 10–25s product envelope (D1)."""
         total = sum(shot.duration_seconds for shot in self.shots)
         if not TOTAL_SECONDS_MIN <= total <= TOTAL_SECONDS_MAX:
             raise ValueError(
                 f"total duration {total}s outside {TOTAL_SECONDS_MIN}-"
-                f"{TOTAL_SECONDS_MAX}s (06-27 spec §4)"
+                f"{TOTAL_SECONDS_MAX}s (D1, 2026-07-06 motion-native spec)"
             )
         return self
 
@@ -169,11 +181,11 @@ class MultiShotPackage(BaseModel):
       visual_register: Visual register (source_style at launch, D1). Named
         visual_register because a bare `register` field shadows a BaseModel
         attribute (pydantic UserWarning on every import).
-      style_anchor: ONE line naming the source's visual register; adapter appends it
-        verbatim to EVERY still prompt.
+      style_anchor: ONE line naming the source's visual register; the adapter
+        composes it into the scene prompt's style preamble in code.
       anchors_block: One identity sentence per character (name, hair, outfit category
-        + primary color, recognition trait); adapter prepends it verbatim to EVERY
-        still prompt (SHOT_CRAFT consistency rule, composed in code per D10).
+        + primary color, recognition trait); the adapter composes it into the scene
+        prompt's identity block in code, binding refs positionally ("(imageN)").
       hook_text: Hook card text (from StoryPitch.hook_line), burned at assembly via
         drawtext (D9); None = deliberately textless.
       caption: TikTok caption posted with the video.
@@ -181,10 +193,11 @@ class MultiShotPackage(BaseModel):
       music_brief: Sonilo prompt for the BGM track, or None for no score (D8).
       rationale: Optional free-text explanation of creative choices.
       pitch_id: AnglePitchRecord id this package was written from (code-set).
-      reference_image_paths: Key-art files fed to the still model for grounding
-        (code-set; grounding is mandatory per DECISIONS_LOCKED L3).
-      consistency_groups: Router-computed shot-index groups; each inner list renders
-        as ONE Kling multi-shot generation (D6). Singletons for breakout shots.
+      reference_image_paths: Character-ref files attached to the scene generation
+        (code-set; grounding is mandatory per DECISIONS_LOCKED L3). Upload order
+        defines the positional "(imageN)" binding in the identity block.
+      consistency_groups: LEGACY (still-first lane, D4) — router-computed Kling
+        group indices; unpopulated (empty) in the scene lane, deleted in Task 10.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -205,12 +218,12 @@ class MultiShotPackage(BaseModel):
 
     @model_validator(mode="after")
     def _check_total_duration(self) -> "MultiShotPackage":
-        """Reject packages whose summed shot durations leave the 12–25s envelope."""
+        """Reject packages whose summed shot estimates leave the 10–25s envelope (D1)."""
         total = sum(shot.duration_seconds for shot in self.shots)
         if not TOTAL_SECONDS_MIN <= total <= TOTAL_SECONDS_MAX:
             raise ValueError(
                 f"total duration {total}s outside {TOTAL_SECONDS_MIN}-"
-                f"{TOTAL_SECONDS_MAX}s (06-27 spec §4)"
+                f"{TOTAL_SECONDS_MAX}s (D1, 2026-07-06 motion-native spec)"
             )
         return self
 

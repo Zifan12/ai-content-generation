@@ -331,8 +331,9 @@ class ContentWriter:
                 ShotSpec(
                     beat_role=beat.role,
                     motion_tag=draft.motion_tag,
-                    still_prompt=draft.still_prompt,
-                    motion_prompt=motion_prompts[index],
+                    # still_prompt omitted: legacy still-first field (D4), the
+                    # scene lane renders no stills — defaults to None.
+                    scene_line=motion_prompts[index],
                     duration_seconds=draft.duration_seconds,
                     narration_line=narration,
                     characters_in_frame=list(beat.characters_in_frame),

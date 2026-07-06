@@ -1,11 +1,12 @@
 """Tests for the v3 multi-shot generation schemas (plan 2026-07-04 Task 1).
 
-Covers the assertion contracts from the plan:
+Covers the assertion contracts from the plan (bounds updated 2026-07-06 for the
+motion-native scene lane — envelope 10-25s, per-shot estimate 2-8s):
   - shot cardinality bounds (2 rejected, 7 rejected, 3 and 6 accepted)
-  - per-shot duration bounds (3s and 9s rejected)
-  - total-duration envelope (26s rejected; 12s and 25s accepted; an 11s total is
-    unconstructible with valid shots — 3 shots x 4s minimum = 12s — so the lower
-    bound is exercised at its boundary, not below it)
+  - per-shot duration-estimate bounds (1s and 9s rejected)
+  - total-duration envelope (26s rejected; 9s rejected — constructible now that
+    the per-shot floor is 2s; 10s, 12s and 25s accepted)
+  - legacy still-first fields default empty (still_prompt None — D4)
   - MotionTag values == config/render_rules.yaml routing keys (parity, D5)
   - extra="forbid" on every v3 class (LLM hallucinated-field guard)
 
@@ -31,8 +32,8 @@ def _shot_spec(duration: int = 5, role: BeatRole = BeatRole.hook) -> ShotSpec:
     return ShotSpec(
         beat_role=role,
         motion_tag=MotionTag.character_consistency,
-        still_prompt="Full-figure low angle, subject centered in a rain-slick alley.",
-        motion_prompt="Slow crane-up, she lifts her head on the final second. Audio: rain patter.",
+        still_prompt="Full-figure low angle, subject centered in a rain-slick alley.",  # legacy (D4)
+        scene_line="Slow crane-up, she lifts her head on the final second. Audio: rain patter.",
         duration_seconds=duration,
         narration_line="She waited for the signal.",
         characters_in_frame=["Eve"],
@@ -55,7 +56,6 @@ def _draft(duration: int = 5) -> ShotDraft:
     return ShotDraft(
         beat_role=BeatRole.build,
         motion_tag=MotionTag.spectacle,
-        still_prompt="Wide shot, city skyline at dusk.",
         motion_intent="Camera pushes toward the tower as lights ignite floor by floor.",
         duration_seconds=duration,
         narration_line=None,
@@ -99,9 +99,9 @@ def test_package_six_shots_accepted():
 # --- per-shot duration bounds -------------------------------------------------
 
 
-def test_shot_duration_three_seconds_rejected():
+def test_shot_duration_one_second_rejected():
     with pytest.raises(ValidationError):
-        _shot_spec(duration=3)
+        _shot_spec(duration=1)
 
 
 def test_shot_duration_nine_seconds_rejected():
@@ -123,6 +123,17 @@ def test_package_total_25s_accepted():
 
 def test_package_total_12s_accepted():
     assert sum(s.duration_seconds for s in _package([4, 4, 4]).shots) == 12
+
+
+def test_package_total_10s_accepted():
+    # The new floor (D1): one 10s Seedance generation must validate.
+    assert sum(s.duration_seconds for s in _package([4, 4, 2]).shots) == 10
+
+
+def test_package_total_9s_rejected():
+    # Below the 10s floor — constructible now that the per-shot floor is 2s.
+    with pytest.raises(ValidationError):
+        _package([3, 3, 3])
 
 
 def test_plan_draft_total_26s_rejected():
@@ -166,8 +177,7 @@ def test_shot_spec_rejects_unknown_field():
         ShotSpec(
             beat_role=BeatRole.hook,
             motion_tag=MotionTag.character_consistency,
-            still_prompt="x",
-            motion_prompt="y. Audio: z.",
+            scene_line="y. Audio: z.",
             duration_seconds=5,
             narration_line=None,
             characters_in_frame=[],
@@ -210,13 +220,14 @@ def test_narration_none_is_valid_silent_beat():
     spec = ShotSpec(
         beat_role=BeatRole.establish,
         motion_tag=MotionTag.fluid_motion,
-        still_prompt="x",
-        motion_prompt="y. Audio: z.",
+        scene_line="y. Audio: z.",
         duration_seconds=4,
         narration_line=None,
         characters_in_frame=[],
     )
     assert spec.narration_line is None
+    # Legacy still-first field defaults empty when omitted (D4).
+    assert spec.still_prompt is None
 
 
 def test_package_code_set_defaults():

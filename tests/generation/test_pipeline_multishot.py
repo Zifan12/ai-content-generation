@@ -26,7 +26,6 @@ class FakeLLM:
                     ShotDraft(
                         beat_role=BeatRole.build,
                         motion_tag=MotionTag.character_consistency,
-                        still_prompt=f"still {i}",
                         motion_intent=f"intent {i}",
                         duration_seconds=4,
                         narration_line="line",

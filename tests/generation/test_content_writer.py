@@ -81,7 +81,6 @@ def _draft_shots(
         ShotDraft(
             beat_role=BeatRole.build,  # deliberately wrong: writer must copy pitch's
             motion_tag=tag,
-            still_prompt=f"Shot {i} still: the swordswoman mid-stride, low angle.",
             motion_intent=f"Shot {i}: slow push-in, she turns on the final second.",
             duration_seconds=4,
             narration_line=narration,
@@ -210,10 +209,9 @@ def test_provenance_code_set(rules):
 def test_no_shot_prompt_contains_anchor_or_style_text(rules):
     package = _write(_pitch(3), FakeLLM(_plan(_draft_shots(3))), rules)
     for shot in package.shots:
-        assert ANCHOR_TEXT not in shot.still_prompt
-        assert ANCHOR_TEXT not in shot.motion_prompt
-        assert STYLE_TEXT not in shot.still_prompt
-        assert STYLE_TEXT not in shot.motion_prompt
+        assert shot.still_prompt is None  # legacy field, unpopulated by the scene lane
+        assert ANCHOR_TEXT not in shot.scene_line
+        assert STYLE_TEXT not in shot.scene_line
     assert package.anchors_block == ANCHOR_TEXT
     assert package.style_anchor == STYLE_TEXT
 
@@ -243,7 +241,6 @@ def test_one_dialect_call_per_distinct_model(rules):
     shots[1] = ShotDraft(
         beat_role=BeatRole.build,
         motion_tag=MotionTag.fluid_motion,
-        still_prompt="Wave still.",
         motion_intent="Water arcs over the wall, edges holding.",
         duration_seconds=4,
         narration_line="x",
@@ -264,7 +261,7 @@ def test_dialect_count_mismatch_raises(rules):
 
 def test_motion_prompts_assigned_in_shot_order(rules):
     package = _write(_pitch(3), FakeLLM(_plan(_draft_shots(3))), rules)
-    assert [shot.motion_prompt for shot in package.shots] == [
+    assert [shot.scene_line for shot in package.shots] == [
         "CONVERTED[0]. Audio: rain on pavement.",
         "CONVERTED[1]. Audio: rain on pavement.",
         "CONVERTED[2]. Audio: rain on pavement.",

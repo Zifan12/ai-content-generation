@@ -29,7 +29,7 @@ def _shot(
         beat_role=BeatRole.build,
         motion_tag=tag,
         still_prompt=f"STILL[{index}] low angle, subject centered.",
-        motion_prompt=f"MOTION[{index}] slow push-in, she turns. Audio: rain.",
+        scene_line=f"MOTION[{index}] slow push-in, she turns. Audio: rain.",
         duration_seconds=duration,
         narration_line=None,
         characters_in_frame=["Eve"],

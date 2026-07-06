@@ -43,7 +43,9 @@ def _still_prompt(shot: ShotSpec, package: MultiShotPackage, rules: RenderRules)
     framing/content, then the style anchor, then the yaml's still-kind constraint
     strings with [STYLE] resolved to the style anchor.
     """
-    parts = [package.anchors_block, shot.still_prompt, package.style_anchor]
+    # `or ""`: still_prompt is legacy-defaulted None on scene-lane packages (D4
+    # bridge until the Task-10 deletion of this whole still-first path).
+    parts = [package.anchors_block, shot.still_prompt or "", package.style_anchor]
     parts.extend(rules.global_constraints("still", style=package.style_anchor))
     return " ".join(parts)
 
@@ -54,7 +56,7 @@ def _motion_prompt(shot: ShotSpec, rules: RenderRules) -> str:
     Motion prompts carry no style text ([STYLE] collapses to empty per the i2v
     rule — the still owns the look), so constraints are fetched with style="".
     """
-    parts = [shot.motion_prompt]
+    parts = [shot.scene_line]
     parts.extend(rules.global_constraints("motion", style=""))
     return " ".join(parts)
 
@@ -74,7 +76,7 @@ def _group_prompt(
     elapsed = 0
     for position, shot in enumerate(members, start=1):
         start, end = elapsed, elapsed + shot.duration_seconds
-        lines.append(f"Shot {position} ({start}-{end}s): {shot.motion_prompt}")
+        lines.append(f"Shot {position} ({start}-{end}s): {shot.scene_line}")
         elapsed = end
     lines.extend(rules.global_constraints("motion", style=""))
     return "\n".join(lines)

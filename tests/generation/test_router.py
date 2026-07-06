@@ -40,7 +40,6 @@ def _draft(
     return ShotDraft(
         beat_role=BeatRole.build,
         motion_tag=tag,
-        still_prompt="Wide shot, rain-slick alley, subject centered.",
         motion_intent="Slow push-in, subject turns on the final second, rain falling.",
         duration_seconds=duration,
         narration_line=None,
