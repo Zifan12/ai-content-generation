@@ -1,0 +1,38 @@
+# reference_harvest.yaml
+#
+# Tunables for the reference harvester (src/reference/): LLM query planner ->
+# yt-dlp search + LLM candidate picker -> yt-dlp download + ffmpeg frame
+# extraction -> heuristic prefilter -> vision-LLM frame judge -> angle-diverse
+# ranking -> filesystem approval gate + provenance manifest.
+#
+# Spec: docs/superpowers/specs/2026-07-05-reference-harvester-design.md
+# Plan: docs/superpowers/plans/2026-07-05-reference-harvester.md
+
+# Query planner / candidate search
+search_limit_per_query: 8      # yt-dlp results pulled per planner query
+shortlist_size: 5              # candidates kept after dedupe/duration-cap, before LLM pick
+
+# Duration / resolution guards (checked metadata-first, before download)
+max_duration_seconds: 900      # 15 min hard cap; reject before download
+min_resolution: 720            # reject candidates below this vertical resolution
+download_resolution_cap: 1080  # cap requested download quality
+
+# Heuristic prefilter (Task 8)
+sharpness_laplacian_min: 100.0  # PLACEHOLDER — tune on first real trailer (Task 13), update this comment with the observed value
+phash_distance_min: 6           # imagehash phash hamming distance below this = near-dup, collapse
+luminance_min: 40               # mean luminance below this = reject as too dark
+
+# Vision judge (Task 9)
+max_judge_frames: 40            # cap frames sent to the vision-LLM judge per video (cost control)
+
+# Final ranking (Task 10)
+top_k_min: 6                    # fewer usable frames than this -> HarvestResult reflects shortfall, not an error
+top_k_max: 8                    # cap on approved reference frames per character
+
+# LLM seats — model ids centralized here, never hardcoded at call sites (AUD-M21)
+planner_model: google/gemini-2.5-flash
+picker_model: google/gemini-2.5-flash
+judge_model: google/gemini-2.5-flash
+
+# Cache
+cache_root: data/reference_cache   # downloaded videos + extracted frames land here (video deleted after extraction, frames kept)
