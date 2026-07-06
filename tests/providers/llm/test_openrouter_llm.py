@@ -161,6 +161,61 @@ def test_constraint_keywords_stripped_from_request_schema():
     assert len(fake2.requests) == 2  # violation caught client-side, retried
 
 
+def test_no_images_keeps_content_as_plain_string():
+    """Regression guard: omitting images must be byte-identical to today —
+    content stays a plain string, not a parts-list."""
+    fake = FakeClient([_Completion('{"ok": true, "note": "fine"}')])
+    llm = OpenRouterLLM(model="test/model", client=fake)
+
+    llm.parse("judge this", Verdict, system="you are a judge")
+
+    req = fake.requests[0]
+    assert req["messages"][0]["content"] == "you are a judge"
+    assert req["messages"][1]["content"] == "judge this"
+
+
+def test_images_param_produces_content_parts_with_base64_data_url(tmp_path):
+    """With images=[...], the user message content becomes a parts-list:
+    a text part plus one image_url part per image, base64-encoded as a PNG
+    data: URL (OpenAI multimodal message format)."""
+    png_bytes = b"\x89PNG\r\n\x1a\nfake-png-bytes"
+    image_path = tmp_path / "frame_001.png"
+    image_path.write_bytes(png_bytes)
+
+    fake = FakeClient([_Completion('{"ok": true, "note": "fine"}')])
+    llm = OpenRouterLLM(model="test/model", client=fake)
+
+    llm.parse("judge this frame", Verdict, images=[str(image_path)])
+
+    user_message = fake.requests[0]["messages"][-1]
+    assert user_message["role"] == "user"
+    content = user_message["content"]
+    assert isinstance(content, list)
+    assert content[0] == {"type": "text", "text": "judge this frame"}
+    assert len(content) == 2
+
+    image_part = content[1]
+    assert image_part["type"] == "image_url"
+    import base64
+
+    expected_data_url = f"data:image/png;base64,{base64.b64encode(png_bytes).decode()}"
+    assert image_part["image_url"]["url"] == expected_data_url
+
+
+def test_images_param_forwarded_by_parse_with_raw(tmp_path):
+    image_path = tmp_path / "frame.png"
+    image_path.write_bytes(b"\x89PNG\r\n\x1a\nfake")
+
+    fake = FakeClient([_Completion('{"ok": true, "note": "fine"}')])
+    llm = OpenRouterLLM(model="test/model", client=fake)
+
+    llm.parse_with_raw("judge this", Verdict, images=[str(image_path)])
+
+    content = fake.requests[0]["messages"][-1]["content"]
+    assert isinstance(content, list)
+    assert content[1]["type"] == "image_url"
+
+
 def test_parse_with_raw_meta_keys_match_anthropic_contract():
     """raw_meta must have the SAME keys as AnthropicLLM.parse_with_raw so
     downstream consumers never branch on provider."""

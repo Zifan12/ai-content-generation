@@ -23,8 +23,10 @@ is provider/model-dependent. Defense here is layered (decisions ratified
   grammar-timeout lesson, BUG-007).
 """
 
+import base64
 import logging
 import os
+from pathlib import Path
 from typing import Type, TypeVar
 
 from pydantic import BaseModel, ValidationError
@@ -89,6 +91,29 @@ def _sanitize_schema(node, *, in_properties: bool = False):
     if isinstance(node, list):
         return [_sanitize_schema(item) for item in node]
     return node
+
+
+def _build_user_content(prompt: str, images: list[str] | None) -> str | list[dict]:
+    """Build the ``user`` message content: plain string, or an OpenAI
+    multimodal parts-list (text part + one ``image_url`` part per image) when
+    ``images`` is given. PNG is assumed — the reference harvester (the only
+    caller passing images) produces PNG frames only.
+
+    ``images=None`` keeps content a plain string, byte-identical to the
+    pre-vision behavior (regression guard for every existing text-only seat).
+    """
+    if not images:
+        return prompt
+    parts: list[dict] = [{"type": "text", "text": prompt}]
+    for image_path in images:
+        data = base64.b64encode(Path(image_path).read_bytes()).decode()
+        parts.append(
+            {
+                "type": "image_url",
+                "image_url": {"url": f"data:image/png;base64,{data}"},
+            }
+        )
+    return parts
 
 
 class SchemaValidationExhaustedError(RuntimeError):
@@ -161,6 +186,7 @@ class OpenRouterLLM:
         system: str | None = None,
         max_tokens: int = 1024,
         temperature: float | None = None,
+        images: list[str] | None = None,
     ) -> tuple[T, dict]:
         """
         Run the model on ``prompt``; return (validated instance, raw-meta dict).
@@ -169,6 +195,15 @@ class OpenRouterLLM:
         restricts provider routing to providers that honor the parameters
         (``require_parameters``). The response is still validated client-side;
         schema-invalid JSON triggers the F1 corrective-retry loop.
+
+        Args:
+            images: Local file paths to PNG frames (vision-judge seat only).
+                Each becomes a base64 ``data:`` URL alongside the text prompt
+                in an OpenAI multimodal ``image_url`` content part. ``None``
+                (the default) keeps every other caller's request byte-identical
+                to before this param existed. Corrective retries (F1) stay
+                text-only regardless — only the original user turn carries
+                images.
 
         Returns:
             Tuple of (parsed_model, raw_meta) where raw_meta keys match
@@ -188,7 +223,7 @@ class OpenRouterLLM:
         messages: list[dict] = []
         if system is not None:
             messages.append({"role": "system", "content": system})
-        messages.append({"role": "user", "content": prompt})
+        messages.append({"role": "user", "content": _build_user_content(prompt, images)})
 
         kwargs: dict = {}
         if temperature is not None:
@@ -297,6 +332,7 @@ class OpenRouterLLM:
         system: str | None = None,
         max_tokens: int = 1024,
         temperature: float | None = None,
+        images: list[str] | None = None,
     ) -> T:
         """
         Run the model on ``prompt``; return a validated ``response_model`` instance.
@@ -304,4 +340,6 @@ class OpenRouterLLM:
         Same call as ``parse_with_raw`` with the raw-meta dict discarded —
         for callers that don't need usage counters.
         """
-        return self.parse_with_raw(prompt, response_model, system, max_tokens, temperature)[0]
+        return self.parse_with_raw(
+            prompt, response_model, system, max_tokens, temperature, images
+        )[0]
