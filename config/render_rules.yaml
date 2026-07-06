@@ -119,15 +119,17 @@ models:
     # nothing model-numeric hardcoded in code; Seedance 2.5 = edit here).
     # ------------------------------------------------------------------
     limits:
-      max_duration_seconds: 10      # MEASURED 2026-07-06 bisect: 15s FAILS always via Higgsfield CLI (CapCut-tier 5s/15s set not exposed working); 10s works — FINDINGS.md
+      max_duration_seconds: 15      # MEASURED 2026-07-06 22:36 probe: 15s WORKS via CLI (15.07s output verified, 67.5cr). Earlier same-day bisect wrote "15s fails always" from confounded/transient early failures — corrected in FINDINGS.md. Vendor page also states 15s/shot.
       max_prompt_chars: 3000        # methodology/15 L364-366: Seedance ≤4000 chars, Higgsfield ≤3000-3500 — enforce the conservative floor as a hard validation ceiling
       max_characters_in_scene: 3    # methodology/15 L136-139: >3 characters error-prone (misplacement/fusion); 2-3 main characters per shot recommended
       max_image_references: 9       # `higgsfield model get seedance_2_0` 2026-07-06 — counts start_image AND end_image
       max_reference_files_total: 12 # same source — images + videos + audios combined
       resolutions: [480p, 720p, 1080p, 4k]   # same source; mode 'fast' supports only 480p/720p
-      cost_estimate_credits:        # executor dry-run pricing (ADR-0007): state cost per take before any paid run
-        10s_720p: 35                # MEASURED 2026-07-06 bisect (FINDINGS.md — 2 successful 10s renders ≈ 70cr)
-        10s_1080p: 50               # UNMEASURED estimate (2026-07-06 plan Task 8); replace with a measured value after the first 1080p final
+      cost_estimate_credits:        # executor dry-run pricing (ADR-0007): state cost per take before any paid run.
+        # MEASURED 2026-07-06 from `higgsfield account transactions` (billing = ground
+        # truth; the earlier ~35cr/10s session-note figure was wrong). Linear rates:
+        per_second_720p: 4.5        # 22.5cr/5s, 45cr/10s, 67.5cr/15s — three measured points
+        per_second_1080p: 9.0       # inferred from two FAILED (refunded) attempts: 90cr/10s, 135cr/15s — confirm on first kept 1080p render
     dialect:
       style: "Directorial thinking — the whole package is ONE generation, shots chained as prose. Subject first, one active verb per shot, camera after action, style anchor at the end, constraints last (five-part spine, methodology/19 §7)."
       prose_chain_grammar: "Open with shot 1's framing + action, then each subsequent shot as 'Then cut to [framing]: [subject action]. [camera]. Audio: [event].' The model cuts internally on the prose boundaries — MEASURED working on Higgsfield (FINDINGS.md); one camera move + one subject action per shot line (image-video-director/03 L9-16)."
@@ -185,7 +187,7 @@ models:
 scene_lane:
   model: seedance_2_0          # D7 swap point — the ONLY place the lane's model is named
   defaults:
-    duration_seconds: 10       # v1 target (spec D1 envelope 10-25s; 10s = Higgsfield cap, see limits)
+    duration_seconds: 10       # v1 target (spec D1 envelope 10-25s). NOT a CLI cap — 15s measured working 2026-07-06 (67.5cr vs 45cr at 720p); bump here if the 15s default is ratified
     resolution: 720p           # dev default — see retake_ladder
     aspect_ratio: "9:16"
     genre: auto                # 1080p + genre 'drama' untested in isolation (FINDINGS.md) — leave auto until a clean retest
