@@ -11,7 +11,7 @@ import time
 
 from anthropic import Anthropic, BadRequestError
 from pydantic import BaseModel
-from typing import TypeVar, Type
+from typing import Any, TypeVar, Type
 from src.observability.tracing import get_client, traced
 
 logger = logging.getLogger(__name__)
@@ -119,11 +119,12 @@ class AnthropicLLM:
               - "usage_cache_read_tokens": int | None (None if cache not used)
         """
 
+        # Heterogeneous optional params (system blocks, float temperature) —
+        # without the Any annotation mypy locks the dict to the first branch's
+        # value type and rejects every later insert and the ** unpack.
+        kwargs: dict[str, Any] = {}
         if system is not None:
-            system_param = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral", "ttl": self._cache_ttl}}]
-            kwargs = {"system": system_param}
-        else:
-            kwargs = {}
+            kwargs["system"] = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral", "ttl": self._cache_ttl}}]
 
         if temperature is not None:
             kwargs["temperature"] = temperature
@@ -159,8 +160,17 @@ class AnthropicLLM:
             )
 
         parsed = response.parsed_output
+        # SDK types parsed_output as T | None — None here means the model
+        # finished without emitting schema-conformant output (e.g. a refusal).
+        # Fail loud with the call's identity rather than deref-crashing.
+        if parsed is None:
+            raise RuntimeError(
+                f"messages.parse returned no parsed_output "
+                f"(stop_reason={getattr(response, 'stop_reason', None)!r}, "
+                f"schema={response_model.__name__}, model={self.model})"
+            )
         raw = {
-            "raw_response": response.parsed_output.model_dump(),
+            "raw_response": parsed.model_dump(),
             "usage_input_tokens": response.usage.input_tokens,
             "usage_output_tokens": response.usage.output_tokens,
             "usage_cache_read_tokens": getattr(response.usage, "cache_read_input_tokens", None),
