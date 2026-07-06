@@ -109,14 +109,48 @@ models:
   seedance_2_0:
     cli_id: seedance_2_0
     display: "Seedance 2.0"
-    source: "methodology/15 + 19 + 06"
-    ratings: { physics: 3, audio: 4, consistency: 4, cinematic: 4, max_seconds: 20, max_shots: 10 }   # max_shots: methodology/15 L83 (≤10 shots within 15s)
+    source: "methodology/15 + 19 + 06 + render_taste_test/seedance_motion_test/FINDINGS.md (2026-07-06 bisect, MEASURED)"
+    ratings: { physics: 3, audio: 4, consistency: 4, cinematic: 4, max_seconds: 20, max_shots: 10 }   # NATIVE-platform claims (methodology/15 L83); Higgsfield-measured caps live in `limits:` below and WIN where they disagree
     emits_audio: true   # native audio (audio 4/5)
     best_for: [narrative_arc, multi_shot_story, transformation, multimodal_reference]
     variants: [seedance1_5]
+    # ------------------------------------------------------------------
+    # LIMITS — machine-read VALUES (spec D7: adapter/executor read these,
+    # nothing model-numeric hardcoded in code; Seedance 2.5 = edit here).
+    # ------------------------------------------------------------------
+    limits:
+      max_duration_seconds: 10      # MEASURED 2026-07-06 bisect: 15s FAILS always via Higgsfield CLI (CapCut-tier 5s/15s set not exposed working); 10s works — FINDINGS.md
+      max_prompt_chars: 3000        # methodology/15 L364-366: Seedance ≤4000 chars, Higgsfield ≤3000-3500 — enforce the conservative floor as a hard validation ceiling
+      max_characters_in_scene: 3    # methodology/15 L136-139: >3 characters error-prone (misplacement/fusion); 2-3 main characters per shot recommended
+      max_image_references: 9       # `higgsfield model get seedance_2_0` 2026-07-06 — counts start_image AND end_image
+      max_reference_files_total: 12 # same source — images + videos + audios combined
+      resolutions: [480p, 720p, 1080p, 4k]   # same source; mode 'fast' supports only 480p/720p
+      cost_estimate_credits:        # executor dry-run pricing (ADR-0007): state cost per take before any paid run
+        10s_720p: 35                # MEASURED 2026-07-06 bisect (FINDINGS.md — 2 successful 10s renders ≈ 70cr)
+        10s_1080p: 50               # UNMEASURED estimate (2026-07-06 plan Task 8); replace with a measured value after the first 1080p final
     dialect:
-      style: "'Shot 1 / Shot 2' narrative structure with intro-development-climax. Directorial thinking. @-referenced assets."
-      beat_sheet: "Best for complete story arcs in one clip (~20s). Add one 'imperfection beat' for momentum."
+      style: "Directorial thinking — the whole package is ONE generation, shots chained as prose. Subject first, one active verb per shot, camera after action, style anchor at the end, constraints last (five-part spine, methodology/19 §7)."
+      prose_chain_grammar: "Open with shot 1's framing + action, then each subsequent shot as 'Then cut to [framing]: [subject action]. [camera]. Audio: [event].' The model cuts internally on the prose boundaries — MEASURED working on Higgsfield (FINDINGS.md); one camera move + one subject action per shot line (image-video-director/03 L9-16)."
+      bracket_ban: "NEVER emit '[0-3s]'-style timestamp brackets or any per-shot second counts in prompt text — Higgsfield rejects bracketed timelines at any duration >5s (backend multi_shots/multi_prompt fields exist but are not CLI-exposed; MEASURED, FINDINGS.md). Duration is a CLI param only; seconds never appear in the prompt (spec D2). Overrides methodology/15 L81-88 and 19 §7 timeline syntax — those are native-platform dialects."
+      ref_binding: "References bind POSITIONALLY: '...is Will (image1)' — the Nth uploaded image is (imageN) in upload order. Do NOT use '@Image1' syntax (native-platform dialect, unconfirmed on Higgsfield CLI). MEASURED working form, FINDINGS.md."
+      camera_subject_separation: "Separate camera movement from subject movement in EVERY shot line: 'the dancer spins slowly, camera holds fixed framing' — never 'spinning camera around a dancing person'; ambiguous movement gets applied to everything at once (video_model_system_guide.md L150-158)."
+      audio_rule: "Every shot line carries a CONCRETE audio event — name exact sounds ('ball on grass', 'crowd gasp'), never 'ambient sounds' (methodology/19 L102-111 per-clip structure; guide troubleshooting: keep native audio simple, critical audio in post). End the prompt with 'no music' — BGM/narration are added at assembly (spec D5); the native track keeps SFX only."
+      quality_suffix: |
+        4K, ultra HD, rich detail, sharp clarity, cinematic textures, stable picture.
+        Maintaining face and clothing consistency without distortion or high detail.
+        Generate the video without subtitles.
+      # quality_suffix source: methodology/15 L54-60 verbatim ("加在每条 prompt"). NOTE: the
+      # '4K' here is Seedance's own recommended tail and does NOT conflict with
+      # still_dialect's drop-4K rule (that rule is the photoreal-STILL anti-AI-look
+      # craft) or motion_craft's anti_intensifiers ('8K' bare-intensifier ban).
+      sensitive_words:   # methodology/19 §3 replacement table + FINDINGS.md (first bisect failure carried young/fight/strike — filter risk, not fully isolated but treat as real)
+        replace:
+          "fight / battle / destroy": "intense power confrontation"
+          "kill / brutal / attack": "dramatic energy clash"
+          "punch / slash": "powerful forces meeting"
+          "blood": "epic visual impact"
+          "boy / girl / child / kid / young": "role/occupation description instead (e.g. 'rider on a gray horse')"
+        action_wrapping: "Bare violence gets filter-killed; wrap the act in cinematic-narrative context (purpose / cultural setting / role duty) — e.g. 'fires a shot skyward' -> 'the rider raises an old rifle and fires a single signal shot into the gray sky' (methodology/19 §3)."
 
   wan2_7:
     cli_id: wan2_7
@@ -140,10 +174,33 @@ models:
       style: "Declarative prompts, synchronized audio. 720p cap — cheap/fast, lower fidelity."
 
 # ---------------------------------------------------------------------------
+# SCENE LANE — the CURRENT (motion-native) render path, locked 2026-07-06
+# (docs/superpowers/specs/2026-07-06-motion-native-render-refactor.md).
+# ONE prose-chained generation renders the whole package; no per-shot routing,
+# no breakouts, no Kling fallback (spec D3). The adapter composes the scene
+# prompt from models.<scene_lane.model>.dialect; the executor reads defaults
+# and limits from here. Seedance 2.5 readiness (D7): swap `model:` below +
+# add a models block — zero code edits.
+# ---------------------------------------------------------------------------
+scene_lane:
+  model: seedance_2_0          # D7 swap point — the ONLY place the lane's model is named
+  defaults:
+    duration_seconds: 10       # v1 target (spec D1 envelope 10-25s; 10s = Higgsfield cap, see limits)
+    resolution: 720p           # dev default — see retake_ladder
+    aspect_ratio: "9:16"
+    genre: auto                # 1080p + genre 'drama' untested in isolation (FINDINGS.md) — leave auto until a clean retest
+    takes: 1
+  retake_ladder: "480p sanity-pass for a brand-new prompt (cheapest possible failure) -> 720p default dev take -> 1080p finals x2-3 takes, user picks best. Source: methodology/15 L288-298 ('480p 测 prompt -> 720p 看质量 -> 1080p 出成品') + spec D6."
+  reroll_vs_reword: "Opaque failure (job rejected with no diagnosable cause, or output random-bad) -> re-roll the SAME prompt: failures are uncharged on Higgsfield (FINDINGS.md) and may be sampling noise or a transient filter trip (methodology/19 L282-285). Diagnosable defect (a specific element visibly wrong) -> reword THAT element; don't re-roll and hope (methodology/15 iterative-fix). A failed render is a loud stop for a human call, never an automatic retry (spec D3)."
+
+# ---------------------------------------------------------------------------
 # ROUTING — premise / motion type -> ranked model preference (Higgsfield-only).
 # RenderAdapter picks the first available; falls through on failure.
 # source: methodology/13 + 10 decision trees, image-video-director/06,
 # intersected with higgsfield model list.
+# LEGACY (still-first lane): superseded by scene_lane above (spec D4 two-step
+# deletion) — kept unreached until the motion-native lane live-validates, then
+# deleted in the plan's Task 10 cleanup.
 # ---------------------------------------------------------------------------
 routing:
   # BUG-011 (2026-07-05): minimax_hailuo TEMPORARILY pulled from routing — the executor's
