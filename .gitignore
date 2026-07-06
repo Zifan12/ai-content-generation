@@ -58,6 +58,10 @@ Thumbs.db
 .coverage
 htmlcov/
 
+# Render taste-test media (track only top-level .md decision docs)
+render_taste_test/*
+!render_taste_test/*.md
+
 # Local AI-tool config (user-specific, not project state)
 .agents/
 .codex/
