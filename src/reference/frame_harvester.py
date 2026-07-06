@@ -24,7 +24,12 @@ import re
 import subprocess
 from pathlib import Path
 
+import cv2  # type: ignore[import-untyped]
+import imagehash
 import yt_dlp  # type: ignore[import-untyped]
+from PIL import Image
+
+from src.reference.schemas import FrameScore
 
 logger = logging.getLogger(__name__)
 
@@ -237,3 +242,98 @@ def _scene_guided_timestamps(
         timestamps = [timestamps[int(i * step)] for i in range(max_frames)]
 
     return timestamps
+
+
+def _sharpness(gray) -> float:
+    """
+    Laplacian variance of a grayscale image — a single scalar standing in for
+    "how much crisp edge detail is present". The Laplacian is a second-derivative
+    edge operator; a sharp frame has strong, varied edge responses (high
+    variance), while motion blur or defocus flattens those responses toward a
+    constant (low variance). Higher = sharper.
+    """
+    return float(cv2.Laplacian(gray, cv2.CV_64F).var())
+
+
+def _luminance(gray) -> float:
+    """
+    Mean pixel value of a grayscale image on the 0-255 scale — a proxy for
+    overall brightness. A frame captured during a fade-to-black or an
+    underexposed scene has a low mean and shows the character too dimly to be a
+    usable reference.
+    """
+    return float(gray.mean())
+
+
+def prefilter(
+    frame_paths: list[Path],
+    *,
+    sharpness_min: float,
+    phash_distance_min: int,
+    luminance_min: int,
+    max_out: int,
+) -> list[FrameScore]:
+    """
+    Cheap local triage of extracted frames before the paid vision judge.
+
+    Runs three rejection/collapse stages in a fixed order (decision D1):
+
+    1. Drop-blurry: reject any frame whose Laplacian-variance sharpness is
+       below ``sharpness_min``.
+    2. Drop-dark: of the survivors, reject any whose mean luminance is below
+       ``luminance_min``.
+    3. Collapse near-duplicates: many extracted frames are the same shot held
+       for a couple seconds. Frames are sorted sharpest-first, then greedily
+       kept only when their perceptual hash (pHash) differs from every
+       already-kept frame by at least ``phash_distance_min`` Hamming bits.
+       Because the scan runs sharpest-first, the frame retained from any
+       near-duplicate cluster is automatically its sharpest member (decision
+       D2), and every kept frame is a distinct shot.
+
+    The distinct-shot survivors are then truncated to at most ``max_out``
+    (decision D3: the cap counts distinct shots, and since each survivor is
+    already one distinct shot, this keeps the ``max_out`` sharpest shots).
+
+    Rejecting blur and darkness BEFORE collapsing duplicates means dedup runs
+    over an already-clean set, so a cluster's sharpest survivor is never one
+    that a later dark/blur reject would have removed.
+
+    Args:
+        frame_paths: PNG frames produced by ``extract_frames``.
+        sharpness_min: Laplacian-variance floor; below this = too blurry.
+        phash_distance_min: pHash Hamming distance below which two frames are
+            treated as the same shot and collapsed.
+        luminance_min: mean-luminance floor (0-255); below this = too dark.
+        max_out: maximum distinct shots returned.
+
+    Returns:
+        FrameScore entries (path + sharpness, verdict left None for the judge
+        to fill), ordered sharpest-first. Empty input yields an empty list;
+        frames that fail to load are skipped with a warning, never raised.
+    """
+    scored: list[tuple[float, Path]] = []
+    for path in frame_paths:
+        gray = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
+        if gray is None:
+            logger.warning("prefilter: could not read frame, skipping: %s", path)
+            continue
+        sharpness = _sharpness(gray)
+        if sharpness < sharpness_min:
+            continue
+        if _luminance(gray) < luminance_min:
+            continue
+        scored.append((sharpness, path))
+
+    scored.sort(key=lambda pair: pair[0], reverse=True)
+
+    kept: list[tuple[float, Path]] = []
+    kept_hashes: list[imagehash.ImageHash] = []
+    for sharpness, path in scored:
+        phash = imagehash.phash(Image.open(path))
+        if all(phash - h >= phash_distance_min for h in kept_hashes):
+            kept.append((sharpness, path))
+            kept_hashes.append(phash)
+        if len(kept) >= max_out:
+            break
+
+    return [FrameScore(path=str(path), sharpness=sharpness) for sharpness, path in kept]
