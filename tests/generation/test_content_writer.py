@@ -251,8 +251,8 @@ def test_one_dialect_call_per_distinct_model(rules):
     )
     fake = FakeLLM(_plan(shots))
     package = _write(_pitch(3), fake, rules)
-    assert len(fake.calls) == 3  # plan + kling batch + hailuo batch
-    assert package.shots[1].model_cli_id == "minimax_hailuo"
+    assert len(fake.calls) == 3  # plan + kling batch + veo batch
+    assert package.shots[1].model_cli_id == "veo3_1"  # hailuo pulled (BUG-011)
     assert package.consistency_groups == [[0], [1], [2]]  # breakout splits the run
 
 

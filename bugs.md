@@ -537,3 +537,157 @@ Track every shipped feature that fails, what was tried, and what fixed it.
   1. None yet. Direction (mirrors BUG-011's fix exactly): add a per-caller `max_tokens` constant in `gap_agent.py` (e.g. `_GAP_MAX_TOKENS`, matching `_PITCH_MAX_TOKENS`'s 8192) and pass it into the `parse()` call. Do not raise the shared default.
 - Date fixed: —
 - Validation evidence: pending — blocks Task 1 of the groundedness-fix plan until fixed (can't pull a real `GapAnalysis` for any topic whose output happens to run long).
+
+### BUG-011 - executor uniform argv incompatible with minimax_hailuo CLI contract
+- Date opened: 2026-07-05
+- Status: monitoring (workaround shipped; real fix pending)
+- Feature: render executor (`src/generation/executor.py` `_cost_argv`/`_create_argv`), first hit during pitch-29 real-render preflight
+- Environment: Higgsfield CLI 1.1.5, Windows
+- Error/behavior: `higgsfield generate cost minimax_hailuo --prompt ... --aspect_ratio 9:16 --duration 4` exits 4:
+  "Invalid values: duration=4 (allowed: 6,10)" + "Unknown params: aspect_ratio". The executor builds ONE argv
+  shape for every video model; hailuo's contract differs (duration 6|10 only, no aspect_ratio param, wants
+  resolution 512|768|1080 + variant; `hf model get minimax_hailuo`). Task-6 CLI verification covered
+  kling3_0/veo3_1/nano_banana_2, never hailuo. Any 4-5s shot tagged fluid_motion/impossible_physics crashed
+  the whole preflight (writer nondeterminism means this fires intermittently across runs of the SAME pitch).
+- Reproduction steps:
+1. Run the smoke script --real on any pitch until the writer tags a shot fluid_motion or impossible_physics
+   with duration not in {6,10} (pitch 29 run 2026-07-05 19:13 did).
+2. Preflight cost loop raises CalledProcessError exit 4 before any spend.
+- Attempted fixes:
+1. (2026-07-05) Workaround: pulled minimax_hailuo from `routing:` keys in config/render_rules.yaml
+   (impossible_physics, fluid_motion) with a dated BUG-011 comment. Seedance/Veo take those tags; render
+   unblocked. Hailuo model block + evidence kept.
+- Root cause: executor assumes one uniform CLI param shape across video models; per-model param
+  contracts (duration granularity, aspect vs resolution, variant) are not encoded in render_rules.yaml
+  ratings nor consulted by the router/adapter, so incompatible (model, duration) pairs are constructible.
+- Final fix: TBD — encode per-model CLI param constraints in render_rules.yaml and make routing/argv
+  construction respect them (router must not route a shot to a model whose duration set excludes it).
+- Validation evidence: post-workaround rerun routes 0 jobs to hailuo (pending next --real run).
+
+### BUG-015 - HiggsfieldTTS spends credits with no estimate-before-spend (ADR-0007 violation)
+- Date opened: 2026-07-05
+- Status: open
+- Feature: TTS narration (`src/providers/tts/higgsfield_tts.py`, called from `src/generation/assembly.py` narration stage)
+- Error/behavior: `synthesize()` fires a paid `text2speech_v2` CLI call (~0.15cr/line) with no
+  cost estimate, accumulation, or threshold refusal — unlike the executor's render path, which
+  runs `generate cost` per job before any paid call. The smoke script's credit table covers
+  render jobs only; narration spend is invisible until it happens. A many-line package or a
+  retry loop spends unguarded — the exact incident class ADR-0007 rule 2 exists to prevent.
+- Found by: /code-review 2026-07-05 (verified CONFIRMED)
+- Design fork to resolve first: estimate inside `synthesize()` per call vs one package-level
+  estimate in `assemble()` before the narration loop; and whether 0.15cr/line x line-count
+  arithmetic suffices or a CLI cost quote exists for TTS jobs.
+- Attempted fixes: (none — logged for later; sanitization sibling issue fixed same day)
+
+### BUG-016 - consistency_groups() groups shots on the LLM-echoed cast the writer itself distrusts
+- Date opened: 2026-07-05
+- Status: open
+- Feature: multi-shot render routing (`src/generation/render_adapters/router.py:126`, fed by `src/generation/content_writer.py`)
+- Error/behavior: grouping keys on `frozenset(draft.characters_in_frame)` (call-1 LLM echo),
+  but the final ShotSpec deliberately copies `beat.characters_in_frame` per the "trust code
+  over LLM" doctrine. Nothing validates draft cast == beat cast before grouping, so a mis-echo
+  (the WRONG_ECHO test fixture proves the path) can merge/split Kling shared-seed groups on a
+  wrong cast while the package reports the correct one — silent wrong-face/wrong-outfit
+  grounding (BUG-002 class), undetectable from the package alone.
+- Found by: /code-review 2026-07-05 (verified CONFIRMED)
+- Design fork to resolve first: validate-and-fail vs substitute beat cast into grouping vs
+  repair-retry the draft. (Substitution matches the existing trust-code-over-LLM doctrine.)
+- Attempted fixes: (none yet)
+
+### BUG-017 - Mandatory-grounding invariant (DECISIONS_LOCKED L3) enforced nowhere in the pipeline
+- Date opened: 2026-07-05
+- Status: open
+- Feature: render pipeline (`src/generation/render_adapters/adapter.py` ~L91, `src/generation/executor.py` `_create_argv`)
+- Error/behavior: content_writer docstring defers ("the render layer owns that gate"), adapter
+  forwards `list(package.reference_image_paths)` unchecked, and executor emits zero
+  `--image-references` flags when the list is empty. Only guard is argparse `required=True` in
+  scripts/smoke_content_writer.py. Any other caller passing `reference_image_paths=[]` renders
+  completely ungrounded stills — credits burned, no error, no warning, no log line.
+- Found by: /code-review 2026-07-05 (verified CONFIRMED)
+- Design fork to resolve first: which layer owns the invariant — writer input validation,
+  adapter, or executor (the docstring's "render layer owns it" claim may itself be the bug).
+- Attempted fixes: (none yet)
+
+### BUG-018 - executor cost preflight ignores the resume manifest — resumed runs print inflated estimates
+- Date opened: 2026-07-05
+- Status: open
+- Feature: render executor (`src/generation/executor.py` ~L277 cost loop vs ~L293 manifest load)
+- Error/behavior: `execute()` runs `generate cost` for ALL jobs and prints "Estimated total"
+  BEFORE loading render_manifest.json; the completed-job skip check lives in the second loop.
+  On a resume with N of M jobs completed, the printed total (and each per-job line) covers all
+  M jobs, not the M-N that will actually spend. `dry_run=True` on a partial out_dir returns the
+  same inflated `credits_spent`.
+- Found by: /code-review 2026-07-05 (verified CONFIRMED)
+- Design fork to resolve first: load manifest before the estimate and cost only pending jobs,
+  vs keep the full estimate and print both totals (full vs remaining).
+- Attempted fixes: (none yet)
+
+### BUG-019 - shared max_tokens=1024 default keeps truncating structured output; interface codifies the per-caller bandaid
+- Date opened: 2026-07-05
+- Status: open
+- Feature: LLM providers (`src/providers/llm/anthropic_llm.py` parse/parse_with_raw, `src/providers/llm/openrouter_llm.py` twins)
+- Error/behavior: the 1024 default has bitten repeatedly (BUG-011 StoryCraftVerdict, BUG-013
+  GapAnalysis, writer chain, context-agent finalize); six per-caller constants now exist
+  (WRITER / _FINALIZE / _GAP / _PITCH / _STORY_CRAFT / _GROUNDEDNESS _MAX_TOKENS) and the
+  TruncatedResponseError docstring instructs future callers to add a seventh ("the fix is
+  always per-caller, never the shared default"). Every new seat inherits 1024, burns one paid
+  call discovering the trap, then adds another magic number.
+- Found by: /code-review 2026-07-05 (verified CONFIRMED; altitude finding)
+- Design fork to resolve first: make max_tokens a required kwarg (one loud break at all call
+  sites) vs raise the shared default vs derive from the response schema.
+- Attempted fixes: (none — pattern documented in TruncatedResponseError docstring as policy,
+  which is the thing this bug challenges)
+
+### BUG-012 - real-human-face reference images hard-blocked as "nsfw" by Higgsfield still model
+- Date opened: 2026-07-05
+- Status: closed (not a code bug - provider moderation; pipeline constraint documented)
+- Feature: reference grounding (L3) for live-action IP; hit on pitch-29 real render attempt 5
+- Environment: Higgsfield CLI 1.1.5, nano_banana_2
+- Error/behavior: `generate create nano_banana_2 --image-references <real actress frames>` ends
+  status "nsfw" (exit 3), credits auto-refunded. Three-way isolation 2026-07-05: gore prompt +
+  refs = nsfw; gore-free prompt + refs = nsfw; same prompt no refs = renders. Trigger = the
+  photographic human-face references, not prompt text. Matches video_model_system_guide.md L440
+  "Human reference suspended (Feb 2026)" - live and enforced server-side on Higgsfield.
+- Root cause: provider moderation policy on photographic face references.
+- Resolution: constraint accepted. Live-action/real-actor pitches CANNOT be reference-grounded
+  on this stack -> render only drawn/rendered fictional-character IP (anime/game key art passes;
+  evie render proved it). No filter-evasion workarounds (out of policy). The 2026-06-27 spec's
+  real-actor-likeness deferral is now provider-enforced, not just a design choice.
+- Validation evidence: transactions show spend+refund pairs for both blocked jobs; no-refs
+  control rendered a valid PNG (job 26722f9d, 2026-07-06 01:54).
+
+### BUG-020 - assembly concat.txt writes CWD-relative paths; ffmpeg concat demuxer doubles them and crashes
+- Date opened: 2026-07-05
+- Status: open
+- Feature: video assembly (`src/generation/assembly.py` ~L146 concat step; concat.txt writer upstream)
+- Error/behavior: on the pitch-24 real render, all 6 renders + 5 clips succeeded (~80cr spent) but
+  the final `assemble()` crashed at the `-f concat -safe 0 -i concat.txt -c copy` step with
+  `CalledProcessError` exit 4294967294 (-2). concat.txt lives in `<out_dir>/_assembly/` but its
+  `file '...'` lines carry the full repo-relative path `output/smoke_runs/.../\_assembly/norm_N.mp4`.
+  The concat demuxer resolves each `file` path RELATIVE TO concat.txt's own directory, so ffmpeg
+  tries `_assembly/output/smoke_runs/.../\_assembly/norm_0.mp4` (doubled) → "No such file or directory".
+  norm_*.mp4 exist and are valid (uniform 1080x1920 h264); only the path reference is wrong. Manual
+  concat with BARE filenames (`file 'norm_0.mp4'`) from inside _assembly stitched all 5 into a valid
+  25.3s mp4 — proving the renders are fine and only the concat.txt path form is the bug.
+- Found by: pitch-24 manual render 2026-07-05 (salvaged to _assembly/pitch24_salvage.mp4)
+- Design fork to resolve first: write concat.txt entries as bare basenames (they already sit beside
+  concat.txt) vs write absolute paths vs run ffmpeg with cwd set to _assembly. Basename is simplest
+  and matches how the demuxer resolves.
+- Attempted fixes: manual salvage concat only (bare filenames) — root writer not yet changed.
+
+### BUG-021 - anchors_block is a global all-character block prepended to EVERY still; forces the whole cast into solo shots
+- Date opened: 2026-07-05
+- Status: open
+- Feature: writer + render adapter (`src/generation/content_writer.py` anchors_block authoring, `src/generation/render_adapters/adapter.py` L46 `parts = [package.anchors_block, shot.still_prompt, package.style_anchor]`)
+- Error/behavior: pitch-24 shot 0 (hook) should show ONLY young Elfie + a plush. The rendered still
+  crammed all three adults (Will, Elfie, Zeo) into the background behind the child. Cause: anchors_block
+  is one package-level string naming every character, and adapter L46 prepends it verbatim to EVERY
+  still prompt — so a beat whose `characters_in_frame` is a subset still gets the full cast forced in.
+  Identity text should be scoped to each shot's actual `characters_in_frame`, not global.
+- Found by: pitch-24 render eyeball 2026-07-05
+- Design fork to resolve first: per-shot anchors composed from the beat's characters_in_frame (kills the
+  bleed AND is the natural home for the BUG-class fix below) vs keep global block. Ties into the planned
+  vision-describe fix — anchors should be (a) per-shot cast and (b) code-set from ref-derived appearance
+  descriptions, not LLM-invented (the blind writer swapped Will/Zeo hair on pitch 24; hand-patched for
+  that render only via a pitch_id==24 override in scripts/smoke_content_writer.py — remove when real fix lands).
+- Attempted fixes: (none — pitch-24 used a temporary hardcoded anchors override, not a real fix)

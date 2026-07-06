@@ -19,10 +19,14 @@ USAGE:
 OUTPUT:
   Prints the full MultiShotPackage (per-shot prompts, routing, groups, narration,
   caption) and the credit table; in --real mode also the per-clip paths and the
-  assembled final.mp4. A timestamped transcript is saved to output/smoke_runs/.
+  assembled final.mp4. A timestamped transcript is saved to output/smoke_runs/,
+  plus a machine-readable JSON dump of the FULL flow (args, source pitch,
+  package, jobs, cost estimate, and — on --real — clip paths and the final mp4)
+  at the same path with a .json extension.
 """
 
 import argparse
+import json
 import subprocess
 import sys
 from datetime import datetime
@@ -31,6 +35,13 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv("config/.env")
+
+# Windows console defaults to cp1252; LLM-written captions/prompts carry emoji
+# and typographic unicode, which crashed the Tee'd print mid-run (BUG-011 sibling,
+# 2026-07-05). Replace rather than crash — the utf-8 record file keeps the real text.
+if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 from src.database import SessionLocal  # noqa: E402
 from src.generation.assembly import assemble  # noqa: E402
@@ -175,8 +186,29 @@ def main() -> None:
     original_stdout = sys.stdout
     sys.stdout = _Tee(original_stdout, record_file)
 
+    json_path = record_path.with_suffix(".json")
+    # Provenance dump of the FULL flow, written/refreshed at each stage boundary
+    # so a crash mid-run still leaves everything computed so far on disk.
+    flow: dict = {
+        "meta": {
+            "timestamp": ts,
+            "git_sha": sha,
+            "pitch_id": args.pitch_id,
+            "refs": list(args.refs),
+            "real": bool(args.real),
+            "bgm": args.bgm,
+        }
+    }
+
+    def _dump_flow() -> None:
+        json_path.write_text(
+            json.dumps(flow, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+
     try:
         pitch, pitch_id = resolve_pitch(args, db)
+        flow["story_pitch"] = pitch.model_dump(mode="json")
+        _dump_flow()
 
         rules = RenderRules()
         print("[write] two-call multi-shot writer")
@@ -186,6 +218,27 @@ def main() -> None:
             reference_image_paths=list(args.refs),
             pitch_id=pitch_id,
         )
+
+        # TEMP (pitch 24 manual render): the blind text-only writer wrote
+        # ref-conflicting identities (swapped Will/Zeo hair, wrong Elfie costume).
+        # Override anchors_block to match the supplied Wistoria key-art so the
+        # multi-character stills label each ref correctly. Remove once the writer
+        # gets ref-accurate anchors (vision describe-step). See render_taste_test/
+        # wistoria_refs/.
+        if pitch_id == 24:
+            package.anchors_block = (
+                "Will is a young man with dark teal-blue messy hair topped by a "
+                "single upward ahoge strand, round thin-framed glasses, and violet "
+                "eyes, wearing a dark high-collared cape uniform with gold fringed "
+                "epaulettes and a gold sunburst emblem. "
+                "Elfie is a young woman with long pale ice-blue hair and blue eyes, "
+                "wearing a white-and-gold off-shoulder Diamond Dust dress with a blue "
+                "gem at the chest. "
+                "Zeo is a tall, muscular young man with spiky white-silver hair, tan "
+                "skin, and teal eyes, wearing a sleeveless white vest over a bare "
+                "chest with gold armbands and a grey cloak."
+            )
+            print("[TEMP] pitch 24: anchors_block overridden to match refs")
 
         print("=" * 70)
         print(f"STYLE ANCHOR:  {package.style_anchor}")
@@ -212,7 +265,12 @@ def main() -> None:
             print(f"RATIONALE:     {package.rationale}")
         print("=" * 70 + "\n")
 
+        flow["package"] = package.model_dump(mode="json")
+        _dump_flow()
+
         jobs = render_jobs(package, rules)
+        flow["render_jobs"] = [job.model_dump(mode="json") for job in jobs]
+        _dump_flow()
         print(f"[jobs] {len(jobs)} render jobs:")
         for job in jobs:
             covers = job.covers_shots or [job.shot_index]
@@ -222,6 +280,11 @@ def main() -> None:
         print("\n[execute] DRY RUN (cost estimate only)")
         estimate = execute(jobs, out_dir, dry_run=True)
         print(f"\n[result] credits_spent estimate: {estimate.credits_spent}")
+        flow["cost_estimate"] = {
+            "credits_total": estimate.credits_spent,
+            "out_dir": out_dir,
+        }
+        _dump_flow()
 
         if args.real:
             # Explicit confirm between the printed cost table and any paid call
@@ -238,6 +301,8 @@ def main() -> None:
             print(f"  stills: {result.still_paths}")
             for clip in result.clips:
                 print(f"  clip shots={clip.shot_indices} audio={clip.has_audio} -> {clip.clip_path}")
+            flow["render_result"] = result.model_dump(mode="json")
+            _dump_flow()
 
             print("\n[assemble] concat + narration + hook card")
             final_path = assemble(
@@ -249,12 +314,16 @@ def main() -> None:
             )
             print(f"\n[FINAL] {final_path}")
             print("Post-gate reminder: AIGC label at upload; judge on evie I1/I2 + C1/C2.")
+            flow["final_video"] = final_path
+            _dump_flow()
 
     finally:
         sys.stdout = original_stdout
         record_file.close()
         db.close()
         print(f"\n[record saved] {record_path}")
+        if json_path.exists():
+            print(f"[flow json saved] {json_path}")
 
 
 if __name__ == "__main__":

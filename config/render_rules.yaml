@@ -146,8 +146,14 @@ models:
 # intersected with higgsfield model list.
 # ---------------------------------------------------------------------------
 routing:
-  impossible_physics: [minimax_hailuo, seedance_2_0, veo3_1]   # NOT veo-first: Veo physics 3/5, fails impossible end-states (2026-06-18 evidence)
-  fluid_motion:       [minimax_hailuo, veo3_1, seedance_2_0]   # water/fire/smoke — Hailuo is physics king
+  # BUG-011 (2026-07-05): minimax_hailuo TEMPORARILY pulled from routing — the executor's
+  # uniform argv is incompatible with its CLI contract (duration must be 6|10, NO
+  # --aspect_ratio param; wants resolution 512|768|1080 + variant instead; see
+  # `hf model get minimax_hailuo`). Live cost preflight failed exit 4 on a 4s shot.
+  # Restore hailuo to FIRST position in both keys below once the executor maps
+  # per-model params — its impossible-physics render evidence (model block above) stands.
+  impossible_physics: [seedance_2_0, veo3_1]   # hailuo pulled (BUG-011); NOT veo-first: Veo physics 3/5, fails impossible end-states (2026-06-18 evidence)
+  fluid_motion:       [veo3_1, seedance_2_0]   # hailuo pulled (BUG-011); water/fire/smoke — Hailuo is physics king, restore when params mapped
   spectacle:          [seedance_2_0, kling3_0]                 # per-beat narrative/epic spectacle — MODEL_ROUTING.md spectacle row + 2026-07-04 redesign spec D5 (multi_shot_story is a whole-video concept; this is the beat-level tag)
   transformation:     [seedance_2_0, kling3_0]                 # melt/morph/grow — Pika unavailable, Seedance/Kling next
   multi_shot_story:   [seedance_2_0, kling3_0]

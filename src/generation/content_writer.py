@@ -51,7 +51,10 @@ logger = logging.getLogger(__name__)
 
 # Explicit per-caller override of the shared parse() default (1024) — big packages
 # truncate silently at the default (bitten 3x, memory feedback_shared_max_tokens).
-WRITER_MAX_TOKENS = 8192
+# 8192 -> 16384 (2026-07-05): deepseek-v4-pro's ShotPlanDraft for a 5-beat pitch
+# overflowed 8192 on one roll of the pitch-29 render (nondeterministic verbosity;
+# two prior rolls of the SAME pitch fit under it). 4th max_tokens bite project-wide.
+WRITER_MAX_TOKENS = 16384
 
 PLAN_SYSTEM_PROMPT = """\
 <role>
@@ -99,8 +102,9 @@ rendered as 3-6 clips assembled into one 12-25 second vertical video.
   melt/morph/grow (transformation), epic scale spectacle (spectacle), or ordinary
   character action where cross-shot identity matters most (character_consistency —
   the default for character beats).
-- duration_seconds: 4-8 per shot, total 12-25. Give the payoff beat air; keep the
-  hook snappy. Prefer keeping contiguous same-cast character beats within about
+- duration_seconds: integer 4-8 per shot, total 12-25. 4 is a HARD FLOOR — never
+  emit 3 or less, even for the hook. Give the payoff beat air; keep the hook tight
+  at exactly 4. Prefer keeping contiguous same-cast character beats within about
   10 seconds combined (they render as one consistency group).
 - narration_line: polish the beat's narration into spoken-word text at a budget of
   at most 2.2 words per second of the shot. A beat whose narration_line is null is

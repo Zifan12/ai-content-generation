@@ -68,7 +68,7 @@ def test_every_tag_routes_to_first_ranked_yaml_model(rules):
 
 def test_routing_decisions_carry_a_reason(rules):
     decisions = route_shots([_draft(MotionTag.fluid_motion)], rules)
-    assert decisions[0].model_cli_id == "minimax_hailuo"
+    assert decisions[0].model_cli_id == "veo3_1"  # hailuo pulled (BUG-011)
     assert decisions[0].reason  # non-empty, self-documenting (OpenMontage pattern)
 
 
@@ -140,7 +140,7 @@ def test_duration_cap_splits_at_yaml_max_seconds(rules):
 
 
 def test_non_multishot_models_always_singletons(rules):
-    # fluid_motion routes to minimax_hailuo, which has no ratings.max_shots entry —
+    # fluid_motion routes to veo3_1 (hailuo pulled, BUG-011), no ratings.max_shots entry —
     # contiguous same-cast hailuo shots must NOT merge.
     drafts = [_draft(MotionTag.fluid_motion) for _ in range(3)]
     assert _grouped(drafts, rules) == [[0], [1], [2]]

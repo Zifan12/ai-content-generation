@@ -15,7 +15,7 @@ Reuses the executor's CLI/download helpers (they are the project's one
 Higgsfield-CLI seam; duplicating them here would just rot separately).
 """
 
-from src.generation.executor import _download, _extract_url, _run_cli
+from src.generation.executor import _download, _extract_url, _run_cli, _sanitize_prompt
 from src.providers.tts.base import TTSProvider
 
 # The account narrator voice — change HERE after auditioning `higgsfield voices
@@ -52,7 +52,7 @@ class HiggsfieldTTS(TTSProvider):
         output = self._run_cli(
             [
                 "higgsfield", "generate", "create", "text2speech_v2",
-                "--prompt", text,
+                "--prompt", _sanitize_prompt(text),
                 "--variant", self.variant,
                 "--voice_id", self.voice_id,
                 "--voice_type", self.voice_type,
