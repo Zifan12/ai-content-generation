@@ -674,6 +674,10 @@ Track every shipped feature that fails, what was tried, and what fixed it.
   concat.txt) vs write absolute paths vs run ffmpeg with cwd set to _assembly. Basename is simplest
   and matches how the demuxer resolves.
 - Attempted fixes: manual salvage concat only (bare filenames) — root writer not yet changed.
+- FIXED 2026-07-07: concat.txt entries now `Path(p).resolve().as_posix()` (absolute — chosen over
+  basename so the fix also holds if norm files ever move out of _assembly; -safe 0 already set).
+  Verified live on the first motion-native assembly (pitch-24 take_1 -> final.mp4, 15.1s).
+- Status: FIXED
 
 ### BUG-021 - anchors_block is a global all-character block prepended to EVERY still; forces the whole cast into solo shots
 - Date opened: 2026-07-05

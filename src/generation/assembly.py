@@ -141,9 +141,13 @@ def assemble(
         normalized.append(norm)
 
     # 2. CONCAT via demuxer, stream copy (MoneyPrinterTurbo video.py pattern).
+    # ABSOLUTE paths (BUG-020, fixed 2026-07-07): the concat demuxer resolves
+    # relative entries against the LIST FILE's directory, not the CWD — a
+    # relative norm_0.mp4 path doubled into .../_assembly/output/... and
+    # crashed the first live scene-lane assembly.
     list_file = work / "concat.txt"
     list_file.write_text(
-        "".join(f"file '{Path(p).as_posix()}'\n" for p in normalized),
+        "".join(f"file '{Path(p).resolve().as_posix()}'\n" for p in normalized),
         encoding="utf-8",
     )
     concat_path = str(work / "concat.mp4")
