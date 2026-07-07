@@ -59,7 +59,7 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
 # boundary — same pattern as HiggsfieldTTS).
 from src.generation.executor import _download, _extract_url, _run_cli, _sanitize_prompt  # noqa: E402
 
-EST_CREDITS_PER_IMAGE = 2  # nano-banana measured 2cr (billing 2026-07-06); GPT Image 2 assumed comparable
+EST_CREDITS_PER_IMAGE = 7  # GPT Image 2 MEASURED 7cr/image (billing 2026-07-07, 6 generations); nano_banana_2 measured 2cr — pass --model to trade quality for cost
 
 # Angle prompts: same character, neutral expression, matched flat lighting
 # (playbook L66-77 — a smiling ref mixed with a neutral one averages into a
