@@ -113,6 +113,10 @@ def test_narration_offsets_bgm_and_hook_in_final_command(tmp_path):
 
 
 def test_no_hook_no_bgm_minimal_graph(tmp_path):
+    """Pins the v2 no-text-product invariant (spec §6): a package with no
+    narration lines and hook_text=None must produce normalize + concat + a bare
+    tail-fade only — no adelay/narration filters, no drawtext, amix over the
+    native track alone."""
     ff = FakeFFmpeg()
     package = _package(narrations=(None, None, None))
     package = package.model_copy(update={"hook_text": None})
@@ -125,6 +129,7 @@ def test_no_hook_no_bgm_minimal_graph(tmp_path):
     graph = final[final.index("-filter_complex") + 1]
     assert "drawtext" not in graph
     assert "volume=" not in graph
+    assert "adelay" not in graph  # no narration to delay-mix
     assert "amix=inputs=1" in graph  # native audio only
     assert "[amixed]afade=t=out" in graph  # D5 tail-fade applies even bare
     assert "0:v" in final  # un-drawn video mapped directly
