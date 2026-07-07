@@ -2,7 +2,7 @@
 
 Covers the assertion contracts from the plan (bounds updated 2026-07-06 for the
 motion-native scene lane — envelope 10-25s, per-shot estimate 2-8s):
-  - shot cardinality bounds (2 rejected, 7 rejected, 3 and 6 accepted)
+  - shot cardinality bounds (2 rejected, 6 and 7 rejected, 3 and 5 accepted)
   - per-shot duration-estimate bounds (1s and 9s rejected)
   - total-duration envelope (26s rejected; 9s rejected — constructible now that
     the per-shot floor is 2s; 10s, 12s and 25s accepted)
@@ -90,8 +90,13 @@ def test_package_three_shots_accepted():
     assert len(_package([4, 4, 4]).shots) == 3
 
 
-def test_package_six_shots_accepted():
-    assert len(_package([4, 4, 4, 4, 4, 4]).shots) == 6
+def test_package_five_shots_accepted():
+    assert len(_package([4, 4, 4, 4, 4]).shots) == 5
+
+
+def test_package_six_shots_rejected():
+    with pytest.raises(ValidationError):
+        _package([4, 4, 4, 4, 4, 4])
 
 
 # --- per-shot duration bounds -------------------------------------------------

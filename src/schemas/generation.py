@@ -107,6 +107,8 @@ class ShotSpec(BaseModel):
     scene_line: str
     duration_seconds: int = Field(ge=2, le=8)
     narration_line: str | None
+    dialogue_line: str | None = None  # spoken line, copied from the source StoryBeat
+    speaker: str | None = None  # who says it, copied from the source StoryBeat
     characters_in_frame: list[str]
     model_cli_id: str = ""
 
@@ -141,7 +143,7 @@ class ShotPlanDraft(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    shots: list[ShotDraft] = Field(min_length=3, max_length=6)
+    shots: list[ShotDraft] = Field(min_length=3, max_length=5)
     style_anchor: str
     anchors_block: str
     hook_text: str | None
@@ -193,7 +195,7 @@ class MultiShotPackage(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    shots: list[ShotSpec] = Field(min_length=3, max_length=6)
+    shots: list[ShotSpec] = Field(min_length=3, max_length=5)
     visual_register: Register = Register.source_style   # "register" bare shadows a BaseModel attr
     style_anchor: str
     anchors_block: str

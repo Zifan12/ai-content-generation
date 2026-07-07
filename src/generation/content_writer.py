@@ -15,10 +15,10 @@ routing between them was deleted with the scene-lane pivot, D3):
 
 The writer TRUSTS CODE OVER THE LLM at every seam: beat_role / characters_in_frame
 are copied from the pitch (never the draft's echo), silence is preserved (a beat
-with narration_line=None stays silent even if the draft invents a line), the model
-id comes from rules.scene_model() (never the LLM), hook_text comes from the
-gate-judged pitch.hook_line, and provenance (pitch_id / reference_image_paths) is
-code-set.
+with narration_line=None stays silent even if the draft invents a line), dialogue
+(dialogue_line/speaker) is copied from the pitch's beats, the model id comes from
+rules.scene_model() (never the LLM), hook_text is always None (no-text product),
+and provenance (pitch_id / reference_image_paths) is code-set.
 
 anchors_block and style_anchor are package-level fields composed into the scene
 prompt by the ADAPTER — both calls are explicitly instructed to keep them OUT of
@@ -47,6 +47,11 @@ logger = logging.getLogger(__name__)
 # overflowed 8192 on one roll of the pitch-29 render (nondeterministic verbosity;
 # two prior rolls of the SAME pitch fit under it). 4th max_tokens bite project-wide.
 WRITER_MAX_TOKENS = 16384
+
+# Hard code-level reject for a runaway scene line (the soft-40-word prompt
+# budget is unreliable — 2026-07-06/07 validation lesson). 60 catches a
+# genuinely broken line without false-failing a slightly-over-40 one.
+_SCENE_LINE_MAX_WORDS = 60
 
 PLAN_SYSTEM_PROMPT = """\
 <role>
@@ -144,11 +149,19 @@ Each shot line must contain, in this order:
    the EXACT same name in every shot line — never swap to a pronoun or a generic
    noun ("the man", "she") between lines; name drift causes role swaps and merged
    faces. Never write unqualified "fast" or "lots of movement" — name the ONE
-   element that moves quickly instead ("her hand snaps closed").
+   element that moves quickly instead ("her hand snaps closed"). When the shot's
+   data carries a dialogue line, render it inside this clause as quoted speech
+   naming the speaker adjacent to the line: <Speaker> says "<line>" — right after
+   the physical action, in the same sentence flow. Never let spoken words leak
+   into the AUDIO EVENT clause (audio events stay non-verbal sounds only). A shot
+   with no dialogue stays purely physical — never invent a line.
 3. SPACE — where this happens and any spatial change, in a few words ("in a stone
    academy corridor at dusk", "snow drifting past the window behind them").
    Light stays steady: never "glow", "glimmer" or "glints" (they cause flicker
-   artifacts) — write "steady warm light", "diffuse lamplight" instead.
+   artifacts) — write "steady warm light", "diffuse lamplight" instead. Name the
+   actual physical light SOURCE causing the scene's light (a bedside lamp,
+   sunlight through blinds, a phone screen's glow, overhead fluorescents) — never
+   a bare mood adjective with no visible source behind it.
 4. CAMERA — one camera behavior for the shot, written separately from the
    subject's action so the model never confuses who moves ("Camera: slow
    push-in", "Camera: static, shallow depth of field", "Camera: slow tilt from
@@ -213,24 +226,26 @@ def _build_plan_envelope(pitch: StoryPitch, rules: RenderRules) -> str:
     )
 
 
-def _build_scene_envelope(plan: ShotPlanDraft) -> str:
+def _build_scene_envelope(plan: ShotPlanDraft, pitch: StoryPitch) -> str:
     """Assemble call 2's user prompt: the whole plan as data inside <plan> tags.
 
-    One envelope for the one scene call — every shot travels together so the
-    lines read as a single continuous scene (the system prompt's closing rule).
-    Each shot carries its index, beat role, cast, and the motion_intent to
-    convert. Durations are deliberately ABSENT (D2: seconds never enter prompt
-    text); anchors/style are deliberately absent (composed by the adapter in
-    code). The <plan> wrapper matches the system prompt's injection guard —
-    everything inside is material to convert, never instructions.
+    Each shot carries its index, beat role, cast, the motion_intent to convert,
+    and — code-copied from the SOURCE StoryBeat, never from the draft — the
+    dialogue_line/speaker pair when the pitch placed one on this beat. Durations
+    stay absent (D2); anchors/style stay absent (composed by the adapter).
     """
     lines = ["<plan>"]
-    for index, shot in enumerate(plan.shots):
+    for index, (shot, beat) in enumerate(zip(plan.shots, pitch.beats)):
         cast = ", ".join(shot.characters_in_frame) or "no named characters"
+        dialogue = (
+            f'\n  dialogue: {beat.speaker} says "{beat.dialogue_line}"'
+            if beat.dialogue_line is not None
+            else ""
+        )
         lines.append(
             f"- shot_index={index} beat_role={shot.beat_role.value} "
             f"characters: {cast}\n"
-            f"  motion_intent: {shot.motion_intent}"
+            f"  motion_intent: {shot.motion_intent}{dialogue}"
         )
     lines.append("</plan>")
     return "\n".join(lines)
@@ -297,7 +312,7 @@ class ContentWriter:
 
         # ONE scene call — the whole plan in, one prose line per shot out (D3).
         conversion = self.llm.parse(
-            _build_scene_envelope(plan),
+            _build_scene_envelope(plan, pitch),
             SceneLines,
             system=SCENE_LINE_SYSTEM_PROMPT,
             max_tokens=WRITER_MAX_TOKENS,
@@ -307,6 +322,14 @@ class ContentWriter:
                 f"scene call returned {len(conversion.scene_lines)} lines for "
                 f"{len(plan.shots)} shots"
             )
+        for index, line in enumerate(conversion.scene_lines):
+            word_count = len(line.split())
+            if word_count > _SCENE_LINE_MAX_WORDS:
+                raise ValueError(
+                    f"scene line {index} is {word_count} words (hard cap "
+                    f"{_SCENE_LINE_MAX_WORDS}) — the prompt's soft budget is 40; "
+                    "this line ran away and must be rejected, not silently trimmed"
+                )
         for index, line in enumerate(conversion.scene_lines):
             for label, anchor in (
                 ("anchors_block", plan.anchors_block),
@@ -337,6 +360,8 @@ class ContentWriter:
                     scene_line=conversion.scene_lines[index],
                     duration_seconds=draft.duration_seconds,
                     narration_line=narration,
+                    dialogue_line=beat.dialogue_line,
+                    speaker=beat.speaker,
                     characters_in_frame=list(beat.characters_in_frame),
                     model_cli_id=scene_model,
                 )
@@ -346,7 +371,7 @@ class ContentWriter:
             shots=shots,
             style_anchor=plan.style_anchor,
             anchors_block=plan.anchors_block,
-            hook_text=pitch.hook_line,  # gate-judged text wins over the draft's
+            hook_text=None,  # no-text product (spec V3)
             caption=plan.caption,
             hashtags=plan.hashtags,
             music_brief=plan.music_brief,

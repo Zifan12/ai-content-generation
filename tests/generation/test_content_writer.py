@@ -45,14 +45,21 @@ _SIZES = [
 ]
 
 
-def _pitch(n_beats: int = 3, narrations: list[str | None] | None = None) -> StoryPitch:
+def _pitch(
+    n_beats: int = 3,
+    narrations: list[str | None] | None = None,
+    dialogue: dict[int, tuple[str, str]] | None = None,
+) -> StoryPitch:
     if narrations is None:
-        narrations = ["Narration line."] * n_beats
+        narrations = [None] * n_beats
+    dialogue = dialogue or {}
     beats = [
         StoryBeat(
             role=BeatRole.hook if i == 0 else BeatRole.build,
             visual_line=f"Beat {i}: the swordswoman advances through the rain.",
             narration_line=narrations[i],
+            dialogue_line=dialogue.get(i, (None, None))[0],
+            speaker=dialogue.get(i, (None, None))[1],
             shot_size=_SIZES[i % len(_SIZES)],
             characters_in_frame=["Eve"],
             hero_moment=False,
@@ -64,6 +71,7 @@ def _pitch(n_beats: int = 3, narrations: list[str | None] | None = None) -> Stor
         mode=ContentMode.wish,
         characters=[CharacterRef(name="Eve", ip_source="Stellar Blade")],
         desired_moment="The confrontation the trailer denied.",
+        scene_setting="a rain-soaked academy courtyard, dusk",
         beats=beats,
         caption_policy=CaptionPolicy.hook_only,
         hook_line="the ending they cut",
@@ -188,9 +196,36 @@ def test_model_stamped_from_scene_lane_config(rules):
     assert package.shots[0].model_cli_id == "seedance_2_0"
 
 
-def test_hook_text_is_pitch_hook_line_not_draft(rules):
+def test_hook_text_is_always_none(rules):
     package = _write(_pitch(3), FakeLLM(_plan(_draft_shots(3))), rules)
-    assert package.hook_text == "the ending they cut"
+    assert package.hook_text is None
+
+
+def test_dialogue_and_speaker_copied_from_pitch_not_draft(rules):
+    pitch = _pitch(3, dialogue={1: ("Wait, don't!", "Eve")})
+    package = _write(pitch, FakeLLM(_plan(_draft_shots(3))), rules)
+    assert package.shots[0].dialogue_line is None
+    assert package.shots[0].speaker is None
+    assert package.shots[1].dialogue_line == "Wait, don't!"
+    assert package.shots[1].speaker == "Eve"
+
+
+def test_scene_call_envelope_carries_dialogue(rules):
+    pitch = _pitch(3, dialogue={1: ("Wait, don't!", "Eve")})
+    fake = FakeLLM(_plan(_draft_shots(3)))
+    _write(pitch, fake, rules)
+    scene_call = fake.calls[1]
+    assert 'Eve says "Wait, don\'t!"' in scene_call["prompt"]
+
+
+def test_scene_line_over_60_words_raises(rules):
+    long_line = "word " * 61
+    fake = FakeLLM(
+        _plan(_draft_shots(3)),
+        conversion_prompts=[long_line, "CONVERTED[1]. Audio: rain.", "CONVERTED[2]. Audio: rain."],
+    )
+    with pytest.raises(ValueError, match="hard cap"):
+        _write(_pitch(3), fake, rules)
 
 
 def test_provenance_code_set(rules):
