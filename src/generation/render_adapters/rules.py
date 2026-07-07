@@ -1,7 +1,7 @@
 """Load and expose the render routing/dialect rules from config/render_rules.yaml.
 
 This module is the single seam between the on-disk render-rules YAML and the
-Python render layer (router, prompt builders, adapter). Everything downstream
+Python render layer (writer, adapter, executor). Everything downstream
 reads rules through a RenderRules instance rather than re-parsing the YAML, so
 the file stays the one source of truth (no rule is ever hardcoded in code).
 """
@@ -23,7 +23,7 @@ class RenderRules:
     Construction loads and parses the YAML; the resulting dict is held on
     ``self.data`` and exposed through typed accessor methods (``route``,
     ``model``, ``global_constraints``). One instance is meant to be built and
-    shared across the router and builders for a render pass.
+    shared across the writer/adapter/executor for a render pass.
     """
 
     def __init__(self):

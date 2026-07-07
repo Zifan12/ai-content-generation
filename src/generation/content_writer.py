@@ -18,7 +18,7 @@ are copied from the pitch (never the draft's echo), silence is preserved (a beat
 with narration_line=None stays silent even if the draft invents a line), the model
 id comes from rules.scene_model() (never the LLM), hook_text comes from the
 gate-judged pitch.hook_line, and provenance (pitch_id / reference_image_paths) is
-code-set. consistency_groups stays empty — it is a legacy still-first field (D4).
+code-set.
 
 anchors_block and style_anchor are package-level fields composed into the scene
 prompt by the ADAPTER — both calls are explicitly instructed to keep them OUT of
@@ -240,7 +240,7 @@ class ContentWriter:
     """Turns a judged StoryPitch into a validated MultiShotPackage.
 
     Two structured-output calls on the injected llm seat, with the deterministic
-    router between them (module docstring). Construction takes the llm only;
+    scene call over the whole plan (module docstring). Construction takes the llm only;
     rules and grounding references arrive per-write call.
     """
 
@@ -334,8 +334,6 @@ class ContentWriter:
                 ShotSpec(
                     beat_role=beat.role,
                     motion_tag=draft.motion_tag,
-                    # still_prompt omitted: legacy still-first field (D4), the
-                    # scene lane renders no stills — defaults to None.
                     scene_line=conversion.scene_lines[index],
                     duration_seconds=draft.duration_seconds,
                     narration_line=narration,
@@ -355,6 +353,4 @@ class ContentWriter:
             rationale=plan.rationale,
             pitch_id=pitch_id,
             reference_image_paths=list(reference_image_paths),
-            # consistency_groups omitted: legacy still-first field, stays empty
-            # in the scene lane (D4).
         )

@@ -267,7 +267,6 @@ def main() -> None:
         print("=" * 70)
         print(f"STYLE ANCHOR:  {package.style_anchor}")
         print(f"ANCHORS:       {package.anchors_block}")
-        print(f"GROUPS:        {package.consistency_groups}")
         print(f"REFS:          {package.reference_image_paths}")
         for i, shot in enumerate(package.shots):
             print("-" * 70)
@@ -275,7 +274,6 @@ def main() -> None:
                 f"SHOT {i} [{shot.beat_role.value}] {shot.duration_seconds}s "
                 f"tag={shot.motion_tag.value} model={shot.model_cli_id}"
             )
-            print(f"  STILL:  {shot.still_prompt}")  # legacy: None on scene-lane packages
             print(f"  SCENE:  {shot.scene_line}")
             if shot.narration_line:
                 print(f"  VO:     {shot.narration_line}")

@@ -1,47 +1,23 @@
-"""Tests for the v3 multi-group executor (plan 2026-07-04 Task 6).
+"""Tests for the scene-lane executor (plan 2026-07-06 Task 5; legacy group
+executor deleted Task 10).
 
 Fake CLI / download / probe throughout — zero credits, no network. Pins:
-cost-preflight-before-any-create, dry_run spends nothing, group loop wires each
-still into the following video job via --start-image, still jobs carry repeated
---image-references, per-model extra flags, the audio warning, and the resume
-manifest (a crash mid-run re-renders only the unfinished jobs).
+dry-run-zero-CLI yaml-rate estimates, N takes = N submissions with refs and
+params, failed-take-continues, per-take resume manifest, ladder fallback note.
 """
 
 import subprocess
 
 import pytest
 
-from src.generation.executor import PackageRenderResult, execute, execute_scene
+from src.generation.executor import execute_scene
 from src.generation.render_adapters.rules import RenderRules
 from src.generation.render_adapters.schemas import RenderJob
 
 
-def _jobs() -> list[RenderJob]:
-    """Adapter-shaped list: kling group (shots 0-2) + veo breakout (shot 3)."""
-    return [
-        RenderJob(
-            model_cli_id="nano_banana_2", kind="still", prompt="group still",
-            aspect_ratio="9:16", shot_index=0,
-            reference_images=["refs/a.jpg", "refs/b.jpg"],
-        ),
-        RenderJob(
-            model_cli_id="kling3_0", kind="multi_shot", prompt="Shot 1 (0-4s): x",
-            aspect_ratio="9:16", shot_index=0, duration=12, covers_shots=[0, 1, 2],
-        ),
-        RenderJob(
-            model_cli_id="nano_banana_2", kind="still", prompt="breakout still",
-            aspect_ratio="9:16", shot_index=3,
-            reference_images=["refs/a.jpg", "refs/b.jpg"],
-        ),
-        RenderJob(
-            model_cli_id="veo3_1", kind="motion", prompt="water arcs. Audio: spray.",
-            aspect_ratio="9:16", shot_index=3, duration=6,
-        ),
-    ]
-
-
 class FakeCLI:
-    """Records argv calls; answers cost with 5cr and create with a unique URL."""
+    """Records argv calls; answers create with a unique URL, optionally failing
+    the Nth create to exercise the failed-take path."""
 
     def __init__(self, fail_on_create_number: int | None = None):
         self.calls: list[list[str]] = []
@@ -50,8 +26,6 @@ class FakeCLI:
 
     def __call__(self, argv):
         self.calls.append(argv)
-        if argv[2] == "cost":
-            return "5 credits"
         self._creates += 1
         if self._fail_on is not None and self._creates == self._fail_on:
             raise subprocess.CalledProcessError(1, argv)
@@ -71,89 +45,6 @@ def _fake_download(url, dest):
 @pytest.fixture(scope="module")
 def rules():
     return RenderRules()
-
-
-def test_dry_run_estimates_everything_and_creates_nothing(tmp_path, capsys, rules):
-    cli = FakeCLI()
-    result = execute(_jobs(), str(tmp_path), dry_run=True, run_cli=cli, rules=rules)
-    assert result.credits_spent == 20.0  # 4 jobs x 5cr
-    assert result.still_paths == [] and result.clips == [] and result.manifest_path == ""
-    assert cli.create_calls == []
-    out = capsys.readouterr().out
-    assert "Estimated total: 20.0 credits" in out
-    assert out.count("cr") >= 4  # per-job lines printed
-
-
-def test_cost_preflight_runs_before_any_create(tmp_path, rules):
-    cli = FakeCLI()
-    execute(
-        _jobs(), str(tmp_path),
-        run_cli=cli, download=_fake_download, probe_audio=lambda p: True, rules=rules,
-    )
-    kinds = [c[2] for c in cli.calls]
-    first_create = kinds.index("create")
-    assert all(k == "cost" for k in kinds[:first_create])
-    assert kinds[:first_create].count("cost") == 4
-
-
-def test_group_loop_wires_stills_refs_and_flags(tmp_path, rules):
-    cli = FakeCLI()
-    result = execute(
-        _jobs(), str(tmp_path),
-        run_cli=cli, download=_fake_download, probe_audio=lambda p: True, rules=rules,
-    )
-    creates = cli.create_calls
-    assert [c[3] for c in creates] == ["nano_banana_2", "kling3_0", "nano_banana_2", "veo3_1"]
-
-    # stills carry repeated --image-references, never --start-image
-    for still_call in (creates[0], creates[2]):
-        assert still_call.count("--image-references") == 2
-        assert "--start-image" not in still_call
-
-    # each video job is seeded by ITS group's still (the one just rendered)
-    kling_call, veo_call = creates[1], creates[3]
-    assert kling_call[kling_call.index("--start-image") + 1] == result.still_paths[0]
-    assert veo_call[veo_call.index("--start-image") + 1] == result.still_paths[1]
-
-    # per-model extras: veo gets --quality high, kling does not
-    assert "--quality" in veo_call and "--quality" not in kling_call
-
-    # clips map to their covered shots
-    assert [clip.shot_indices for clip in result.clips] == [[0, 1, 2], [3]]
-    assert isinstance(result, PackageRenderResult)
-
-
-def test_manifest_resume_skips_completed_jobs(tmp_path, rules):
-    # First run dies on the 3rd create (the breakout still).
-    dying = FakeCLI(fail_on_create_number=3)
-    with pytest.raises(subprocess.CalledProcessError):
-        execute(
-            _jobs(), str(tmp_path),
-            run_cli=dying, download=_fake_download,
-            probe_audio=lambda p: True, rules=rules,
-        )
-    assert len(dying.create_calls) == 3  # two completed + the fatal third
-
-    # Second run must skip the two completed jobs and finish the rest.
-    resumed = FakeCLI()
-    result = execute(
-        _jobs(), str(tmp_path),
-        run_cli=resumed, download=_fake_download,
-        probe_audio=lambda p: True, rules=rules,
-    )
-    assert [c[3] for c in resumed.create_calls] == ["nano_banana_2", "veo3_1"]
-    assert len(result.clips) == 2  # full result despite partial re-render
-    assert result.manifest_path.endswith("render_manifest.json")
-
-
-def test_silent_clip_on_audio_model_warns(tmp_path, capsys, rules):
-    execute(
-        _jobs(), str(tmp_path),
-        run_cli=FakeCLI(), download=_fake_download,
-        probe_audio=lambda p: False, rules=rules,
-    )
-    out = capsys.readouterr().out
-    assert "WARNING" in out and "kling3_0" in out and "veo3_1" in out
 
 
 # --- SCENE LANE (execute_scene, plan 2026-07-06 Task 5) ---------------------------

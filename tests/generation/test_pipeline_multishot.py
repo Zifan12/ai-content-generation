@@ -6,7 +6,7 @@ StoryPitch becomes composed, grouped, costed render jobs.
 """
 
 from src.generation.content_writer import ContentWriter, SceneLines
-from src.generation.executor import execute
+from src.generation.executor import execute_scene
 from src.generation.render_adapters.adapter import render_jobs
 from src.generation.render_adapters.rules import RenderRules
 from src.schemas.generation import (
@@ -49,10 +49,7 @@ class FakeLLM:
 
 
 def _fake_cli(argv):
-    assert argv[:3] == ["higgsfield", "generate", "cost"], (
-        "dry run must never issue a create call"
-    )
-    return "7.5 credits"
+    raise AssertionError("scene dry run must make ZERO CLI calls")
 
 
 def test_pitch_to_costed_jobs_dry_run(tmp_path):
@@ -66,9 +63,8 @@ def test_pitch_to_costed_jobs_dry_run(tmp_path):
         reference_image_paths=["refs/eve/front.png", "refs/eve/profile.png"],
         pitch_id=1,
     )
-    # Scene lane (D3/D4): no routing, no groups; every shot carries the one
-    # configured scene model and its call-2 prose line.
-    assert package.consistency_groups == []
+    # Scene lane (D3): no routing; every shot carries the one configured
+    # scene model and its call-2 prose line.
     assert {shot.model_cli_id for shot in package.shots} == {rules.scene_model()}
     assert [shot.scene_line for shot in package.shots] == [
         f"converted {i}. Audio: rain." for i in range(3)
@@ -86,6 +82,6 @@ def test_pitch_to_costed_jobs_dry_run(tmp_path):
     assert "Then cut to:" in job.prompt
     assert "Eve is the character shown in image1, image2." in job.prompt
 
-    result = execute(jobs, str(tmp_path), dry_run=True, run_cli=_fake_cli)
-    assert result.credits_spent == 7.5  # 1 job x fake 7.5
+    result = execute_scene(job, str(tmp_path), dry_run=True, run_cli=_fake_cli, rules=rules)
+    assert result.credits_spent == 45.0  # 10s x 4.5cr/s @720p, yaml-rate estimate
     assert result.still_paths == [] and result.clips == []

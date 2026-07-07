@@ -19,8 +19,7 @@ PARADIGM (motion-native scene lane, spec 2026-07-06, supersedes the still-first
   One video = ONE Seedance generation of 3–6 prose-chained shots, 10–25s total
   (v1 target: one 10s generation), vertical 9:16, register = SOURCE-STYLE-MATCHED.
   No per-shot model routing, no breakout shots, no Kling fallback (D3) — MotionTag
-  survives as shot metadata only (legacy router consumes it until Task-10 deletion,
-  and it stays a free labeled feature for P4).
+  survives as shot metadata only (a free labeled feature for P4).
 
   The writer's output is render-agnostic TEXT. anchors_block and style_anchor are
   package-level and composed into the scene prompt BY THE ADAPTER in code — shot
@@ -68,10 +67,9 @@ class MotionTag(str, Enum):
     """Per-shot content classification — METADATA ONLY in the scene lane (D3).
 
     The scene lane renders everything in one Seedance generation, so nothing
-    routes on this tag anymore. It survives because (a) the legacy still-first
-    router consumes it until the Task-10 deletion, and (b) it is a free labeled
-    feature for P4. Values remain config/render_rules.yaml `routing:` keys
-    VERBATIM (parity enforced by test) so the legacy path stays green.
+    routes on this tag. It survives as a free labeled feature for P4. Values
+    remain config/render_rules.yaml `routing:` keys VERBATIM (parity enforced
+    by test) so the tag vocabulary stays documented in one place.
     """
 
     fluid_motion = "fluid_motion"
@@ -86,11 +84,8 @@ class ShotSpec(BaseModel):
 
     Attributes:
       beat_role: Copied from the source StoryBeat (hook/establish/.../payoff/tag).
-      motion_tag: LLM-classified shot-content tag — metadata only in the scene
-        lane (D3); the legacy router still reads it until Task-10 deletion.
-      still_prompt: LEGACY (still-first lane, D4) — unpopulated by the scene lane,
-        defaults to None, deleted in the Task-10 cleanup along with the old
-        adapter/executor branches that read it.
+      motion_tag: LLM-classified shot-content tag — metadata only (D3): nothing
+        routes on it; it stays as a free labeled feature for P4.
       scene_line: Call 2's Seedance prose line for this shot — one camera move +
         one subject action (separated) + a concrete "Audio:" event. Carries NO
         anchors, NO style words, NO seconds/timestamps (D2) — the adapter chains
@@ -109,7 +104,6 @@ class ShotSpec(BaseModel):
 
     beat_role: BeatRole
     motion_tag: MotionTag
-    still_prompt: str | None = None   # legacy still-first lane (D4) — dies in Task 10
     scene_line: str
     duration_seconds: int = Field(ge=2, le=8)
     narration_line: str | None
@@ -171,10 +165,9 @@ class ShotPlanDraft(BaseModel):
 class MultiShotPackage(BaseModel):
     """One generated video's full content kit — the writer flow's final output.
 
-    Assembled in CODE from ShotPlanDraft + router output + call 2's dialect
-    conversions; never parsed whole from a single LLM response. Provenance fields
-    (pitch_id, reference_image_paths, consistency_groups) are code-set and never
-    trusted from the LLM.
+    Assembled in CODE from ShotPlanDraft + call 2's scene lines; never parsed
+    whole from a single LLM response. Provenance fields (pitch_id,
+    reference_image_paths) are code-set and never trusted from the LLM.
 
     Attributes:
       shots: 3–6 ShotSpecs, one per source StoryBeat, in beat order.
@@ -196,8 +189,6 @@ class MultiShotPackage(BaseModel):
       reference_image_paths: Character-ref files attached to the scene generation
         (code-set; grounding is mandatory per DECISIONS_LOCKED L3). Upload order
         defines the positional "(imageN)" binding in the identity block.
-      consistency_groups: LEGACY (still-first lane, D4) — router-computed Kling
-        group indices; unpopulated (empty) in the scene lane, deleted in Task 10.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -214,7 +205,6 @@ class MultiShotPackage(BaseModel):
     # --- code-set provenance, never trusted from the LLM ---
     pitch_id: int | None = None
     reference_image_paths: list[str] = Field(default_factory=list)
-    consistency_groups: list[list[int]] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _check_total_duration(self) -> "MultiShotPackage":

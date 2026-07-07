@@ -1,35 +1,24 @@
-"""Render executor v3: run a multi-shot package's RenderJobs on the Higgsfield CLI.
+"""Render executor: run the scene lane's ONE RenderJob on the Higgsfield CLI.
 
-Consumes the adapter's ordered job list — [group0 still, group0 video, group1
-still, group1 video, ...] — and executes it group by group:
+``execute_scene`` renders the adapter's composed multi_shot job N times
+(``--takes``, D6 retake ladder), with the cost preflight computed from the
+yaml's billing-verified per-second rates BEFORE any paid call
+(DECISIONS_LOCKED L7) — a dry run makes zero CLI calls.
 
-    still create (--image-references <key-art> ...)  ->  download still
-    ->  video create (--start-image <that still>)     ->  download clip
-    ->  ffprobe the clip for an audio stream
-
-Cost preflight ALWAYS runs first: every job is estimated (``generate cost``),
-printed per-job and totaled, before any paid create call (DECISIONS_LOCKED L7).
-``dry_run`` returns right after the estimate.
-
-RESUME MANIFEST (D14): every completed job is recorded in
-``<out_dir>/render_manifest.json`` keyed by ``kind:shot_index``, with its result
+RESUME MANIFEST: every completed take is recorded in
+``<out_dir>/render_manifest.json`` (key ``scene_take_<k>``) with its result
 URL and local path, written AFTER the download lands. A re-run over the same
-out_dir skips completed jobs — a crash on shot 4 of 5 re-renders only 4 and 5,
-never re-spending the finished shots. (OpenMontage's completed-ids checkpoint
-shape, enforced in code rather than agent convention.)
+out_dir renders only the missing takes. (OpenMontage's completed-ids
+checkpoint shape, enforced in code rather than agent convention.)
 
 All side-effecting boundaries — the CLI, downloads, the ffprobe audio probe —
 are injected as callables (defaulting to real implementations) so tests drive
 the whole flow with zero credits and no network/subprocess.
 
-CLI-interface caveats (verified against CLI 1.1.5 param tables, 2026-07-04):
-  * i2v seed flag is ``--start-image <path-or-id>`` on kling3_0 AND veo3_1 (the
-    0.2.3-era ``--image`` is gone). Local PATHS are passed directly per the
-    helptext; Kling path-feeding is render-proven (2026-07-04 spike). If veo3_1
-    rejects a bare path on its first real run, add an ``upload create`` branch.
-  * nano_banana_2 references: repeated ``--image-references``, max 14.
-  * ``--quality high`` exists on veo3_1 only (kling uses ``mode``, default std) —
-    extra flags are per-model via _VIDEO_EXTRA_FLAGS.
+The legacy still-first group executor (``execute``: per-group still create ->
+--start-image i2v -> download, with per-job ``generate cost`` preflight) was
+deleted 2026-07-07 after the live validation render (plan Task 10, D4 step
+two) — see git history before commit f7b42bc.
 """
 
 import json
@@ -37,7 +26,6 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
-from urllib.parse import urlparse
 
 import httpx
 from pydantic import BaseModel
@@ -46,12 +34,6 @@ from src.generation.render_adapters.rules import RenderRules
 from src.generation.render_adapters.schemas import RenderJob
 
 MANIFEST_NAME = "render_manifest.json"
-
-# Model-specific extra flags for video create calls. veo3_1's quality param
-# defaults to "basic"; we render high (the established single-shot default).
-_VIDEO_EXTRA_FLAGS: dict[str, list[str]] = {
-    "veo3_1": ["--quality", "high"],
-}
 
 
 class ShotClip(BaseModel):
@@ -166,69 +148,12 @@ def _probe_audio(path: str) -> bool:
     return "audio" in out
 
 
-def _parse_credits(output: str) -> float:
-    """Extract the credit figure from a ``generate cost`` stdout string.
-
-    Pulls the first number (int or decimal) out of the output. Raises if no
-    number is present, so a malformed cost output fails loud rather than
-    silently summing to zero.
-    """
-    match = re.search(r"\d+(?:\.\d+)?", output)
-    if match is None:
-        raise ValueError(f"Could not parse a credit figure from cost output: {output!r}")
-    return float(match.group())
-
-
 def _extract_url(output: str) -> str:
     """Pull the first http(s) URL out of a ``generate create --wait`` stdout."""
     match = re.search(r"https?://\S+", output)
     if match is None:
         raise ValueError(f"No result URL found in create output: {output!r}")
     return match.group().rstrip(".,)\"'")
-
-
-def _param_flags(job: RenderJob) -> list[str]:
-    """The non-media param flags shared by a job's cost and create calls.
-
-    Prompt + aspect ratio always; duration only for video jobs (stills have
-    none). Media flags (--image-references / --start-image) and per-model
-    extras are added by the create builder, not here, so the cost call
-    estimates the same base shape without them.
-    """
-    flags = ["--prompt", _sanitize_prompt(job.prompt), "--aspect_ratio", job.aspect_ratio]
-    if job.duration is not None:
-        flags += ["--duration", str(job.duration)]
-    return flags
-
-
-def _cost_argv(job: RenderJob) -> list[str]:
-    """Build the ``higgsfield generate cost <model> ...`` argv for a job."""
-    return ["higgsfield", "generate", "cost", job.model_cli_id, *_param_flags(job)]
-
-
-def _create_argv(job: RenderJob, start_image: str | None) -> list[str]:
-    """Build the ``higgsfield generate create <model> ... --wait`` argv.
-
-    Still jobs attach their grounding key-art via repeated --image-references
-    (CLI 1.1.5, max 14). Video jobs are seeded with their group's rendered
-    still via --start-image, plus any per-model extra flags.
-    """
-    argv = ["higgsfield", "generate", "create", job.model_cli_id, *_param_flags(job)]
-    if job.kind == "still":
-        for ref in job.reference_images:
-            argv += ["--image-references", ref]
-    else:
-        if start_image is not None:
-            argv += ["--start-image", start_image]
-        argv += _VIDEO_EXTRA_FLAGS.get(job.model_cli_id, [])
-    argv.append("--wait")
-    return argv
-
-
-def _job_key(job: RenderJob) -> str:
-    """Manifest key for a job — kind + first covered shot uniquely identifies it
-    within one package's job list (one still + one video per group)."""
-    return f"{job.kind}:{job.shot_index}"
 
 
 def _load_manifest(path: Path) -> dict:
@@ -403,99 +328,3 @@ def execute_scene(
         manifest_path=str(manifest_path),
     )
 
-
-def execute(
-    jobs: list[RenderJob],
-    out_dir: str,
-    *,
-    dry_run: bool = False,
-    run_cli=_run_cli,
-    download=_download,
-    probe_audio=_probe_audio,
-    rules: RenderRules | None = None,
-) -> PackageRenderResult:
-    """Run a package's render jobs group by group, or estimate cost under dry_run.
-
-    Walks the adapter's ordered list: each ``still`` job renders and becomes the
-    ``--start-image`` seed for the video job that follows it. Completed jobs are
-    recorded in the resume manifest and skipped on re-runs over the same out_dir.
-
-    Args:
-        jobs: The adapter's output — alternating still / video jobs in group order.
-        out_dir: Directory for downloads + the resume manifest (created if
-            missing). Unused in dry_run.
-        dry_run: When True, only run the per-job cost estimate, print the table,
-            and return with nothing spent.
-        run_cli: Injected CLI runner (argv -> stdout).
-        download: Injected (url, dest) -> path downloader.
-        probe_audio: Injected (path) -> bool audio prober.
-        rules: Render rules for the emits_audio sanity check; built lazily from
-            config when None (only needed on the real path).
-
-    Returns:
-        A PackageRenderResult (see class docstring for dry_run semantics).
-    """
-    # Cost first, always — per-job lines + total before any paid call (L7).
-    credits_spent = 0.0
-    print("Render cost estimate:")
-    for job in jobs:
-        job_credits = _parse_credits(run_cli(_cost_argv(job)))
-        credits_spent += job_credits
-        print(f"  {job.kind:<10} {job.model_cli_id:<15} {job_credits}cr")
-    print(f"Estimated total: {credits_spent} credits")
-
-    if dry_run:
-        return PackageRenderResult(
-            still_paths=[], clips=[], credits_spent=credits_spent, manifest_path=""
-        )
-
-    out_path = Path(out_dir)
-    out_path.mkdir(parents=True, exist_ok=True)
-    manifest_path = out_path / MANIFEST_NAME
-    manifest = _load_manifest(manifest_path)
-
-    still_paths: list[str] = []
-    clips: list[ShotClip] = []
-    current_still: str | None = None
-    rules = rules or RenderRules()
-
-    for job in jobs:
-        key = _job_key(job)
-        if key in manifest and manifest[key].get("status") == "completed":
-            path = manifest[key]["path"]
-            print(f"[resume] skipping completed {key} -> {path}")
-        else:
-            url = _extract_url(run_cli(_create_argv(job, start_image=current_still)))
-            if job.kind == "still":
-                ext = Path(urlparse(url).path).suffix or ".png"
-                dest = str(out_path / f"still_{job.shot_index}{ext}")
-            else:
-                dest = str(out_path / f"clip_{job.shot_index}.mp4")
-            path = download(url, dest)
-            manifest[key] = {"status": "completed", "url": url, "path": path}
-            _save_manifest(manifest_path, manifest)
-
-        if job.kind == "still":
-            current_still = path
-            still_paths.append(path)
-        else:
-            has_audio = probe_audio(path)
-            if rules.emits_audio(job.model_cli_id) and not has_audio:
-                print(
-                    f"WARNING: {job.model_cli_id} should emit native audio but the "
-                    f"rendered clip has no audio stream ({path})."
-                )
-            clips.append(
-                ShotClip(
-                    shot_indices=job.covers_shots or [job.shot_index],
-                    clip_path=path,
-                    has_audio=has_audio,
-                )
-            )
-
-    return PackageRenderResult(
-        still_paths=still_paths,
-        clips=clips,
-        credits_spent=credits_spent,
-        manifest_path=str(manifest_path),
-    )

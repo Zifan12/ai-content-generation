@@ -6,7 +6,6 @@ motion-native scene lane — envelope 10-25s, per-shot estimate 2-8s):
   - per-shot duration-estimate bounds (1s and 9s rejected)
   - total-duration envelope (26s rejected; 9s rejected — constructible now that
     the per-shot floor is 2s; 10s, 12s and 25s accepted)
-  - legacy still-first fields default empty (still_prompt None — D4)
   - MotionTag values == config/render_rules.yaml routing keys (parity, D5)
   - extra="forbid" on every v3 class (LLM hallucinated-field guard)
 
@@ -32,7 +31,6 @@ def _shot_spec(duration: int = 5, role: BeatRole = BeatRole.hook) -> ShotSpec:
     return ShotSpec(
         beat_role=role,
         motion_tag=MotionTag.character_consistency,
-        still_prompt="Full-figure low angle, subject centered in a rain-slick alley.",  # legacy (D4)
         scene_line="Slow crane-up, she lifts her head on the final second. Audio: rain patter.",
         duration_seconds=duration,
         narration_line="She waited for the signal.",
@@ -226,15 +224,12 @@ def test_narration_none_is_valid_silent_beat():
         characters_in_frame=[],
     )
     assert spec.narration_line is None
-    # Legacy still-first field defaults empty when omitted (D4).
-    assert spec.still_prompt is None
 
 
 def test_package_code_set_defaults():
     package = _package([4, 4, 4])
     assert package.pitch_id is None
     assert package.reference_image_paths == []
-    assert package.consistency_groups == []
     assert package.shots[0].model_cli_id == ""
 
 

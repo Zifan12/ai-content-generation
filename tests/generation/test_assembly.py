@@ -25,7 +25,6 @@ def _package(narrations=("A line.", None, "Third line.")) -> MultiShotPackage:
         ShotSpec(
             beat_role=BeatRole.build,
             motion_tag=MotionTag.character_consistency,
-            still_prompt=f"still {i}",
             scene_line=f"motion {i}. Audio: rain.",
             duration_seconds=4,
             narration_line=narrations[i],
@@ -42,7 +41,6 @@ def _package(narrations=("A line.", None, "Third line.")) -> MultiShotPackage:
         caption="c",
         hashtags=[],
         music_brief=None,
-        consistency_groups=[[0, 1, 2]],
     )
 
 

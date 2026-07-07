@@ -196,13 +196,14 @@ scene_lane:
   reroll_vs_reword: "Opaque failure (job rejected with no diagnosable cause, or output random-bad) -> re-roll the SAME prompt: failures are uncharged on Higgsfield (FINDINGS.md) and may be sampling noise or a transient filter trip (methodology/19 L282-285). Diagnosable defect (a specific element visibly wrong) -> reword THAT element; don't re-roll and hope (methodology/15 iterative-fix). A failed render is a loud stop for a human call, never an automatic retry (spec D3)."
 
 # ---------------------------------------------------------------------------
-# ROUTING — premise / motion type -> ranked model preference (Higgsfield-only).
-# RenderAdapter picks the first available; falls through on failure.
-# source: methodology/13 + 10 decision trees, image-video-director/06,
-# intersected with higgsfield model list.
-# LEGACY (still-first lane): superseded by scene_lane above (spec D4 two-step
-# deletion) — kept unreached until the motion-native lane live-validates, then
-# deleted in the plan's Task 10 cleanup.
+# ROUTING — RETIRED as live routing (Task 10, 2026-07-07: router.py and the
+# still-first lane are deleted; nothing routes on these lists anymore).
+# KEPT because: (1) the keys are the MotionTag vocabulary (schema enum parity
+# is test-enforced — the writer still labels shots for P4 features), and
+# (2) the ranked lists + comments preserve paid render evidence (Veo vs Kling
+# fluids 2026-06-17, Hailuo impossible-physics 2026-06-21) that any future
+# multi-model revival would otherwise re-buy.
+# source: methodology/13 + 10 decision trees, image-video-director/06.
 # ---------------------------------------------------------------------------
 routing:
   # BUG-011 (2026-07-05): minimax_hailuo TEMPORARILY pulled from routing — the executor's

@@ -199,7 +199,6 @@ def test_provenance_code_set(rules):
     )
     assert package.pitch_id == 7
     assert package.reference_image_paths == ["a.jpg", "b.jpg"]
-    assert package.consistency_groups == []  # legacy field, empty in the scene lane (D4)
 
 
 # --- anchors/style exclusion (spec §7 Stage-2 criterion 6) ------------------------
@@ -208,7 +207,6 @@ def test_provenance_code_set(rules):
 def test_no_shot_prompt_contains_anchor_or_style_text(rules):
     package = _write(_pitch(3), FakeLLM(_plan(_draft_shots(3))), rules)
     for shot in package.shots:
-        assert shot.still_prompt is None  # legacy field, unpopulated by the scene lane
         assert ANCHOR_TEXT not in shot.scene_line
         assert STYLE_TEXT not in shot.scene_line
     assert package.anchors_block == ANCHOR_TEXT
@@ -253,7 +251,6 @@ def test_mixed_motion_tags_still_one_scene_call(rules):
     package = _write(_pitch(3), fake, rules)
     assert len(fake.calls) == 2  # tags are metadata — no per-model batching (D3)
     assert {shot.model_cli_id for shot in package.shots} == {rules.scene_model()}
-    assert package.consistency_groups == []
 
 
 def test_scene_line_count_mismatch_raises(rules):
