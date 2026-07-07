@@ -1,19 +1,19 @@
-"""Tests for ContentWriter v3 (plan 2026-07-04 Task 4 — two-call multi-shot flow).
+"""Tests for ContentWriter (motion-native scene lane, plan 2026-07-06 Task 3).
 
 FakeLLM answers by response_model type: ShotPlanDraft requests get the queued
-draft; DialectConversion requests get one "CONVERTED[i]" prompt per shot line in
-the envelope (counted from the "motion_intent:" markers), unless a broken
-conversion is forced. No network, no credits.
+draft; SceneLines requests get one "CONVERTED[i]" line per shot in the envelope
+(counted from the "motion_intent:" markers), unless a broken conversion is
+forced. No network, no credits.
 """
 
 import pytest
 
 from src.generation.content_writer import (
-    DIALECT_SYSTEM_PROMPT,
     PLAN_SYSTEM_PROMPT,
+    SCENE_LINE_SYSTEM_PROMPT,
     WRITER_MAX_TOKENS,
     ContentWriter,
-    DialectConversion,
+    SceneLines,
 )
 from src.generation.render_adapters.rules import RenderRules
 from src.monitor.schemas import (
@@ -120,12 +120,12 @@ class FakeLLM:
         )
         if response_model is ShotPlanDraft:
             return self._plan
-        if response_model is DialectConversion:
+        if response_model is SceneLines:
             if self._forced_conversion is not None:
-                return DialectConversion(motion_prompts=self._forced_conversion)
+                return SceneLines(scene_lines=self._forced_conversion)
             n = prompt.count("motion_intent:")
-            return DialectConversion(
-                motion_prompts=[f"CONVERTED[{i}]. Audio: rain on pavement." for i in range(n)]
+            return SceneLines(
+                scene_lines=[f"CONVERTED[{i}]. Audio: rain on pavement." for i in range(n)]
             )
         raise AssertionError(f"unexpected response_model {response_model}")
 
@@ -180,13 +180,12 @@ def test_silent_beat_stays_silent_even_if_draft_invents_narration(rules):
     assert package.shots[2].narration_line == "Polished narration."
 
 
-def test_model_stamped_from_router_table(rules):
+def test_model_stamped_from_scene_lane_config(rules):
     package = _write(_pitch(3), FakeLLM(_plan(_draft_shots(3))), rules)
     assert all(
-        shot.model_cli_id == rules.route(shot.motion_tag.value)[0]
-        for shot in package.shots
+        shot.model_cli_id == rules.scene_model() for shot in package.shots
     )
-    assert package.shots[0].model_cli_id == "kling3_0"
+    assert package.shots[0].model_cli_id == "seedance_2_0"
 
 
 def test_hook_text_is_pitch_hook_line_not_draft(rules):
@@ -200,7 +199,7 @@ def test_provenance_code_set(rules):
     )
     assert package.pitch_id == 7
     assert package.reference_image_paths == ["a.jpg", "b.jpg"]
-    assert package.consistency_groups == [[0, 1, 2]]  # 3x4s kling same-cast
+    assert package.consistency_groups == []  # legacy field, empty in the scene lane (D4)
 
 
 # --- anchors/style exclusion (spec §7 Stage-2 criterion 6) ------------------------
@@ -219,24 +218,28 @@ def test_no_shot_prompt_contains_anchor_or_style_text(rules):
 # --- call mechanics ---------------------------------------------------------------
 
 
-def test_two_calls_one_model_and_prompt_contents(rules):
+def test_two_calls_and_prompt_contents(rules):
     fake = FakeLLM(_plan(_draft_shots(3)))
     _write(_pitch(3), fake, rules)
-    assert len(fake.calls) == 2  # one plan + one dialect (all shots -> kling)
-    plan_call, dialect_call = fake.calls
+    assert len(fake.calls) == 2  # one plan + ONE scene call, always (D3)
+    plan_call, scene_call = fake.calls
     assert plan_call["system"] == PLAN_SYSTEM_PROMPT
     assert plan_call["max_tokens"] == WRITER_MAX_TOKENS
-    assert "Still dialect:" in plan_call["prompt"]
     assert "Motion craft:" in plan_call["prompt"]
+    assert "Still dialect:" not in plan_call["prompt"]  # scene lane writes no stills
     assert "the ending they cut" in plan_call["prompt"]  # pitch JSON present
-    assert dialect_call["system"] == DIALECT_SYSTEM_PROMPT
-    assert dialect_call["max_tokens"] == WRITER_MAX_TOKENS
-    # the kling dialect block travels into the dialect envelope
-    assert rules.model("kling3_0")["dialect"]["multi_shot_grammar"] in dialect_call["prompt"]
-    assert "group [0, 1, 2]" in dialect_call["prompt"]
+    assert scene_call["system"] == SCENE_LINE_SYSTEM_PROMPT
+    assert scene_call["max_tokens"] == WRITER_MAX_TOKENS
+    # the whole plan travels as data inside the injection-guard wrapper,
+    # every beat present, no durations (D2)
+    assert scene_call["prompt"].startswith("<plan>")
+    assert scene_call["prompt"].rstrip().endswith("</plan>")
+    for i in range(3):
+        assert f"shot_index={i}" in scene_call["prompt"]
+    assert "duration" not in scene_call["prompt"]
 
 
-def test_one_dialect_call_per_distinct_model(rules):
+def test_mixed_motion_tags_still_one_scene_call(rules):
     shots = _draft_shots(3)
     shots[1] = ShotDraft(
         beat_role=BeatRole.build,
@@ -248,14 +251,25 @@ def test_one_dialect_call_per_distinct_model(rules):
     )
     fake = FakeLLM(_plan(shots))
     package = _write(_pitch(3), fake, rules)
-    assert len(fake.calls) == 3  # plan + kling batch + veo batch
-    assert package.shots[1].model_cli_id == "veo3_1"  # hailuo pulled (BUG-011)
-    assert package.consistency_groups == [[0], [1], [2]]  # breakout splits the run
+    assert len(fake.calls) == 2  # tags are metadata — no per-model batching (D3)
+    assert {shot.model_cli_id for shot in package.shots} == {rules.scene_model()}
+    assert package.consistency_groups == []
 
 
-def test_dialect_count_mismatch_raises(rules):
+def test_scene_line_count_mismatch_raises(rules):
     fake = FakeLLM(_plan(_draft_shots(3)), conversion_prompts=["only one"])
-    with pytest.raises(ValueError, match="returned 1 prompts for 3 shots"):
+    with pytest.raises(ValueError, match="returned 1 lines for 3 shots"):
+        _write(_pitch(3), fake, rules)
+
+
+def test_scene_line_anchor_leak_raises(rules):
+    leaked = [
+        "Medium shot. CONVERTED[0]. Audio: rain.",
+        f"Wide shot. {ANCHOR_TEXT} walks away. Audio: rain.",  # identity leak
+        "Close-up. CONVERTED[2]. Audio: rain.",
+    ]
+    fake = FakeLLM(_plan(_draft_shots(3)), conversion_prompts=leaked)
+    with pytest.raises(ValueError, match="leaked anchors_block"):
         _write(_pitch(3), fake, rules)
 
 

@@ -111,6 +111,20 @@ class RenderRules:
 
         return output
 
+    def scene_model(self) -> str:
+        """Return the scene lane's model cli_id from the ``scene_lane`` block.
+
+        The motion-native lane (spec 2026-07-06) renders every package as ONE
+        generation on a single model; ``scene_lane.model`` in the YAML is the
+        only place that model is named (D7 — a Seedance 2.5 swap is a config
+        edit, never a code edit). The writer stamps this id on every ShotSpec;
+        the executor submits the scene job against it.
+
+        Raises:
+            KeyError: if the YAML has no ``scene_lane.model`` entry.
+        """
+        return self.data["scene_lane"]["model"]
+
     def max_seconds(self, cli_id: str) -> int:
         """Return the maximum single-clip duration (seconds) for a model.
 

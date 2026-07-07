@@ -5,9 +5,9 @@ No network, no credits — this pins the SHAPE of the whole Stage-2 path: a judg
 StoryPitch becomes composed, grouped, costed render jobs.
 """
 
-from src.generation.content_writer import ContentWriter, DialectConversion
+from src.generation.content_writer import ContentWriter, SceneLines
 from src.generation.executor import execute
-from src.generation.render_adapters.adapter import STILL_MODEL, render_jobs
+from src.generation.render_adapters.adapter import render_jobs
 from src.generation.render_adapters.rules import RenderRules
 from src.schemas.generation import (
     BeatRole,
@@ -40,10 +40,10 @@ class FakeLLM:
                 hashtags=["tag"],
                 music_brief=None,
             )
-        if response_model is DialectConversion:
+        if response_model is SceneLines:
             n = prompt.count("motion_intent:")
-            return DialectConversion(
-                motion_prompts=[f"converted {i}. Audio: rain." for i in range(n)]
+            return SceneLines(
+                scene_lines=[f"converted {i}. Audio: rain." for i in range(n)]
             )
         raise AssertionError(response_model)
 
@@ -62,15 +62,21 @@ def test_pitch_to_costed_jobs_dry_run(tmp_path):
     package = ContentWriter(llm=FakeLLM()).write(
         pitch, rules=rules, reference_image_paths=["refs/eve.jpg"], pitch_id=1
     )
-    assert package.consistency_groups == [[0, 1, 2]]
+    # Scene lane (D3/D4): no routing, no groups; every shot carries the one
+    # configured scene model and its call-2 prose line.
+    assert package.consistency_groups == []
+    assert {shot.model_cli_id for shot in package.shots} == {rules.scene_model()}
+    assert [shot.scene_line for shot in package.shots] == [
+        f"converted {i}. Audio: rain." for i in range(3)
+    ]
 
+    # MID-MIGRATION SHAPE (until plan Task 4 lands the scene-prompt adapter):
+    # the legacy adapter iterates consistency_groups, so a scene-lane package
+    # yields ZERO jobs and a zero-cost dry run. Task 4 replaces these
+    # assertions with the composed single multi_shot scene job.
     jobs = render_jobs(package, rules)
-    assert [job.kind for job in jobs] == ["still", "multi_shot"]
-    assert jobs[0].model_cli_id == STILL_MODEL
-    assert jobs[0].reference_images == ["refs/eve.jpg"]
-    assert jobs[1].model_cli_id == "kling3_0"
-    assert jobs[1].duration == 12
+    assert jobs == []
 
     result = execute(jobs, str(tmp_path), dry_run=True, run_cli=_fake_cli)
-    assert result.credits_spent == 15.0  # 2 jobs x fake 7.5
+    assert result.credits_spent == 0.0
     assert result.still_paths == [] and result.clips == []
