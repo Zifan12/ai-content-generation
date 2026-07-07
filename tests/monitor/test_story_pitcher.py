@@ -178,17 +178,16 @@ def test_repitch_returns_single_pitch_and_carries_failure_notes() -> None:
 
 def test_estimate_pitch_credits_scales_with_beats() -> None:
     assert estimate_pitch_credits(_pitch()) == 28.5  # 3 beats * (2 + 7.5)
-    six = _pitch(
+    five = _pitch(
         beats=[
             _beat(BeatRole.hook, ShotSize.wide),
             _beat(BeatRole.establish, ShotSize.establishing),
-            _beat(BeatRole.build, ShotSize.medium),
             _beat(BeatRole.turn, ShotSize.over_shoulder),
             _beat(BeatRole.reveal, ShotSize.close_up),
             _beat(BeatRole.payoff, ShotSize.extreme_close_up, hero=True),
         ]
     )
-    assert estimate_pitch_credits(six) == 57.0  # 6 beats * 9.5
+    assert estimate_pitch_credits(five) == 47.5  # 5 beats * 9.5
 
 
 def test_low_diversity_slate_warns(caplog) -> None:

@@ -153,9 +153,9 @@ def test_three_beats_three_shots(rules):
     assert len(package.shots) == 3
 
 
-def test_six_beats_six_shots(rules):
-    package = _write(_pitch(6), FakeLLM(_plan(_draft_shots(6))), rules)
-    assert len(package.shots) == 6
+def test_five_beats_five_shots(rules):
+    package = _write(_pitch(5), FakeLLM(_plan(_draft_shots(5))), rules)
+    assert len(package.shots) == 5
 
 
 def test_plan_beat_count_mismatch_raises(rules):

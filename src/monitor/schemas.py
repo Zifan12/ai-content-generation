@@ -151,9 +151,33 @@ class StoryBeat(BaseModel):
     role: BeatRole
     visual_line: str  # what the camera sees this beat (render-facing)
     narration_line: str | None  # optional VO/caption line; None = silent beat
+    dialogue_line: str | None = None  # optional spoken line, quoted-speech form
+    speaker: str | None = None  # must be one of characters_in_frame; set iff dialogue_line is
     shot_size: ShotSize
     characters_in_frame: list[str]  # CharacterRef names present in this beat
     hero_moment: bool = False  # the one payoff beat; at most one per pitch
+
+    @model_validator(mode="after")
+    def _check_dialogue_speaker_rule(self) -> "StoryBeat":
+        """
+        dialogue_line and speaker are a pair: both set or both None. When set,
+        speaker must be a name already present in this beat's characters_in_frame
+        — a line spoken by someone not on screen is a lip-sync bug waiting to
+        happen (spec §5 KNOWN UNKNOWNS: "wrong character speaks" has no
+        documented mitigation beyond this).
+        """
+        has_dialogue = self.dialogue_line is not None
+        has_speaker = self.speaker is not None
+        if has_dialogue != has_speaker:
+            raise ValueError(
+                "dialogue_line and speaker must both be set or both be None"
+            )
+        if has_speaker and self.speaker not in self.characters_in_frame:
+            raise ValueError(
+                f"speaker {self.speaker!r} must be one of "
+                f"characters_in_frame {self.characters_in_frame}"
+            )
+        return self
 
 
 class StoryPitch(BaseModel):
@@ -163,7 +187,8 @@ class StoryPitch(BaseModel):
     mode: ContentMode
     characters: list[CharacterRef]
     desired_moment: str  # the thing the reaction is begging to see
-    beats: list[StoryBeat] = Field(min_length=3, max_length=6)
+    scene_setting: str = ""  # the ONE place/time every beat stays inside; "" = pre-v2 row
+    beats: list[StoryBeat] = Field(min_length=3, max_length=5)
     caption_policy: CaptionPolicy = CaptionPolicy.hook_only
     hook_line: str | None = None  # required iff caption_policy == hook_only
     why_it_lands: str
@@ -210,6 +235,11 @@ class StoryCraftVerdict(BaseModel):
     visible_turn: bool  # is there an on-screen pivot?
     earned_payoff: bool  # does the payoff follow from the turn?
     emotion_physical_tell: bool  # emotion shown as action, not labeled?
+    cold_viewer_legible: bool  # premise readable from visuals alone, zero context
+    kinetic_payoff: bool  # the peak beat is physical and camera-visible, not a held pose
+    register_match: bool  # comedic/earnest/satirical register matches gap.audience_want
+    dialogue_earns_place: bool  # any dialogue_line pulls its weight; true if there is none
+    scene_setting_contained: bool  # every beat stays inside the declared scene_setting
     notes: str
     failure_notes: str | None  # what to fix on a repair re-pitch; None if it passes
     would_watch: bool
@@ -217,12 +247,17 @@ class StoryCraftVerdict(BaseModel):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def passes(self) -> bool:
-        """Pass only if all four craft dims hold AND the pitch is watchable."""
+        """Pass only if every craft dimension holds AND the pitch is watchable."""
         return (
             self.clear_desire
             and self.visible_turn
             and self.earned_payoff
             and self.emotion_physical_tell
+            and self.cold_viewer_legible
+            and self.kinetic_payoff
+            and self.register_match
+            and self.dialogue_earns_place
+            and self.scene_setting_contained
             and self.would_watch
         )
 

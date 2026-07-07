@@ -39,12 +39,17 @@ def _verdict(
     visible_turn: bool = True,
     earned_payoff: bool = True,
     emotion_physical_tell: bool = True,
+    cold_viewer_legible: bool = True,
+    kinetic_payoff: bool = True,
+    register_match: bool = True,
+    dialogue_earns_place: bool = True,
+    scene_setting_contained: bool = True,
     would_watch: bool = True,
 ) -> StoryCraftVerdict:
-    """Build a verdict with the four craft dims + would_watch set as asked.
+    """Build a verdict with all nine craft dims + would_watch set as asked.
 
     Note we NEVER pass ``passes`` — it is a computed property on the schema,
-    derived from these five booleans.  Whatever these are set to, ``passes``
+    derived from these ten booleans.  Whatever these are set to, ``passes``
     follows automatically.  That is the exact behaviour the pass/fail tests
     below pin down.
     """
@@ -53,6 +58,11 @@ def _verdict(
         visible_turn=visible_turn,
         earned_payoff=earned_payoff,
         emotion_physical_tell=emotion_physical_tell,
+        cold_viewer_legible=cold_viewer_legible,
+        kinetic_payoff=kinetic_payoff,
+        register_match=register_match,
+        dialogue_earns_place=dialogue_earns_place,
+        scene_setting_contained=scene_setting_contained,
         notes="canned verdict for testing",
         failure_notes=None,
         would_watch=would_watch,
