@@ -175,7 +175,7 @@ Hard rules:
   "small figure in an oversized coat"); replace fight/battle/strike/kill/blood
   with physical but neutral phrasing ("their magic surges and meets in a burst
   of light", "she staggers back a step").
-- Keep each line under 60 words. Concrete nouns and verbs beat adjectives.
+- Keep each line under 40 words — the whole scene must fit one prompt budget shared with identity and constraint text. Concrete nouns and verbs beat adjectives; cut everything decorative.
 - The lines must read as ONE continuous scene: reuse the established space and
   light; when the location changes between shots, make the new shot's SPACE
   clause name it explicitly.

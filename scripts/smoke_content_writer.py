@@ -36,6 +36,10 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+# Repo root on sys.path — scripts run as files, not as a package (same pattern
+# as scripts/label.py; previously this script was invoked with PYTHONPATH set).
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from dotenv import load_dotenv
 
 load_dotenv("config/.env")
@@ -131,6 +135,13 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Override the yaml scene_lane default (480p/720p/1080p/4k). "
         "480p = cheapest sanity pass for a brand-new prompt.",
+    )
+    parser.add_argument(
+        "--duration",
+        type=int,
+        default=None,
+        help="Override the yaml scene_lane default seconds (CLI cap 15, "
+        "measured 2026-07-06). 6-beat pitches breathe better at 15.",
     )
     return parser
 
@@ -244,16 +255,12 @@ def main() -> None:
         # wistoria_refs/.
         if pitch_id == 24:
             package.anchors_block = (
-                "Will is a young man with dark teal-blue messy hair topped by a "
-                "single upward ahoge strand, round thin-framed glasses, and violet "
-                "eyes, wearing a dark high-collared cape uniform with gold fringed "
-                "epaulettes and a gold sunburst emblem. "
-                "Elfie is a young woman with long pale ice-blue hair and blue eyes, "
-                "wearing a white-and-gold off-shoulder Diamond Dust dress with a blue "
-                "gem at the chest. "
-                "Zeo is a tall, muscular young man with spiky white-silver hair, tan "
-                "skin, and teal eyes, wearing a sleeveless white vest over a bare "
-                "chest with gold armbands and a grey cloak."
+                "Will has teal-blue messy hair with one upward strand, round "
+                "glasses, violet eyes, a dark caped uniform with gold epaulettes. "
+                "Elfie has long ice-blue hair, blue eyes, a white-and-gold "
+                "off-shoulder dress with a blue chest gem. "
+                "Zeo has spiky white-silver hair, tan skin, teal eyes, a "
+                "sleeveless white vest and grey cloak."
             )
             print("[TEMP] pitch 24: anchors_block overridden to match refs")
 
@@ -302,7 +309,8 @@ def main() -> None:
         print("\n[execute] DRY RUN (yaml-rate estimate, zero CLI calls)")
         estimate = execute_scene(
             scene_job, out_dir,
-            takes=args.takes, resolution=args.resolution, dry_run=True, rules=rules,
+            takes=args.takes, duration=args.duration, resolution=args.resolution,
+            dry_run=True, rules=rules,
         )
         print(f"\n[result] credits_spent estimate: {estimate.credits_spent}")
         flow["cost_estimate"] = {
@@ -326,7 +334,8 @@ def main() -> None:
             print("\n[execute] REAL RENDER")
             result = execute_scene(
                 scene_job, out_dir,
-                takes=args.takes, resolution=args.resolution, rules=rules,
+                takes=args.takes, duration=args.duration, resolution=args.resolution,
+                rules=rules,
             )
             for clip in result.clips:
                 print(f"  take shots={clip.shot_indices} audio={clip.has_audio} -> {clip.clip_path}")
