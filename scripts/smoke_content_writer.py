@@ -1,28 +1,32 @@
 """
-End-to-end smoke for the multi-shot pipeline (pitch → write → render_jobs → cost).
+End-to-end smoke for the motion-native scene lane (pitch → write → scene job → cost).
 
-Loads an approved AnglePitchRecord's FULL story (story_json → StoryPitch — the
-Stage-1/Stage-2 bridge), runs the two-call writer, composes grouped render jobs,
-and prints the per-job credit estimate. Reference key-art paths are REQUIRED
-(grounding is mandatory, DECISIONS_LOCKED L3).
+Loads an approved AnglePitchRecord's FULL story (story_json → StoryPitch), runs
+the two-call writer, composes the ONE scene job (spec 2026-07-06 A3), prints the
+COMPOSED SCENE PROMPT plus the takes×rate credit estimate. Reference paths are
+REQUIRED and must follow the path convention refs/<character_slug>/... (crash
+loud otherwise; grounding is mandatory, DECISIONS_LOCKED L3).
 
-By default runs dry_run (cost estimate only, no credits spent). --real prints the
-credit table, requires an interactive 'yes', then renders every job (with resume
-manifest), synthesizes narration (Higgsfield text2speech_v2, ~0.15cr/line), and
-assembles the final mp4.
+By default runs dry_run (prompt + cost only, ZERO CLI calls, nothing spent).
+--real requires an interactive 'yes', renders --takes generations (failed takes
+are uncharged and reported), then — single take only — synthesizes narration and
+assembles the final mp4. With --takes > 1 assembly is deliberately skipped: the
+user picks the best take first (D6 ladder), then re-runs assembly on it.
+
+RETAKE LADDER (D6): --resolution 480p to sanity-test a new prompt → 720p
+default single take → 1080p --takes 2-3 for finals.
 
 USAGE:
-  uv run python scripts/smoke_content_writer.py --pitch-id 12 --refs refs/eve_1.jpg refs/eve_2.jpg
-  uv run python scripts/smoke_content_writer.py --pitch-id 12 --refs refs/eve_1.jpg --real
-  uv run python scripts/smoke_content_writer.py --pitch-id 12 --refs refs/eve_1.jpg --real --bgm music.mp3
+  uv run python scripts/smoke_content_writer.py --pitch-id 24 --refs refs/will/*.png refs/elfie/*.png
+  uv run python scripts/smoke_content_writer.py --pitch-id 24 --refs ... --real --takes 2
+  uv run python scripts/smoke_content_writer.py --pitch-id 24 --refs ... --real --resolution 1080p --takes 3
 
 OUTPUT:
-  Prints the full MultiShotPackage (per-shot prompts, routing, groups, narration,
-  caption) and the credit table; in --real mode also the per-clip paths and the
-  assembled final.mp4. A timestamped transcript is saved to output/smoke_runs/,
-  plus a machine-readable JSON dump of the FULL flow (args, source pitch,
-  package, jobs, cost estimate, and — on --real — clip paths and the final mp4)
-  at the same path with a .json extension.
+  Prints the full MultiShotPackage, the composed scene prompt, and the credit
+  estimate; in --real mode also per-take clip paths (and final.mp4 when a single
+  take assembles). A timestamped transcript is saved to output/smoke_runs/, plus
+  a machine-readable JSON dump of the FULL flow at the same path with a .json
+  extension.
 """
 
 import argparse
@@ -46,7 +50,7 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
 from src.database import SessionLocal  # noqa: E402
 from src.generation.assembly import assemble  # noqa: E402
 from src.generation.content_writer import ContentWriter  # noqa: E402
-from src.generation.executor import execute  # noqa: E402
+from src.generation.executor import execute_scene  # noqa: E402
 from src.providers.tts.higgsfield_tts import HiggsfieldTTS  # noqa: E402
 from src.generation.render_adapters.adapter import render_jobs  # noqa: E402
 from src.generation.render_adapters.rules import RenderRules  # noqa: E402
@@ -114,6 +118,19 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional ready-made BGM audio file mixed at 0.2 volume (Sonilo "
         "generation not wired — cost unmeasured, spec §6.4).",
+    )
+    parser.add_argument(
+        "--takes",
+        type=int,
+        default=1,
+        help="Independent scene generations to render (D6 ladder: 1 for dev, "
+        "2-3 at 1080p for finals; user picks the best take).",
+    )
+    parser.add_argument(
+        "--resolution",
+        default=None,
+        help="Override the yaml scene_lane default (480p/720p/1080p/4k). "
+        "480p = cheapest sanity pass for a brand-new prompt.",
     )
     return parser
 
@@ -271,51 +288,70 @@ def main() -> None:
         jobs = render_jobs(package, rules)
         flow["render_jobs"] = [job.model_dump(mode="json") for job in jobs]
         _dump_flow()
-        print(f"[jobs] {len(jobs)} render jobs:")
-        for job in jobs:
-            covers = job.covers_shots or [job.shot_index]
-            print(f"  {job.kind:<10} {job.model_cli_id:<15} shots={covers} duration={job.duration}")
+        scene_job = jobs[0]  # scene lane: exactly ONE composed multi_shot job (A3/D3)
+        print("[scene job] composed prompt " + "=" * 46)
+        print(scene_job.prompt)
+        print("=" * 70)
+        print(
+            f"[scene job] model={scene_job.model_cli_id} shots={scene_job.covers_shots} "
+            f"duration={scene_job.duration}s refs={len(scene_job.reference_images)} "
+            f"prompt_chars={len(scene_job.prompt)}"
+        )
 
         out_dir = str(Path("output/smoke_runs") / f"render_{ts}_{sha}")
-        print("\n[execute] DRY RUN (cost estimate only)")
-        estimate = execute(jobs, out_dir, dry_run=True)
+        print("\n[execute] DRY RUN (yaml-rate estimate, zero CLI calls)")
+        estimate = execute_scene(
+            scene_job, out_dir,
+            takes=args.takes, resolution=args.resolution, dry_run=True, rules=rules,
+        )
         print(f"\n[result] credits_spent estimate: {estimate.credits_spent}")
         flow["cost_estimate"] = {
             "credits_total": estimate.credits_spent,
+            "takes": args.takes,
+            "resolution": args.resolution,
             "out_dir": out_dir,
         }
         _dump_flow()
 
         if args.real:
-            # Explicit confirm between the printed cost table and any paid call
-            # (DECISIONS_LOCKED L7 — no silent spends).
+            # Explicit confirm between the printed cost estimate and any paid
+            # call (DECISIONS_LOCKED L7 — no silent spends).
             answer = input(
-                f"\nSpend ~{estimate.credits_spent} credits on this render? "
+                f"\nSpend ~{estimate.credits_spent} credits on {args.takes} take(s)? "
                 "Type 'yes' to proceed: "
             )
             if answer.strip().lower() != "yes":
                 raise SystemExit("Aborted before any paid call — nothing spent.")
 
             print("\n[execute] REAL RENDER")
-            result = execute(jobs, out_dir)
-            print(f"  stills: {result.still_paths}")
+            result = execute_scene(
+                scene_job, out_dir,
+                takes=args.takes, resolution=args.resolution, rules=rules,
+            )
             for clip in result.clips:
-                print(f"  clip shots={clip.shot_indices} audio={clip.has_audio} -> {clip.clip_path}")
+                print(f"  take shots={clip.shot_indices} audio={clip.has_audio} -> {clip.clip_path}")
             flow["render_result"] = result.model_dump(mode="json")
             _dump_flow()
 
-            print("\n[assemble] concat + narration + hook card")
-            final_path = assemble(
-                result,
-                package,
-                str(Path(out_dir) / "final.mp4"),
-                tts=HiggsfieldTTS(),  # ~0.15cr per narration line (measured)
-                bgm_path=args.bgm,
-            )
-            print(f"\n[FINAL] {final_path}")
-            print("Post-gate reminder: AIGC label at upload; judge on evie I1/I2 + C1/C2.")
-            flow["final_video"] = final_path
-            _dump_flow()
+            if len(result.clips) == 1:
+                print("\n[assemble] narration + hook card + tail-fade")
+                final_path = assemble(
+                    result,
+                    package,
+                    str(Path(out_dir) / "final.mp4"),
+                    tts=HiggsfieldTTS(),  # ~0.15cr per narration line (measured)
+                    bgm_path=args.bgm,
+                )
+                print(f"\n[FINAL] {final_path}")
+                print("Post-gate reminder: AIGC label at upload; judge on evie I1/I2 + C1/C2.")
+                flow["final_video"] = final_path
+                _dump_flow()
+            else:
+                print(
+                    f"\n[assemble] skipped — {len(result.clips)} takes rendered; pick "
+                    "the best (D6), then assemble it (re-run --takes 1 resumes from "
+                    "the manifest, or assemble manually)."
+                )
 
     finally:
         sys.stdout = original_stdout
