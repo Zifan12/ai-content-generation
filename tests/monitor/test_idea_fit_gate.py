@@ -78,7 +78,6 @@ def _passing_judgment(
 ) -> _IdeaFitJudgment:
     return _IdeaFitJudgment(
         is_fictional_recognizable=True,
-        wants_rendered_payoff=True,
         mode=mode,
         heat_score=heat_score,
         reason=reason,
@@ -183,7 +182,6 @@ class TestLLMChecks:
         llm = _FakeLLM(
             _IdeaFitJudgment(
                 is_fictional_recognizable=False,
-                wants_rendered_payoff=True,
                 mode=ContentMode.other,
                 heat_score=0.6,
                 reason="This is about a real athlete, not a fictional character.",
@@ -197,22 +195,26 @@ class TestLLMChecks:
         assert result.kill_reason is not None and "not_fictional" in result.kill_reason
         assert result.heat_score == 0.6
 
-    def test_cheap_meme_killed(self):
+    def test_meme_phrased_wave_now_passes(self):
+        """A recognisable-fictional wave the LLM reads as meme-ish (satire) is
+        no longer killed: the gate stopped predicting rendered-payoff — that is
+        the craft gate's call on the actual pitch. Only the fictional + recency
+        floors remain."""
         llm = _FakeLLM(
             _IdeaFitJudgment(
                 is_fictional_recognizable=True,
-                wants_rendered_payoff=False,
-                mode=ContentMode.other,
+                mode=ContentMode.satire,
                 heat_score=0.4,
-                reason="Reaction is wordplay — no imagined visual scene, just discourse.",
+                reason="Jokey reactions, but a recognisable fictional cast.",
             )
         )
         gate = IdeaFitGate(llm=llm)
 
         result = gate.evaluate(_event(days_old=2.0))
 
-        assert not result.idea_fit
-        assert result.kill_reason is not None and "cheap_meme" in result.kill_reason
+        assert result.idea_fit
+        assert result.kill_reason is None
+        assert result.mode == ContentMode.satire
 
     def test_wish_event_passes(self):
         llm = _FakeLLM(_passing_judgment(mode=ContentMode.wish, heat_score=0.95))
@@ -282,7 +284,6 @@ class TestManualOrigin:
         llm = _FakeLLM(
             _IdeaFitJudgment(
                 is_fictional_recognizable=False,
-                wants_rendered_payoff=True,
                 mode=ContentMode.other,
                 heat_score=0.6,
                 reason="This is about a real athlete, not a fictional character.",
@@ -297,24 +298,6 @@ class TestManualOrigin:
         assert "real-person" in result.reason.lower() or "real person" in result.reason.lower(), (
             f"reason should carry real-person warning, got: {result.reason!r}"
         )
-
-    def test_manual_cheap_meme_still_killed(self):
-        """Check 3 (payoff) is NOT relaxed for manual — cheap meme still dies."""
-        llm = _FakeLLM(
-            _IdeaFitJudgment(
-                is_fictional_recognizable=False,
-                wants_rendered_payoff=False,
-                mode=ContentMode.other,
-                heat_score=0.4,
-                reason="Reaction is wordplay — no imagined visual scene.",
-            )
-        )
-        gate = IdeaFitGate(llm=llm)
-
-        result = gate.evaluate(_event(days_old=2.0, origin="manual"))
-
-        assert not result.idea_fit
-        assert result.kill_reason is not None and "cheap_meme" in result.kill_reason
 
     def test_scraped_still_killed_for_staleness(self):
         """Regression: scraped events with no timestamp still die at Check 1."""
@@ -331,7 +314,6 @@ class TestManualOrigin:
         llm = _FakeLLM(
             _IdeaFitJudgment(
                 is_fictional_recognizable=False,
-                wants_rendered_payoff=True,
                 mode=ContentMode.other,
                 heat_score=0.6,
                 reason="This is about a real athlete.",

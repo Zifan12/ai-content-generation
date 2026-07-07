@@ -1,6 +1,6 @@
 """Idea-fit gate for the reaction-driven content pipeline (Stage A).
 
-Three checks applied in order — each can kill the event:
+Two checks applied in order — each can kill the event:
 
 1. **Recency hard sub-gate** (no LLM) — events older than ``stale_days_threshold``
    are killed immediately, before spending any LLM credits.  A cold wave cannot
@@ -11,12 +11,15 @@ Three checks applied in order — each can kill the event:
    character or IP that a broad audience would recognise?  Real people are out
    (legal boundary); obscure niches that can't drive views are out too.
 
-3. **Rendered-payoff check** (LLM) — does the reaction signal the audience is
-   imagining a visual scene they wish existed ("I wish the show had done
-   this…") rather than just venting or making a cheap meme (pun, screenshot)?
-   Only the former justifies render spend.
+Note: the gate deliberately does NOT predict whether a wave will make a good
+video — that is a property of the pitch, not the raw reaction, and is judged
+downstream by the story-craft gate on the actual produced pitch.  A former
+"rendered-payoff" check that killed waves the audience phrased as jokes was
+removed for exactly this reason: it false-killed renderable satire (a wave is
+worth rendering or not depending on what the pitcher infers, which does not
+exist yet at gate time).
 
-When all three pass, the gate also emits ``mode`` (wish-fulfillment vs satire)
+When both pass, the gate also emits ``mode`` (wish-fulfillment vs satire)
 and ``heat_score`` (0–1, how actively passionate the reactions are right now).
 
 The LLM is constructor-injected so the gate is fully unit-testable without
@@ -54,7 +57,6 @@ class _IdeaFitJudgment(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     is_fictional_recognizable: bool
-    wants_rendered_payoff: bool
     mode: ContentMode
     heat_score: float  # 0.0–1.0
     reason: str
@@ -64,8 +66,8 @@ _JUDGE_SYSTEM_PROMPT = """\
 You are an idea-fit judge for a reaction-driven short-form video studio.
 
 You receive a trending Reddit post — its headline and a sample of the top audience \
-reactions. You answer THREE questions to decide whether this is worth producing as a \
-high-quality rendered video.
+reactions. You answer TWO questions: whether this event fits the studio (a \
+recognisable fictional subject), and what register the reaction is in.
 
 ──────────────────────────────────────────────────────────────────
 QUESTION 1 — FICTIONAL & RECOGNISABLE?
@@ -80,31 +82,12 @@ Answer NO if:
 • The character or IP is so obscure that only a tiny niche would recognise them.
 
 ──────────────────────────────────────────────────────────────────
-QUESTION 2 — WANTS A RENDERED PAYOFF?
-──────────────────────────────────────────────────────────────────
-Does the audience reaction signal they are imagining a *visual scene* they wish \
-existed — something worth producing as a high-quality rendered video?
-
-Answer YES (rendered payoff) for language like:
-• "I wish the show/game had done this instead…"
-• "Imagine if the final scene was actually…"
-• "This character deserves a proper [action / ending / moment]…"
-• "The version that should have happened is…"
-• "The ending we deserved would have been…"
-
-Answer NO (cheap meme) for reactions like:
-• Wordplay, puns, or screenshot-level jokes about the topic.
-• Meta-discourse about the fandom, company, or franchise direction.
-• Pure outrage or discourse with no imagined visual outcome.
-• Reactions best served by a text post, not a rendered video.
-
-──────────────────────────────────────────────────────────────────
-QUESTION 3 — MODE (always required)
+QUESTION 2 — MODE (always required)
 ──────────────────────────────────────────────────────────────────
 • wish   — fans want the satisfying version they didn't get (cathartic, positive payoff).
 • satire — fans want their disappointment voiced as a joke (contrast, absurdism, irony).
 • other  — neither fits cleanly.
-When Q1 or Q2 is NO, set mode to "other" — the field must be filled either way.
+When Q1 is NO, set mode to "other" — the field must be filled either way.
 
 ──────────────────────────────────────────────────────────────────
 HEAT SCORE  (0.0 – 1.0)
@@ -197,7 +180,7 @@ class IdeaFitGate:
     Args:
         llm: An AnthropicLLM/OpenRouterLLM (or test fake) with a
             ``parse(prompt, response_model, system=...)`` method — the
-            fictional / rendered-payoff distinction is nuanced enough to
+            fictional / real-person distinction is nuanced enough to
             need a capable model.
         stale_days_threshold: Events older than this are auto-killed without
             calling the LLM (default 14 days).  A stale wave cannot be fixed
@@ -215,21 +198,20 @@ class IdeaFitGate:
 
     @traced(name="idea_fit_evaluate")
     def evaluate(self, event: TrendingEvent) -> IdeaFitResult:
-        """Run all three checks and return a verdict with full provenance.
+        """Run all checks and return a verdict with full provenance.
 
         The stale check is free (no LLM).  The LLM is only called when recency
         passes — credit spend is gated behind the cheapest check first.
 
         Origin-aware branching (Task 6):
         - ``origin == "scraped"`` -> unchanged: recency kill, fictional hard
-          kill, payoff hard kill.
+          kill.
         - ``origin == "manual"``    -> skip the recency kill (user-supplied
           topics have no ``createdAt``; ``_extract_recency_days`` returns
           ``999.0`` which would wrongly auto-kill every --topic); Check 2
           (fictional / real-person) becomes WARN-NOT-KILL — a user typing
           ``--topic "Keanu Reeves"`` has accepted the likeness risk, but it
-          must be surfaced on the slate, not silently passed.  Check 3
-          (payoff) is still a hard kill for both origins.
+          must be surfaced on the slate, not silently passed.
         """
         recency_days = _extract_recency_days(event)
 
@@ -273,7 +255,7 @@ class IdeaFitGate:
                     f"{judgment.reason} — ⚠ real-person likeness; "
                     f"legal/platform risk; review before render."
                 )
-                # Still subject to Check 3 (payoff) below; fall through.
+                # Falls through to the pass below, carrying the warning in reason.
             else:
                 return IdeaFitResult(
                     idea_fit=False,
@@ -285,17 +267,6 @@ class IdeaFitGate:
                 )
         else:
             warning = None
-
-        # ── Check 3: rendered payoff (not cheap meme) — hard kill for both origins
-        if not judgment.wants_rendered_payoff:
-            return IdeaFitResult(
-                idea_fit=False,
-                mode=ContentMode.other,
-                heat_score=judgment.heat_score,
-                recency_days=recency_days,
-                reason=judgment.reason,
-                kill_reason="cheap_meme: reaction wants a meme/text response, not a rendered video",
-            )
 
         # ── Pass: scrape path = clean pass; manual non-fictional path = pass
         # with the real-person warning concatenated onto the LLM's reason.

@@ -695,3 +695,38 @@ Track every shipped feature that fails, what was tried, and what fixed it.
   descriptions, not LLM-invented (the blind writer swapped Will/Zeo hair on pitch 24; hand-patched for
   that render only via a pitch_id==24 override in scripts/smoke_content_writer.py — remove when real fix lands).
 - Attempted fixes: (none — pitch-24 used a temporary hardcoded anchors override, not a real fix)
+
+### BUG-022 - StoryPitch mode="other" would KeyError the craft gate (unguarded playbook lookup)
+- Date opened: 2026-07-07 (surfaced tracing the `mode` field after demoting the idea-fit gate's payoff check)
+- Status: open (parked — low-probability, pre-existing; logged not fixed)
+- Feature: `StoryCraftGate.evaluate` (`src/monitor/story_craft_gate.py:107`, the bare
+  `self.playbook[pitch.mode.value].craft_emphasis` index), fed by `StoryPitcher` which sets
+  `StoryPitch.mode`.
+- Environment: any pipeline run that reaches the craft gate; not provider-specific.
+- Error/behavior: the mode playbook (`config/mode_playbook.yaml`) defines exactly two keys —
+  `wish` and `satire`. `evaluate` indexes it with a bare `self.playbook[pitch.mode.value]`.
+  `ContentMode` also permits `other`, and `StoryPitch.mode` has NO validator restricting it to
+  playbook modes — so a pitch with `mode=other` raises an unhandled `KeyError` mid-judging (a
+  crash, not a graceful skip). NOT reachable via the idea-fit gate's mode: the gate's
+  `IdeaFitResult.mode` is a separate object never passed to the pitcher (`run_pitch_pipeline`
+  calls `story_pitcher.pitch(event, gap, bundle)`; `GapAnalysis` carries no mode). The only
+  trigger is the pitcher itself emitting `other`.
+- Why low-probability: the pitcher prompt (`story_pitcher.py:154`) instructs "Each pitch commits
+  to ONE playbook mode" and only wish/satire are injected, so `other` is off-instruction. But
+  nothing in code prevents it — structured output would accept an off-instruction `other` and it
+  crashes downstream.
+- Pre-existing: independent of the 2026-07-07 idea-fit-gate payoff-check removal (that change
+  touched neither the pitcher's mode choice nor this lookup). Surfaced — not caused — while
+  tracing `mode` after that change.
+- Reproduction steps:
+  1. Construct a `StoryPitch` with `mode=ContentMode.other` (a unit test, or an LLM that ignores
+     the prompt).
+  2. Call `StoryCraftGate.evaluate(pitch, event, gap)`.
+  3. Observe `KeyError: 'other'` at `story_craft_gate.py:107`.
+- Root cause: unguarded dict index on a lookup table that defines only `wish`/`satire`, against a
+  `mode` field whose type permits `other`.
+- Design fork to resolve first: (a) validate `StoryPitch.mode ∈ {wish, satire}` at the schema
+  (fail at parse, closest to source); (b) `.get(mode)` with an explicit reject/fallback in the
+  craft gate (fail gracefully at the lookup); (c) add an `other` playbook entry (papers over — no
+  real "other" content pattern exists). Not yet chosen.
+- Attempted fixes: none (parked 2026-07-07 — logged, low priority).

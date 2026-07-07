@@ -464,8 +464,8 @@ def _killing_fit() -> IdeaFitResult:
         mode=ContentMode.other,
         heat_score=0.2,
         recency_days=1.0,
-        reason="Reaction is analytical discourse, not a wish for a rendered scene.",
-        kill_reason="cheap_meme: reaction wants a meme/text response",
+        reason="Subject is a real athlete, not a recognisable fictional character.",
+        kill_reason="not_fictional: subject is not a recognisable fictional character/IP",
     )
 
 
