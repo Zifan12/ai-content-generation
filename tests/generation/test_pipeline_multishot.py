@@ -60,7 +60,11 @@ def test_pitch_to_costed_jobs_dry_run(tmp_path):
     pitch = build_story_pitch(3)
 
     package = ContentWriter(llm=FakeLLM()).write(
-        pitch, rules=rules, reference_image_paths=["refs/eve.jpg"], pitch_id=1
+        pitch,
+        rules=rules,
+        # path convention: parent folder = character slug (refs/eve/...)
+        reference_image_paths=["refs/eve/front.png", "refs/eve/profile.png"],
+        pitch_id=1,
     )
     # Scene lane (D3/D4): no routing, no groups; every shot carries the one
     # configured scene model and its call-2 prose line.
@@ -70,13 +74,18 @@ def test_pitch_to_costed_jobs_dry_run(tmp_path):
         f"converted {i}. Audio: rain." for i in range(3)
     ]
 
-    # MID-MIGRATION SHAPE (until plan Task 4 lands the scene-prompt adapter):
-    # the legacy adapter iterates consistency_groups, so a scene-lane package
-    # yields ZERO jobs and a zero-cost dry run. Task 4 replaces these
-    # assertions with the composed single multi_shot scene job.
+    # ONE composed multi_shot scene job covering every shot (spec A3/D3).
     jobs = render_jobs(package, rules)
-    assert jobs == []
+    assert len(jobs) == 1
+    job = jobs[0]
+    assert job.kind == "multi_shot"
+    assert job.model_cli_id == rules.scene_model()
+    assert job.covers_shots == [0, 1, 2]
+    assert job.reference_images == ["refs/eve/front.png", "refs/eve/profile.png"]
+    assert job.duration == 10  # scene_lane.defaults, capped at the CLI limit
+    assert "Then cut to:" in job.prompt
+    assert "Eve is the character shown in image1, image2." in job.prompt
 
     result = execute(jobs, str(tmp_path), dry_run=True, run_cli=_fake_cli)
-    assert result.credits_spent == 0.0
+    assert result.credits_spent == 7.5  # 1 job x fake 7.5
     assert result.still_paths == [] and result.clips == []
