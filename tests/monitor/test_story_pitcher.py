@@ -87,6 +87,7 @@ class FakeLLM:
 
     def parse(self, prompt: str, response_model: type, **kwargs: object) -> object:
         self.prompt = prompt
+        self.system = kwargs.get("system")
         return self._result
 
 
@@ -188,6 +189,27 @@ def test_estimate_pitch_credits_scales_with_beats() -> None:
         ]
     )
     assert estimate_pitch_credits(five) == 47.5  # 5 beats * 9.5
+
+
+def test_prompt_teaches_single_scene_and_no_narration() -> None:
+    llm = FakeLLM(_slate())
+    pitcher = StoryPitcher(llm=llm, embedder=FakeEmbedder())
+
+    pitcher.pitch(SAMPLE_EVENT, SAMPLE_GAP)
+
+    assert "scene_setting" in llm.system
+    assert "3-5 ordered StoryBeats" in llm.system
+    assert "no caption, no voiceover, no on-screen text" in llm.system
+
+
+def test_prompt_teaches_dialogue_is_optional_and_default_none() -> None:
+    llm = FakeLLM(_slate())
+    pitcher = StoryPitcher(llm=llm, embedder=FakeEmbedder())
+
+    pitcher.pitch(SAMPLE_EVENT, SAMPLE_GAP)
+
+    assert "dialogue_line" in llm.system
+    assert "default to none" in llm.system
 
 
 def test_low_diversity_slate_warns(caplog) -> None:
