@@ -54,8 +54,15 @@ def load_event(db, event_id: int) -> TrendingEvent:
 
     subreddit is not a persisted column (only `source` is) — falls back to
     record.source. Display/grounding field only. raw_source_data is likewise
-    not persisted, so it round-trips as an empty dict; origin is hardcoded
-    "scraped" since a stored TrendingEventRecord always came from a scan.
+    not persisted, so it round-trips as an empty dict.
+
+    origin is set to "manual" (not "scraped", even though the event was
+    originally scraped) purely to steer the idea-fit gate: a stored event has
+    no round-trippable timestamp, so the gate's recency sub-gate would read it
+    as 999 days old and auto-kill every re-pitch. The "manual" branch skips
+    only that recency kill (same as a user-typed --topic, which also has no
+    createdAt); the payoff hard-kill still applies. origin is not a persisted
+    column, so this white-lie about provenance affects nothing downstream.
     """
     record = db.get(TrendingEventRecord, event_id)
     if record is None:
@@ -68,7 +75,7 @@ def load_event(db, event_id: int) -> TrendingEvent:
         trendiness_score=record.trendiness_score,
         virality_window_hours=record.virality_window_hours,
         raw_source_data={},
-        origin="scraped",
+        origin="manual",
     )
 
 
@@ -82,6 +89,16 @@ def main() -> None:
         help="Non-interactive selection ('1'..'9', 's', or 'r') — skips the "
         "input() prompt so the run can be driven without a human at the "
         "keyboard. When omitted, prompts interactively as usual.",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Make the idea-fit gate advisory instead of a veto: its verdict "
+        "still prints (including the kill reason it would have used), but a "
+        "killed event proceeds to gap/pitch anyway, marked [FORCED]. The craft "
+        "gate still applies. Use when re-pitching a stored event the gate is "
+        "(over-)stingily killing and you've judged it worth exercising the "
+        "pitch tail on.",
     )
     args = parser.parse_args()
 
@@ -116,6 +133,7 @@ def main() -> None:
             choice_provider=choice_provider,
             output_dir=args.output_dir,
             top_n=1,
+            force=args.force,
         )
     finally:
         db.close()
