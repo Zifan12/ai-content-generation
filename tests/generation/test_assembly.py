@@ -110,6 +110,8 @@ def test_narration_offsets_bgm_and_hook_in_final_command(tmp_path):
     assert "drawtext" in graph and "between(t,0,2.5)" in graph
     # native audio + 2 narrations + bgm mixed
     assert "amix=inputs=4" in graph
+    # D5 tail-fade on the FINAL mix (12s total - 0.5s), kills the ending-click
+    assert "[amixed]afade=t=out:st=11.5:d=0.5[aout]" in graph
 
 
 def test_no_hook_no_bgm_minimal_graph(tmp_path):
@@ -126,6 +128,7 @@ def test_no_hook_no_bgm_minimal_graph(tmp_path):
     assert "drawtext" not in graph
     assert "volume=" not in graph
     assert "amix=inputs=1" in graph  # native audio only
+    assert "[amixed]afade=t=out" in graph  # D5 tail-fade applies even bare
     assert "0:v" in final  # un-drawn video mapped directly
 
 

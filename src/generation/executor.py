@@ -243,6 +243,167 @@ def _save_manifest(path: Path, manifest: dict) -> None:
     path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
 
+def _scene_create_argv(
+    job: RenderJob, *, duration: int, resolution: str
+) -> list[str]:
+    """Build the scene generation's ``generate create`` argv (spec A4).
+
+    Refs attach as repeated ``--image`` (the CLI's alias for
+    ``--image-references`` on seedance_2_0, verified via ``model get``
+    2026-07-06); duration/resolution are explicit params, never prompt text
+    (D2). ``--wait`` blocks until the job resolves so failures surface as a
+    non-zero exit (uncharged, FINDINGS.md).
+    """
+    argv = [
+        "higgsfield", "generate", "create", job.model_cli_id,
+        "--prompt", _sanitize_prompt(job.prompt),
+        "--aspect_ratio", job.aspect_ratio,
+        "--duration", str(duration),
+        "--resolution", resolution,
+    ]
+    for ref in job.reference_images:
+        argv += ["--image", ref]
+    argv.append("--wait")
+    return argv
+
+
+def _scene_take_estimate(rules: RenderRules, model_id: str, duration: int, resolution: str) -> float:
+    """Per-take credit estimate from the yaml's billing-verified per-second rates.
+
+    Reads ``limits.cost_estimate_credits.per_second_<resolution>`` for the
+    scene model (measured from ``higgsfield account transactions`` 2026-07-06 —
+    billing beats the cost subcommand, which was never validated against real
+    charges). A resolution without a measured rate falls back to the 720p rate
+    with a printed caveat rather than blocking the run.
+    """
+    costs = rules.model(model_id)["limits"]["cost_estimate_credits"]
+    key = f"per_second_{resolution}"
+    if key in costs:
+        rate = float(costs[key])
+    else:
+        rate = float(costs["per_second_720p"])
+        print(
+            f"NOTE: no measured credit rate for {resolution}; estimating at the "
+            f"720p rate ({rate}cr/s) — update the yaml after the first {resolution} bill."
+        )
+    return rate * duration
+
+
+def execute_scene(
+    job: RenderJob,
+    out_dir: str,
+    *,
+    takes: int = 1,
+    duration: int | None = None,
+    resolution: str | None = None,
+    dry_run: bool = False,
+    run_cli=_run_cli,
+    download=_download,
+    probe_audio=_probe_audio,
+    rules: RenderRules | None = None,
+) -> PackageRenderResult:
+    """Render the scene lane's ONE multi_shot job, ``takes`` times (D6).
+
+    RETAKE LADDER (D6, methodology/15 L288-298): 480p to sanity-test a
+    brand-new prompt (cheapest possible failure) -> 720p default single take
+    for dev iteration -> 1080p x 2-3 takes for finals, user picks the best.
+    ``takes``/``resolution`` are the flags that walk the ladder; defaults come
+    from the yaml ``scene_lane.defaults`` block.
+
+    Cost preflight prints takes x per-take estimate BEFORE any paid call
+    (ADR-0007 / L7), computed from the yaml's billing-verified per-second
+    rates — dry_run therefore makes NO CLI calls at all and returns the
+    estimate. A failed take (CLI non-zero = uncharged on Higgsfield,
+    FINDINGS.md) is reported and the loop continues with the next take —
+    never an automatic re-roll of the same take (D3: failures are a human
+    call, re-roll vs reword per scene_lane.reroll_vs_reword).
+
+    Completed takes land as ``take_<k>.mp4`` and are recorded in the resume
+    manifest under ``scene_take_<k>``; a re-run over the same out_dir renders
+    only the missing takes.
+
+    Args:
+        job: The adapter's composed multi_shot scene job.
+        out_dir: Directory for downloads + the resume manifest.
+        takes: How many independent generations to run (default 1).
+        duration: Override seconds; defaults to the job's (yaml-capped) value.
+        resolution: Override; defaults to yaml scene_lane.defaults.resolution.
+        dry_run: Estimate-and-return; no CLI calls, nothing spent.
+        run_cli / download / probe_audio: Injected side-effect boundaries.
+        rules: Render rules; built from config when None.
+
+    Returns:
+        PackageRenderResult — clips holds one ShotClip per SUCCESSFUL take
+        (all covering the same shot indices), credits_spent holds the
+        preflight estimate for the takes actually submitted this run.
+    """
+    rules = rules or RenderRules()
+    defaults = rules.data["scene_lane"]["defaults"]
+    duration = duration if duration is not None else (job.duration or int(defaults["duration_seconds"]))
+    resolution = resolution or str(defaults["resolution"])
+
+    per_take = _scene_take_estimate(rules, job.model_cli_id, duration, resolution)
+    print(
+        f"Scene render estimate: {takes} take(s) x {per_take}cr "
+        f"({duration}s/{resolution}) = {per_take * takes}cr"
+    )
+    if dry_run:
+        return PackageRenderResult(
+            still_paths=[], clips=[], credits_spent=per_take * takes, manifest_path=""
+        )
+
+    out_path = Path(out_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+    manifest_path = out_path / MANIFEST_NAME
+    manifest = _load_manifest(manifest_path)
+
+    clips: list[ShotClip] = []
+    failed: list[int] = []
+    for take in range(1, takes + 1):
+        key = f"scene_take_{take}"
+        if key in manifest and manifest[key].get("status") == "completed":
+            path = manifest[key]["path"]
+            print(f"[resume] skipping completed {key} -> {path}")
+        else:
+            try:
+                url = _extract_url(
+                    run_cli(_scene_create_argv(job, duration=duration, resolution=resolution))
+                )
+            except subprocess.CalledProcessError as err:
+                # Failed jobs are uncharged (FINDINGS.md). Report, keep going —
+                # the human decides re-roll vs reword afterwards (D3/D6).
+                failed.append(take)
+                print(f"take {take}/{takes} FAILED (uncharged): {err}")
+                continue
+            path = download(url, str(out_path / f"take_{take}.mp4"))
+            manifest[key] = {"status": "completed", "url": url, "path": path}
+            _save_manifest(manifest_path, manifest)
+
+        has_audio = probe_audio(path)
+        if rules.emits_audio(job.model_cli_id) and not has_audio:
+            print(
+                f"WARNING: {job.model_cli_id} should emit native audio but take "
+                f"{take} has no audio stream ({path})."
+            )
+        clips.append(
+            ShotClip(
+                shot_indices=job.covers_shots or [job.shot_index],
+                clip_path=path,
+                has_audio=has_audio,
+            )
+        )
+
+    if failed:
+        print(f"{len(failed)}/{takes} takes failed (uncharged): takes {failed}")
+
+    return PackageRenderResult(
+        still_paths=[],
+        clips=clips,
+        credits_spent=per_take * takes,
+        manifest_path=str(manifest_path),
+    )
+
+
 def execute(
     jobs: list[RenderJob],
     out_dir: str,

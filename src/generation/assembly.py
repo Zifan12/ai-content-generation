@@ -40,6 +40,10 @@ _CANVAS = "1080:1920"
 _FPS = 30
 _BGM_VOLUME = 0.2
 _BGM_FADE_SECONDS = 3
+# D5 tail-fade (2026-07-06 spec, the one sanctioned assembly change): a short
+# fade on the FINAL mixed track kills the documented Seedance ending-click
+# without touching narration/BGM levels elsewhere.
+_TAIL_FADE_SECONDS = 0.5
 _HOOK_SECONDS = 2.5
 # Windows system font for the hook card (drawtext needs a fontfile on Windows;
 # the evie spike burned its caption card on this machine the same way).
@@ -186,7 +190,12 @@ def assemble(
 
     filters.append(
         f"{''.join(mix_labels)}amix=inputs={len(mix_labels)}:"
-        "duration=first:normalize=0[aout]"
+        "duration=first:normalize=0[amixed]"
+    )
+    # D5 tail-fade on the final mix — see _TAIL_FADE_SECONDS.
+    tail_start = max(total_seconds - _TAIL_FADE_SECONDS, 0)
+    filters.append(
+        f"[amixed]afade=t=out:st={tail_start}:d={_TAIL_FADE_SECONDS}[aout]"
     )
 
     if package.hook_text:
