@@ -131,3 +131,34 @@ def test_bad_tableau_fixture_still_validates():
     StoryPitch, so any future schema change that breaks it fails loudly here."""
     assert isinstance(BAD_TABLEAU_PITCH, StoryPitch)
     assert len(BAD_TABLEAU_PITCH.beats) == 3
+
+
+def test_prompt_carries_all_nine_dimensions():
+    for label in (
+        "clear_desire",
+        "visible_turn",
+        "earned_payoff",
+        "emotion_physical_tell",
+        "cold_viewer_legible",
+        "kinetic_payoff",
+        "register_match",
+        "dialogue_earns_place",
+        "scene_setting_contained",
+    ):
+        assert label in STORY_CRAFT_SYSTEM_PROMPT
+
+
+def test_dialogue_earns_place_auto_yes_when_no_dialogue_documented():
+    assert "automatically" in STORY_CRAFT_SYSTEM_PROMPT
+
+
+def test_new_dim_false_fails():
+    """Any one of the 5 new dims flipped false must fail passes (Task 1's
+    computed passes), proving the gate's verdict construction plumbs them
+    through end to end."""
+    fake = FakeLLM(_verdict(cold_viewer_legible=False))
+    gate = StoryCraftGate(llm=fake)
+
+    result = gate.evaluate(BAD_TABLEAU_PITCH, SAMPLE_EVENT, _sample_gap())
+
+    assert result.passes is False
