@@ -182,8 +182,9 @@ def decide_next_step(
             times.
 
     Returns:
-        ``"reddit_search"``, ``"tavily_search"``, or ``"stop"`` — names the
-        exact next node to run, not a generic "continue".
+        ``"reddit_search"``, ``"tavily_search"``, ``"firecrawl_extract"``, or
+        ``"stop"`` — names the exact next node to run, not a generic
+        "continue".
     """
     total_calls = state.reddit_calls + state.tavily_calls
     if total_calls >= max_tool_calls:
