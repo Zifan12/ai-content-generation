@@ -535,6 +535,7 @@ def test_unresolved_facts_flags_and_persists_without_running_gap_or_pitch(db, tm
     TrendingEventRecord row (so a human can review it later), but gap_agent/
     story_pitcher/story_craft_gate never run for it — unlike a plain idea-fit-gate
     kill, which persists nothing."""
+    idea_fit_gate = FakeIdeaFitGate()
     gap_agent = FakeGapAgent()
     pitcher = FakeStoryPitcher()
     craft_gate = FakeStoryCraftGate()
@@ -544,7 +545,7 @@ def test_unresolved_facts_flags_and_persists_without_running_gap_or_pitch(db, tm
         db,
         None,
         None,
-        FakeIdeaFitGate(),
+        idea_fit_gate,
         gap_agent,
         pitcher,
         craft_gate,
@@ -556,6 +557,7 @@ def test_unresolved_facts_flags_and_persists_without_running_gap_or_pitch(db, tm
     )
 
     assert result is None
+    assert len(idea_fit_gate.calls) == 0
     assert len(gap_agent.calls) == 0
     assert len(pitcher.pitch_calls) == 0
     assert len(craft_gate.calls) == 0

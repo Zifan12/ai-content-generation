@@ -104,7 +104,10 @@ def run_pitch_pipeline(
     """Run the monitor pipeline, present the slate, and persist the approved angle.
 
     Flow: fetch raw events from ``scraper`` -> ``extractor.extract`` shortlist ->
-    ``idea_fit_gate.evaluate`` kills stale / cheap-meme events -> for each
+    (Path B only) an event whose bundle has non-empty ``unresolved_facts`` is
+    flagged and persisted for human review before ``idea_fit_gate`` even runs,
+    and never reaches gap/pitch/craft-gate -> ``idea_fit_gate.evaluate`` kills
+    stale / cheap-meme events -> for each
     surviving event ``gap_agent.analyze`` then ``story_pitcher.pitch`` (2-3 story
     pitches). Each pitch is judged by ``story_craft_gate.evaluate``; a failing pitch
     gets ONE bounded repair re-pitch (``story_pitcher.repitch`` with the verdict's
@@ -232,6 +235,7 @@ def run_pitch_pipeline(
         else:
             flagged_at = datetime.now(timezone.utc)
             for event, unresolved_facts in flagged:
+                bundle = bundles.get(id(event))
                 db.add(
                     TrendingEventRecord(
                         run_at=flagged_at,
@@ -242,6 +246,8 @@ def run_pitch_pipeline(
                         trendiness_score=event.trendiness_score,
                         virality_window_hours=event.virality_window_hours,
                         unresolved_facts=unresolved_facts,
+                        composite_score=event.trendiness_score,
+                        context_bundle=bundle.model_dump() if bundle is not None else None,
                         selected_for_pitching=False,
                     )
                 )

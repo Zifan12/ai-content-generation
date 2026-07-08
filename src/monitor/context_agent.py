@@ -382,8 +382,9 @@ class ContextAgent:
     def _finalize(self, state: ContextAgentState) -> dict:
         """LangGraph node: synthesize everything gathered into a summary + key moments.
 
-        Returns only the two keys this node is responsible for updating —
-        summary and key_moments — not a full new state.
+        Returns only the three keys this node is responsible for updating —
+        ``summary``, ``key_moments``, and ``unresolved_facts`` — not a full new
+        state.
         """
         tavily_tried = "\n".join(f"- {q}" for q in state.tavily_queries) or "(none)"
         user_prompt = (
