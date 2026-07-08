@@ -158,6 +158,15 @@ SAMPLE_BUNDLE = ContextBundle(
     sources=["reddit_search", "tavily_search"],
 )
 
+FLAGGED_BUNDLE = ContextBundle(
+    reaction_sample="Zeo protecting Will from ending up like that dried up alien",
+    summary="Fans are joking about an in-universe bond mechanic; unclear if it's literal.",
+    key_moments=[],
+    references=[],
+    sources=["reddit_search", "tavily_search"],
+    unresolved_facts=["whether the 'dried up alien' joke refers to an in-universe life-force-drain mechanic or something else"],
+)
+
 
 @pytest.fixture
 def db():
@@ -519,6 +528,65 @@ def test_gate_kill_still_kills_without_force(db, tmp_path):
     assert result is None
     assert len(gap_agent.calls) == 0
     assert db.query(AnglePitchRecord).count() == 0
+
+
+def test_unresolved_facts_flags_and_persists_without_running_gap_or_pitch(db, tmp_path):
+    """A bundle with non-empty unresolved_facts is flagged: persisted as its own
+    TrendingEventRecord row (so a human can review it later), but gap_agent/
+    story_pitcher/story_craft_gate never run for it — unlike a plain idea-fit-gate
+    kill, which persists nothing."""
+    gap_agent = FakeGapAgent()
+    pitcher = FakeStoryPitcher()
+    craft_gate = FakeStoryCraftGate()
+    context_agent = FakeContextAgent(event=SAMPLE_TOPIC_EVENT, bundle=FLAGGED_BUNDLE)
+
+    result = run_pitch_pipeline(
+        db,
+        None,
+        None,
+        FakeIdeaFitGate(),
+        gap_agent,
+        pitcher,
+        craft_gate,
+        dry_run=False,
+        choice_provider=pick_first,
+        output_dir=tmp_path,
+        context_agent=context_agent,
+        topic="Wistoria fans imagining what if Elfie won Will",
+    )
+
+    assert result is None
+    assert len(gap_agent.calls) == 0
+    assert len(pitcher.pitch_calls) == 0
+    assert len(craft_gate.calls) == 0
+
+    row = db.query(TrendingEventRecord).one()
+    assert row.headline == SAMPLE_TOPIC_EVENT.headline
+    assert row.unresolved_facts == FLAGGED_BUNDLE.unresolved_facts
+    assert row.dominant_emotion is None
+    assert row.audience_want is None
+    assert db.query(AnglePitchRecord).count() == 0
+
+
+def test_unresolved_facts_not_persisted_in_dry_run(db, tmp_path):
+    context_agent = FakeContextAgent(event=SAMPLE_TOPIC_EVENT, bundle=FLAGGED_BUNDLE)
+
+    run_pitch_pipeline(
+        db,
+        None,
+        None,
+        FakeIdeaFitGate(),
+        FakeGapAgent(),
+        FakeStoryPitcher(),
+        FakeStoryCraftGate(),
+        dry_run=True,
+        choice_provider=None,
+        output_dir=tmp_path,
+        context_agent=context_agent,
+        topic="Wistoria fans imagining what if Elfie won Will",
+    )
+
+    assert db.query(TrendingEventRecord).count() == 0
 
 
 def test_topic_branch_without_context_agent_raises(db, tmp_path):

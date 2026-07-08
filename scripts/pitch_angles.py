@@ -185,8 +185,22 @@ def run_pitch_pipeline(
     # Idea-fit gate: kill stale waves and cheap-meme events before spending LLM
     # credits. With force=True the gate still runs (verdict printed for the
     # record) but a kill no longer stops the event.
+    #
+    # unresolved_facts check runs first: a bundle (Path B only) that flagged
+    # something it couldn't verify is a different failure mode than an
+    # idea-fit kill — the event isn't stale or off-topic, we just can't trust
+    # an automated read of it. Persisted (unlike a normal kill) so a human can
+    # review it later; gap_agent/story_pitcher/story_craft_gate never run.
     fit_pairs: list[tuple] = []
+    flagged: list[tuple] = []
     for event in events:
+        bundle = bundles.get(id(event))
+        if bundle is not None and bundle.unresolved_facts:
+            print(f"\n[FLAGGED] {event.headline[:70]!r} — could not verify:")
+            for fact in bundle.unresolved_facts:
+                print(f"           - {fact}")
+            flagged.append((event, bundle.unresolved_facts))
+            continue
         fit = idea_fit_gate.evaluate(event)
         if fit.idea_fit:
             fit_pairs.append((event, fit))
@@ -211,6 +225,27 @@ def run_pitch_pipeline(
             print(f"         kill_reason: {fit.kill_reason}")
             if fit.reason:
                 print(f"         llm_reason:   {fit.reason}")
+
+    if flagged:
+        if dry_run:
+            print(f"\n[dry-run] {len(flagged)} flagged event(s) not persisted.")
+        else:
+            flagged_at = datetime.now(timezone.utc)
+            for event, unresolved_facts in flagged:
+                db.add(
+                    TrendingEventRecord(
+                        run_at=flagged_at,
+                        source="reddit",
+                        headline=event.headline,
+                        url=event.url,
+                        reaction_sample=event.reaction_sample,
+                        trendiness_score=event.trendiness_score,
+                        virality_window_hours=event.virality_window_hours,
+                        unresolved_facts=unresolved_facts,
+                        selected_for_pitching=False,
+                    )
+                )
+            db.commit()
 
     if not fit_pairs:
         print("\nNo events passed the idea-fit gate.")
