@@ -136,6 +136,7 @@ class ContextAgentState(BaseModel):
     within_community: str
     next_action: str
     next_query: str
+    next_url: str = ""
     urls: list[str]
     reddit_queries: list[str]
     tavily_queries: list[str]

@@ -1,6 +1,6 @@
 import pytest
 from pydantic import ValidationError
-from src.monitor.schemas import GapAnalysis
+from src.monitor.schemas import GapAnalysis, PlanDecision
 
 
 def test_GapAnalysis():
@@ -47,3 +47,18 @@ def test_extra_field_DNE():
             reasoning="audience explicitly asked for this in comments",
             mood="cheerful",
         )
+
+
+def test_plan_decision_next_url_defaults_empty():
+    decision = PlanDecision(next_action="reddit_search", next_query="some query")
+    assert decision.next_url == ""
+
+
+def test_plan_decision_accepts_firecrawl_extract_action():
+    decision = PlanDecision(
+        next_action="firecrawl_extract",
+        next_query="",
+        next_url="https://example.com/wiki/X",
+    )
+    assert decision.next_action == "firecrawl_extract"
+    assert decision.next_url == "https://example.com/wiki/X"
