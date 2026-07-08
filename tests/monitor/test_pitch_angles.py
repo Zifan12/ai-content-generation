@@ -570,6 +570,40 @@ def test_unresolved_facts_flags_and_persists_without_running_gap_or_pitch(db, tm
     assert db.query(AnglePitchRecord).count() == 0
 
 
+def test_single_event_bundle_flags_when_unresolved(db, tmp_path):
+    """A pre-built bundle (not gathered live via topic/context_agent) is
+    treated identically to the live-gather path: non-empty unresolved_facts
+    flags and persists the event, without ever calling gap_agent."""
+    idea_fit_gate = FakeIdeaFitGate()
+    gap_agent = FakeGapAgent()
+    pitcher = FakeStoryPitcher()
+    craft_gate = FakeStoryCraftGate()
+
+    result = run_pitch_pipeline(
+        db,
+        FakeScraper(events=[SAMPLE_TOPIC_EVENT]),
+        FakeExtractor(),
+        idea_fit_gate,
+        gap_agent,
+        pitcher,
+        craft_gate,
+        dry_run=False,
+        choice_provider=pick_first,
+        output_dir=tmp_path,
+        single_event_bundle=FLAGGED_BUNDLE,
+    )
+
+    assert result is None
+    assert len(idea_fit_gate.calls) == 0
+    assert len(gap_agent.calls) == 0
+    assert len(pitcher.pitch_calls) == 0
+    assert len(craft_gate.calls) == 0
+
+    row = db.query(TrendingEventRecord).one()
+    assert row.headline == SAMPLE_TOPIC_EVENT.headline
+    assert row.unresolved_facts == FLAGGED_BUNDLE.unresolved_facts
+
+
 def test_unresolved_facts_not_persisted_in_dry_run(db, tmp_path):
     context_agent = FakeContextAgent(event=SAMPLE_TOPIC_EVENT, bundle=FLAGGED_BUNDLE)
 

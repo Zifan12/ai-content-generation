@@ -100,6 +100,7 @@ def run_pitch_pipeline(
     context_agent=None,
     topic: str | None = None,
     force: bool = False,
+    single_event_bundle=None,
 ) -> dict | None:
     """Run the monitor pipeline, present the slate, and persist the approved angle.
 
@@ -160,6 +161,13 @@ def run_pitch_pipeline(
             tail, which an honest, stingy gate can otherwise leave untested for
             weeks (5 straight kill-only runs, 2026-07-02). The craft gate is
             NOT bypassed — bad pitches still die there.
+        single_event_bundle: A pre-built ContextBundle for the single event
+            scraper.fetch() will return (e.g. a stored one, loaded from a
+            TrendingEventRecord, not gathered live). Used INSTEAD of the
+            topic/context_agent live-gather path, not in addition to it —
+            ignored when topic is set. Callers that use this must ensure
+            scraper.fetch() returns exactly one event (e.g. via
+            _OneEventScraper); the bundle is applied to that one event only.
 
     Returns:
         The handoff dict written to disk (also returned for convenience) when an
@@ -184,6 +192,8 @@ def run_pitch_pipeline(
     else:
         raw_events = scraper.fetch()
         events = extractor.extract(raw_events, top_n=top_n)
+        if single_event_bundle is not None:
+            bundles[id(events[0])] = single_event_bundle
 
     # Idea-fit gate: kill stale waves and cheap-meme events before spending LLM
     # credits. With force=True the gate still runs (verdict printed for the
