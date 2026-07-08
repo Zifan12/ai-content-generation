@@ -68,3 +68,6 @@ render_taste_test/*
 .opencode/
 .openpackage/
 skills-lock.json
+
+# Git worktrees (local-only scratch workspaces)
+.worktrees/
