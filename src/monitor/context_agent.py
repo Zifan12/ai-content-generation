@@ -28,12 +28,17 @@ from src.monitor.tools import (
     search_subreddits,
     tavily_search,
 )
+from src.monitor.tools.firecrawl_extract import firecrawl_extract
 from src.monitor.tools.subreddit_search import COMMUNITY_SEARCH_COST
 from src.observability.tracing import traced
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_MAX_TOOL_CALLS = 5
+# A pure backstop against a genuine runaway loop (the LLM never returning
+# "stop"), not a practical throttle — a normal run uses 2-3 total calls.
+# No dollar-cost governance is added for firecrawl_extract calls (spec D2);
+# this cap is the only ceiling on them.
+_DEFAULT_MAX_TOOL_CALLS = 20
 
 # Guaranteed hard ceiling on total estimated Apify spend across one run, on
 # top of reddit_search's own per-call $1.00 guard. A per-call guard alone
@@ -81,9 +86,14 @@ search phrase (not a full sentence) for what to search Reddit for.
 one specific unclear thing in <reddit_gathered> — a phrase, claim, or reference whose real \
 meaning can't be confirmed from the reaction text alone — and set next_query to search for \
 exactly that fact, not a generic topic search.
+- next_action="firecrawl_extract": a specific structured fact (a stat, a numeric value) might \
+be sitting on a page you already found via tavily_search, but the search snippet didn't show \
+it. Set next_url to that page's exact URL (copy it exactly as it appeared in <web_gathered> — \
+it must match a URL you actually found, not one you recall or guess) and leave next_query \
+empty.
 - next_action="stop": you have enough reaction text AND enough background context to write a \
-useful summary, or every phrase you can think of has already been tried. Set next_query to an \
-empty string.
+useful summary, or every phrase you can think of has already been tried. Set next_query and \
+next_url to empty strings.
 
 Never choose a next_query that repeats, or is a trivial reword of, a phrase already in the \
 "already tried" lists below — if you cannot think of a genuinely different angle, choose \
@@ -379,6 +389,39 @@ class ContextAgent:
             "tavily_queries": state.tavily_queries + [_effective_query(state)],
         }
 
+    @traced(name="context_agent.act_firecrawl_extract")
+    def _act_firecrawl_extract(self, state: ContextAgentState) -> dict:
+        """LangGraph node: read one already-found URL's full page content.
+
+        Validates next_url is an exact match against something already in
+        state.urls before spending the call — the LLM must target a URL a
+        real search actually returned, never one it recalls or guesses (spec
+        D4; mandatory-grounding concern, BUG-017). A non-matching URL, or any
+        fetch failure, is fail-soft: log and return no state change, same
+        convention as _lookup_community.
+        """
+        if state.next_url not in state.urls:
+            logger.warning(
+                "firecrawl_extract target %r not found by a prior search; skipping",
+                state.next_url,
+            )
+            return {}
+
+        try:
+            result = firecrawl_extract(state.next_url)
+        except Exception:
+            logger.warning(
+                "firecrawl_extract failed fetching %r", state.next_url, exc_info=True
+            )
+            return {}
+
+        text = f"{state.tavily_text}\n\n{result.text}" if state.tavily_text else result.text
+        return {
+            "tavily_text": text,
+            "tavily_calls": state.tavily_calls + 1,
+            "tavily_queries": state.tavily_queries + [state.next_url],
+        }
+
     @traced(name="context_agent.finalize")
     def _finalize(self, state: ContextAgentState) -> dict:
         """LangGraph node: synthesize everything gathered into a summary + key moments.
@@ -412,13 +455,13 @@ class ContextAgent:
     def build_graph(self):
         """Wire the nodes into a compiled, runnable LangGraph.
 
-        lookup_community -> plan -> (decide_next_step) -> reddit_search/tavily_search -> plan
+        lookup_community -> plan -> (decide_next_step) -> reddit_search/tavily_search/firecrawl_extract -> plan
                                                          -> finalize -> END
         lookup_community runs exactly once, before the loop starts (see its
         docstring for why it isn't folded into the plan/act loop itself).
         decide_next_step is the single source of truth for routing the loop
-        (floor/ceiling enforced there, not duplicated here) — its 3 return
-        values map 1:1 onto the 3 possible next nodes.
+        (floor/ceiling enforced there, not duplicated here) — its 4 return
+        values map 1:1 onto the 4 possible next nodes.
         """
         graph = StateGraph(ContextAgentState)
 
@@ -426,6 +469,7 @@ class ContextAgent:
         graph.add_node("plan", self._plan)
         graph.add_node("reddit_search", self._act_reddit)
         graph.add_node("tavily_search", self._act_tavily)
+        graph.add_node("firecrawl_extract", self._act_firecrawl_extract)
         graph.add_node("finalize", self._finalize)
 
         graph.add_edge(START, "lookup_community")
@@ -440,11 +484,13 @@ class ContextAgent:
             {
                 "reddit_search": "reddit_search",
                 "tavily_search": "tavily_search",
+                "firecrawl_extract": "firecrawl_extract",
                 "stop": "finalize",
             },
         )
         graph.add_edge("reddit_search", "plan")
         graph.add_edge("tavily_search", "plan")
+        graph.add_edge("firecrawl_extract", "plan")
         graph.add_edge("finalize", END)
 
         return graph.compile()

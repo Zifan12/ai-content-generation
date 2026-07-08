@@ -240,6 +240,82 @@ def test_act_reddit_appends_to_existing_text(monkeypatch):
     }
 
 
+def test_act_firecrawl_extract_skips_unknown_url(monkeypatch, caplog):
+    """D4: next_url must exact-match something already in state.urls, else
+    the call is skipped (fail-soft), not made — prevents the LLM targeting a
+    hallucinated/recalled URL never actually found by a real search."""
+    called = []
+    monkeypatch.setattr(
+        context_agent_module, "firecrawl_extract",
+        lambda url, **kwargs: called.append(url) or ToolResult(text="x", urls=[]),
+    )
+    agent = ContextAgent(llm=object())
+    state = _fresh_state("Wistoria")
+    state = state.model_copy(update={
+        "next_url": "https://example.com/never-found",
+        "urls": ["https://example.com/actually-found"],
+        "tavily_text": "existing",
+    })
+
+    result = agent._act_firecrawl_extract(state)
+
+    assert called == []
+    assert result == {}
+
+
+def test_act_firecrawl_extract_appends_on_success(monkeypatch):
+    monkeypatch.setattr(
+        context_agent_module, "firecrawl_extract",
+        lambda url, **kwargs: ToolResult(text="Age: 16", urls=[]),
+    )
+    agent = ContextAgent(llm=object())
+    state = _fresh_state("Wistoria")
+    state = state.model_copy(update={
+        "next_url": "https://wistoria.fandom.com/wiki/Elfaria",
+        "urls": ["https://wistoria.fandom.com/wiki/Elfaria"],
+        "tavily_text": "earlier web text",
+        "tavily_calls": 1,
+        "tavily_queries": ["Wistoria characters"],
+    })
+
+    result = agent._act_firecrawl_extract(state)
+
+    assert result == {
+        "tavily_text": "earlier web text\n\nAge: 16",
+        "tavily_calls": 2,
+        "tavily_queries": [
+            "Wistoria characters",
+            "https://wistoria.fandom.com/wiki/Elfaria",
+        ],
+    }
+
+
+def test_act_firecrawl_extract_fails_soft_on_fetch_error(monkeypatch):
+    def raising(url, **kwargs):
+        raise RuntimeError("Failed to fetch url")
+
+    monkeypatch.setattr(context_agent_module, "firecrawl_extract", raising)
+    agent = ContextAgent(llm=object())
+    state = _fresh_state("Wistoria")
+    state = state.model_copy(update={
+        "next_url": "https://wistoria.fandom.com/wiki/Elfaria",
+        "urls": ["https://wistoria.fandom.com/wiki/Elfaria"],
+    })
+
+    result = agent._act_firecrawl_extract(state)
+
+    assert result == {}
+
+
+def test_plan_system_prompt_mentions_firecrawl_extract():
+    assert "firecrawl_extract" in PLAN_SYSTEM_PROMPT
+
+
+def test_max_tool_calls_default_is_20():
+    agent = ContextAgent(llm=object())
+    assert agent.max_tool_calls == 20
+
+
 def _fresh_state(topic):
     return ContextAgentState(
         topic=topic, reddit_text="", tavily_text="", reddit_calls=0,
