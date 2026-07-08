@@ -8,6 +8,7 @@ from src.monitor.context_agent import (
     build_context_bundle,
     decide_next_step,
     ContextAgentState,
+    PLAN_SYSTEM_PROMPT,
     _truncate_to_whole_blocks,
 )
 from src.monitor.tools.subreddit_search import COMMUNITY_SEARCH_COST, Subreddit
@@ -142,6 +143,16 @@ def test_plan_returns_llm_decision():
     # Regression for BUG-023: the planner must see its own past queries so it
     # doesn't repeat one verbatim (observed live on event 8 — see bugs.md).
     assert "Wistoria Elfie Zeo Will episode 11" in fake.prompt
+
+
+def test_plan_system_prompt_targets_specific_ambiguity():
+    """The planner must be told to search for a SPECIFIC unclear fact, not a
+    generic background search — otherwise tavily_search fires every run
+    (guaranteed by decide_next_step's floor) without reliably resolving the
+    thing that actually needs verifying (see spec 2026-07-07-path-b-targeted-
+    grounding-design.md)."""
+    assert "specific unclear thing" in PLAN_SYSTEM_PROMPT
+    assert "not a generic topic search" in PLAN_SYSTEM_PROMPT
 
 
 def test_finalize_returns_llm_synthesis():

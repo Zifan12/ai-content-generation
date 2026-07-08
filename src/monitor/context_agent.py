@@ -77,8 +77,10 @@ from the web so far, and the exact list of search phrases you have already tried
 Decide ONE of three things:
 - next_action="reddit_search": you need more fan reaction text. Set next_query to a short \
 search phrase (not a full sentence) for what to search Reddit for.
-- next_action="tavily_search": you need more general background/factual context. Set \
-next_query to a short search phrase for the web.
+- next_action="tavily_search": you need more general background/factual context. Look for \
+one specific unclear thing in <reddit_gathered> — a phrase, claim, or reference whose real \
+meaning can't be confirmed from the reaction text alone — and set next_query to search for \
+exactly that fact, not a generic topic search.
 - next_action="stop": you have enough reaction text AND enough background context to write a \
 useful summary, or every phrase you can think of has already been tried. Set next_query to an \
 empty string.
