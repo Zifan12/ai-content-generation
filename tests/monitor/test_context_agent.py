@@ -138,11 +138,36 @@ def test_plan_returns_llm_decision():
 
     result = agent._plan(state)
 
-    assert result == {"next_action": "reddit_search", "next_query": "Wistoria season 2 finale"}
+    assert result == {
+        "next_action": "reddit_search",
+        "next_query": "Wistoria season 2 finale",
+        "next_url": "",
+    }
     assert "Wistoria season 2 finale" in fake.prompt
     # Regression for BUG-023: the planner must see its own past queries so it
     # doesn't repeat one verbatim (observed live on event 8 — see bugs.md).
     assert "Wistoria Elfie Zeo Will episode 11" in fake.prompt
+
+
+def test_plan_threads_next_url_for_firecrawl_extract():
+    """Regression: _plan's return dict must include next_url, not just
+    next_action/next_query. LangGraph only applies state keys a node's
+    return dict includes, so a firecrawl_extract decision with a real
+    next_url that _plan dropped would leave state.next_url stuck at "" —
+    and _act_firecrawl_extract's exact-match guard (state.next_url not in
+    state.urls) would then silently no-op on every real run."""
+    decision = PlanDecision(
+        next_action="firecrawl_extract",
+        next_query="",
+        next_url="https://example.com/wiki/X",
+    )
+    fake = FakePlanLLM(decision=decision)
+    agent = ContextAgent(llm=fake)
+    state = _fresh_state("Wistoria season 2 finale")
+
+    result = agent._plan(state)
+
+    assert result["next_url"] == "https://example.com/wiki/X"
 
 
 def test_plan_system_prompt_targets_specific_ambiguity():

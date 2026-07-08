@@ -317,8 +317,14 @@ class ContextAgent:
     def _plan(self, state: ContextAgentState) -> dict:
         """LangGraph node: ask the LLM what to do next, given gathered state so far.
 
-        Returns only the two keys this node is responsible for updating —
-        next_action and next_query — not a full new state.
+        Returns only the three keys this node is responsible for updating —
+        next_action, next_query, and next_url — not a full new state. next_url
+        must be threaded through even though it's only meaningful when
+        next_action == "firecrawl_extract": LangGraph only applies state keys
+        a node's return dict includes, so omitting it here would leave
+        state.next_url stuck at its Pydantic default ("") forever, and
+        _act_firecrawl_extract's exact-match guard would silently no-op on
+        every real run.
         """
         reddit_tried = "\n".join(f"- {q}" for q in state.reddit_queries) or "(none yet)"
         tavily_tried = "\n".join(f"- {q}" for q in state.tavily_queries) or "(none yet)"
@@ -340,6 +346,7 @@ class ContextAgent:
         return {
             "next_action": decision.next_action,
             "next_query": decision.next_query,
+            "next_url": decision.next_url,
         }
 
     @traced(name="context_agent.act_reddit")
