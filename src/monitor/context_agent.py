@@ -408,15 +408,21 @@ class ContextAgent:
         state.urls before spending the call — the LLM must target a URL a
         real search actually returned, never one it recalls or guesses (spec
         D4; mandatory-grounding concern, BUG-017). A non-matching URL, or any
-        fetch failure, is fail-soft: log and return no state change, same
-        convention as _lookup_community.
+        fetch failure, is fail-soft: log and leave tavily_text/urls/queries
+        untouched, but still count the attempt against tavily_calls. Every
+        attempted call must count toward decide_next_step's total_calls
+        ceiling — the only loop-termination guard for this node (see
+        _DEFAULT_MAX_TOOL_CALLS) — otherwise a planner that keeps repicking
+        firecrawl_extract against a bad URL, or against a real fetch failure
+        (e.g. FIRECRAWL_API_KEY unset), would never increment the counter
+        and the loop would never stop.
         """
         if state.next_url not in state.urls:
             logger.warning(
                 "firecrawl_extract target %r not found by a prior search; skipping",
                 state.next_url,
             )
-            return {}
+            return {"tavily_calls": state.tavily_calls + 1}
 
         try:
             result = firecrawl_extract(state.next_url)
@@ -424,7 +430,7 @@ class ContextAgent:
             logger.warning(
                 "firecrawl_extract failed fetching %r", state.next_url, exc_info=True
             )
-            return {}
+            return {"tavily_calls": state.tavily_calls + 1}
 
         text = f"{state.tavily_text}\n\n{result.text}" if state.tavily_text else result.text
         return {

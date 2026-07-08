@@ -285,7 +285,7 @@ def test_act_firecrawl_extract_skips_unknown_url(monkeypatch, caplog):
     result = agent._act_firecrawl_extract(state)
 
     assert called == []
-    assert result == {}
+    assert result == {"tavily_calls": 1}
 
 
 def test_act_firecrawl_extract_appends_on_success(monkeypatch):
@@ -329,7 +329,38 @@ def test_act_firecrawl_extract_fails_soft_on_fetch_error(monkeypatch):
 
     result = agent._act_firecrawl_extract(state)
 
-    assert result == {}
+    assert result == {"tavily_calls": 1}
+
+
+def test_act_firecrawl_extract_failure_counts_toward_loop_termination_cap(monkeypatch):
+    """The empirically-demonstrated infinite-loop gap: if the LLM planner keeps
+    picking firecrawl_extract and it keeps failing, decide_next_step's
+    total_calls ceiling is the only thing that stops the loop (see
+    _DEFAULT_MAX_TOOL_CALLS). That only works if a failed attempt still
+    increments tavily_calls. Drive one failing call from one call short of
+    the cap and confirm decide_next_step now says "stop"."""
+
+    def raising(url, **kwargs):
+        raise RuntimeError("Failed to fetch url")
+
+    monkeypatch.setattr(context_agent_module, "firecrawl_extract", raising)
+    agent = ContextAgent(llm=object())
+    state = _fresh_state("Wistoria")
+    state = state.model_copy(update={
+        "next_url": "https://wistoria.fandom.com/wiki/Elfaria",
+        "urls": ["https://wistoria.fandom.com/wiki/Elfaria"],
+        "reddit_calls": 0,
+        "tavily_calls": agent.max_tool_calls - 1,
+    })
+
+    result = agent._act_firecrawl_extract(state)
+    state_after = state.model_copy(update=result)
+
+    assert decide_next_step(
+        state_after,
+        max_tool_calls=agent.max_tool_calls,
+        max_run_apify_cost=agent.max_run_apify_cost,
+    ) == "stop"
 
 
 def test_plan_system_prompt_mentions_firecrawl_extract():
