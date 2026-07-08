@@ -346,6 +346,14 @@ Track every shipped feature that fails, what was tried, and what fixed it.
   file, mypy adds 0 new errors (only the pre-existing tavily stub error remains). LIVE pending —
   re-run event #7's topic and confirm the 244-upvote thread now leads the sample and the
   gap/pitches shift from "playful/meme" to sincere.
+- Note (2026-07-08, context-agent-grounding-hardening plan): this entry's fix surfaced a follow-on
+  cost/signal-quality issue — the reddit_search fetch params over-fetch ~5x what survives the
+  2000-char truncation this entry also introduced, paying Apify for text that's fetched then
+  discarded, some of it low-signal. Tracked and fixed separately as BUG-024 (fetch-size halved,
+  commit `cfe94b3`; sub-5-upvote comment noise floor added, commit `5636335`; both 2026-07-08). This
+  entry's own remaining KNOWN LIMITATION — upvote ranking works WITHIN one `reddit_search` call but
+  not ACROSS the multiple accumulated calls `_act_reddit` makes — is a structured-accumulation
+  change and was explicitly NOT part of that plan. Status stays open for that reason.
 
 ### BUG-010 - Langfuse records no token/cost/model for OpenRouter-seat generations — cost & near-truncation auditing is blind since the fleet migration (BUG-001 regressed for the new provider)
 - Date opened: 2026-07-03 (found doing a per-call Langfuse health audit of the Task 8 tail run)
@@ -771,7 +779,8 @@ Track every shipped feature that fails, what was tried, and what fixed it.
 
 ### BUG-024 - reddit_search over-fetches ~5x what survives the 2000-char budget, paying Apify for discarded content
 - Date opened: 2026-07-07 (found while reviewing BUG-023's truncation fix)
-- Status: open (parked — flagged, not tuned, per explicit decision not to change it this session)
+- Status: fixed (code applied + offline-validated 2026-07-08; live end-to-end confirmation pending,
+  see the context-agent-grounding-hardening plan's post-implementation note)
 - Feature: the `reddit_search` call params `ContextAgent._act_reddit` uses
   (`_REDDIT_MAX_POSTS=5`, `_REDDIT_MAX_COMMENTS_PER_POST=20`, `_REDDIT_MAX_COMMENTS_COUNT=10` in
   `src/monitor/context_agent.py`), feeding into `gather()`'s `_REACTION_SAMPLE_MAX_CHARS=2000` cap.
@@ -797,3 +806,30 @@ Track every shipped feature that fails, what was tried, and what fixed it.
 - Fix: not attempted — explicit decision (2026-07-07) to log and park rather than tune now.
   Whoever picks this up next needs to choose a fetch:keep ratio empirically (no formula to defer
   to) for `_REDDIT_MAX_POSTS`/`_REDDIT_MAX_COMMENTS_PER_POST`/`_REDDIT_MAX_COMMENTS_COUNT`.
+- Attempted fixes:
+  1. (2026-07-08, commit `cfe94b3`) Halved the single biggest cost driver:
+     `_REDDIT_MAX_COMMENTS_PER_POST` in `src/monitor/context_agent.py` 20 -> 10
+     (`5 * (1+20) + 10 = 115` items/call -> `5 * (1+10) + 10 = 65`, ~43% cheaper). A reasoned
+     conservative first cut, not an empirically-derived ratio — no fetch:keep formula exists (see
+     the second-brain check above), so this is a deliberate under-correction, not a claim the
+     ratio is now "right".
+  2. (2026-07-08, commit `5636335`) Added a comment noise floor (spec D7) in
+     `src/monitor/tools/reddit_search.py`: comments scoring under 5 upvotes are dropped before
+     they are ever formatted into a post's block, so they never consume `_REACTION_SAMPLE_MAX_CHARS`
+     budget on low-signal text. Live-tested against real event-8 data — the thread's two most
+     factually load-bearing comments survived (37, 42 upvotes) alongside redundant near-duplicate
+     signal at 1-2 upvotes; the floor did not blind detection for that event. Addresses the "keep"
+     side of the ratio (raising signal density of what survives truncation), complementing fix #1's
+     "fetch" side (lowering what's paid for and discarded).
+- Date fixed: 2026-07-08
+- Validation evidence: offline GREEN on both commits — fix #1: `tests/monitor/test_context_agent.py`
+  30 passed (constant is read dynamically by the test helpers, not hardcoded, so no test edits were
+  needed), ruff/mypy +0 new. fix #2: `tests/monitor/test_reddit_search.py` (2 new tests) RED->GREEN,
+  full `tests/monitor/` 144 passed / 1 skipped, ruff clean, mypy +0 new. LIVE PENDING: neither fix has
+  been confirmed against a real Apify run yet (see the plan's post-implementation note — a full-chain
+  live re-test of event 8 was deferred to after all 7 tasks land, to bound cost per this project's
+  cost-governance convention rather than spend per-task).
+- Scope note: this fix addresses the fetch-size and noise-floor pieces only. It does NOT touch
+  BUG-009's own still-open KNOWN LIMITATION (upvote ranking works WITHIN one `reddit_search` call but
+  not ACROSS multiple accumulated calls in `_act_reddit`) — that needs a structured-accumulation
+  change and was explicitly out of scope for this plan. See the note appended to BUG-009.
