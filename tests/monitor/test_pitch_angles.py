@@ -570,14 +570,20 @@ def test_unresolved_facts_flags_and_persists_without_running_gap_or_pitch(db, tm
     assert db.query(AnglePitchRecord).count() == 0
 
 
-def test_single_event_bundle_flags_when_unresolved(db, tmp_path):
-    """A pre-built bundle (not gathered live via topic/context_agent) is
-    treated identically to the live-gather path: non-empty unresolved_facts
-    flags and persists the event, without ever calling gap_agent."""
+def test_single_event_bundle_proceeds_even_when_unresolved(db, tmp_path):
+    """A pre-built bundle (e.g. loaded from a stored TrendingEventRecord by
+    scripts/repitch_event.py, not gathered live via topic/context_agent) is
+    NOT subject to the flag-and-skip check. That check exists to stop the
+    unattended Path B scan from silently guessing with nobody watching;
+    repitch_event.py already unconditionally prints unresolved_facts before
+    calling run_pitch_pipeline, so a human has already reviewed the flag by
+    the time single_event_bundle is passed in. A FLAGGED_BUNDLE must still
+    flow all the way through idea_fit_gate -> gap_agent -> story_pitcher ->
+    story_craft_gate, exactly like any other event."""
     idea_fit_gate = FakeIdeaFitGate()
     gap_agent = FakeGapAgent()
     pitcher = FakeStoryPitcher()
-    craft_gate = FakeStoryCraftGate()
+    craft_gate = FakeStoryCraftGate()  # all pitches pass
 
     result = run_pitch_pipeline(
         db,
@@ -593,15 +599,26 @@ def test_single_event_bundle_flags_when_unresolved(db, tmp_path):
         single_event_bundle=FLAGGED_BUNDLE,
     )
 
-    assert result is None
-    assert len(idea_fit_gate.calls) == 0
-    assert len(gap_agent.calls) == 0
-    assert len(pitcher.pitch_calls) == 0
-    assert len(craft_gate.calls) == 0
+    assert result is not None
+    assert len(idea_fit_gate.calls) == 1
+    assert len(gap_agent.calls) == 1
+    assert gap_agent.calls[0][1] is FLAGGED_BUNDLE, "gap must receive the bundle"
+    assert len(pitcher.pitch_calls) == 1
+    assert pitcher.pitch_calls[0][2] is FLAGGED_BUNDLE, "pitcher must receive the bundle"
+    assert len(craft_gate.calls) == len(SAMPLE_SLATE.pitches)
 
     row = db.query(TrendingEventRecord).one()
     assert row.headline == SAMPLE_TOPIC_EVENT.headline
-    assert row.unresolved_facts == FLAGGED_BUNDLE.unresolved_facts
+    # unresolved_facts is only ever written by the flag-and-skip branch; the
+    # normal persist path this event now takes never sets it.
+    assert row.unresolved_facts is None
+    # But the flag isn't lost — the whole bundle (including unresolved_facts)
+    # is still serialized into context_bundle, same as any other bundled event.
+    assert row.context_bundle is not None
+    assert row.context_bundle["unresolved_facts"] == FLAGGED_BUNDLE.unresolved_facts
+
+    approved = db.query(AnglePitchRecord).filter_by(approved=True).all()
+    assert len(approved) == 1
 
 
 def test_unresolved_facts_not_persisted_in_dry_run(db, tmp_path):

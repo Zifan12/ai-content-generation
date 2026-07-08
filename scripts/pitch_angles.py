@@ -208,7 +208,7 @@ def run_pitch_pipeline(
     flagged: list[tuple] = []
     for event in events:
         bundle = bundles.get(id(event))
-        if bundle is not None and bundle.unresolved_facts:
+        if topic is not None and bundle is not None and bundle.unresolved_facts:
             print(f"\n[FLAGGED] {event.headline[:70]!r} — could not verify:")
             for fact in bundle.unresolved_facts:
                 print(f"           - {fact}")
