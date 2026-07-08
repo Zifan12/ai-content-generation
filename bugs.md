@@ -346,6 +346,27 @@ Track every shipped feature that fails, what was tried, and what fixed it.
   file, mypy adds 0 new errors (only the pre-existing tavily stub error remains). LIVE pending —
   re-run event #7's topic and confirm the 244-upvote thread now leads the sample and the
   gap/pitches shift from "playful/meme" to sincere.
+- Follow-up (2026-07-08): the "across-call ordering... deferred" limitation above is still open
+  and still un-ticketed on its own. Re-examined while live-testing the same-day targeted-grounding
+  fix (see BUG-023's `unresolved_facts` mechanism): if the planner calls `reddit_search` twice in
+  one run, call #2's text is appended after call #1's in `state.reddit_text`
+  (`context_agent.py:350`), and `gather()`'s final `_truncate_to_whole_blocks` cut is applied to
+  that concatenation as a whole — call #2 can be silently starved by a long call #1 regardless of
+  its own upvotes, since ranking only happens within each call, never across the merge.
+  Narrower in practice than it first looked, though: `PLAN_SYSTEM_PROMPT` (lines 78-83) routes
+  fact-resolution to `tavily_search`, not a second `reddit_search` — `tavily_text` is a separate
+  accumulator that never enters the 2000-char-capped `reaction_sample` at all, and `_finalize`
+  (which produces `summary`/`key_moments`/`unresolved_facts`) reads the full untruncated
+  `reddit_text` + `tavily_text` before any truncation runs. So the risk is real only when the
+  planner issues a second `reddit_search` for more reaction color, not when it's resolving an
+  unclear fact — confirmed by re-reading `context_agent.py` end to end, not by inference.
+  Checked second-brain (Chip Huyen, `raw/ai-engineering-ch06-rag-and-agents.txt`): this matches
+  the documented "combining retrieval algorithms" pattern (reciprocal rank fusion / recency-
+  weighted reranking — merge-then-truncate, not concatenate-then-truncate); the FIFO critique
+  there ("order-based retention assumes early content matters least, an assumption that can be
+  badly wrong") names this exact failure shape. Not a stretch-fit — direct match, high confidence.
+  Fix: not attempted — still deferred, now with a concrete direction (recency-weighted rerank
+  across accumulated `reddit_search` calls before the char-budget cut) if picked up.
 
 ### BUG-010 - Langfuse records no token/cost/model for OpenRouter-seat generations — cost & near-truncation auditing is blind since the fleet migration (BUG-001 regressed for the new provider)
 - Date opened: 2026-07-03 (found doing a per-call Langfuse health audit of the Task 8 tail run)
@@ -797,3 +818,35 @@ Track every shipped feature that fails, what was tried, and what fixed it.
 - Fix: not attempted — explicit decision (2026-07-07) to log and park rather than tune now.
   Whoever picks this up next needs to choose a fetch:keep ratio empirically (no formula to defer
   to) for `_REDDIT_MAX_POSTS`/`_REDDIT_MAX_COMMENTS_PER_POST`/`_REDDIT_MAX_COMMENTS_COUNT`.
+
+
+### BUG-025 - tavily_search's snippet-only mode can't read structured wiki infobox fields, producing false unresolved_facts flags
+- Date opened: 2026-07-08 (found live-testing the same-day targeted-grounding fix's
+  `unresolved_facts` mechanism, see BUG-023)
+- Status: open
+- Feature: `tavily_search` (`src/monitor/tools/tavily_search.py`) — the tool `ContextAgent`'s
+  planner calls to resolve a fact it can't confirm from the Reddit reaction alone, feeding
+  `_finalize`'s `unresolved_facts` field (`ContextSynthesis`).
+- Error/behavior: live-tested the retargeted planner on event 8's topic. The reaction thread
+  contained a live, contested character-stat claim (a Fandom-wiki-documented fact). Tavily's
+  search correctly found and returned the character's own Fandom wiki page as a reference URL,
+  but `_finalize` still flagged the stat as unresolved — even though that exact page states it
+  explicitly, in a structured right-hand infobox widget. Confirmed directly: fetching the same
+  URL via `firecrawl_scrape` (`formats: ["markdown"]`, `onlyMainContent: true`) also omitted the
+  infobox entirely; a full-page screenshot of the same URL showed the field plainly. Confirmed
+  this is a known behavior class (not tool-specific): Fandom/Wikia infoboxes are commonly
+  filtered out by markdown/snippet extraction as boilerplate/navigation — Firecrawl's own fix is
+  `onlyMainContent: false` or `formats: ["html"]`.
+- Root cause: `tavily_search()` (`tavily_search.py:55`) only calls Tavily's `.search()` endpoint,
+  which returns short prose snippets around matched query terms — by design, per the tool's own
+  docstring (picked over Firecrawl specifically so the agent reasons over raw snippets itself,
+  not a synthesized answer). It never fetches full page content, so it structurally cannot see a
+  page's infobox/sidebar fields no matter how the search query is targeted.
+- Not a dead end: the correct page IS being found — its URL was already in `bundle.references`.
+  The gap is purely in what `tavily_search` extracts FROM a found page, not in locating the page.
+- Fix: not attempted. Two directions if picked up: (a) add a full-page-fetch tool (Tavily's
+  separate `extract` endpoint, or Firecrawl with `onlyMainContent: false`) the planner can call
+  on a specific URL once search has located the right page, or (b) treat infobox-style structured
+  lookups differently from prose fact-finding. Re-run this same live test (event 8's topic) after
+  a fix and confirm `unresolved_facts` comes back empty for a fact that's actually confirmable
+  this way.
