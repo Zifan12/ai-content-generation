@@ -77,6 +77,7 @@ def test_decide_next_step():
         urls=[],
         reddit_queries=[],
         tavily_queries=[],
+        unresolved_facts=[],
         summary="",
         key_moments=[],
     )
@@ -103,6 +104,7 @@ def test_decide_next_step_apify_cost_ceiling():
         urls=[],
         reddit_queries=[],
         tavily_queries=[],
+        unresolved_facts=[],
         summary="",
         key_moments=[],
     )
@@ -128,6 +130,7 @@ def test_plan_returns_llm_decision():
         urls=[],
         reddit_queries=["Wistoria Elfie Zeo Will episode 11"],
         tavily_queries=[],
+        unresolved_facts=[],
         summary="",
         key_moments=[],
     )
@@ -145,6 +148,7 @@ def test_finalize_returns_llm_synthesis():
     synthesis = ContextSynthesis(
         summary="Fans were furious the finale denied the long-teased reunion.",
         key_moments=["showrunner confirms no reunion planned"],
+        unresolved_facts=["whether the showrunner's quote was sarcastic"],
     )
     fake = FakeFinalizeLLM(synthesis=synthesis)
     agent = ContextAgent(llm=fake)
@@ -160,7 +164,8 @@ def test_finalize_returns_llm_synthesis():
         next_query="",
         urls=[],
         reddit_queries=[],
-        tavily_queries=[],
+        tavily_queries=["is the reunion confirmed cut"],
+        unresolved_facts=[],
         summary="",
         key_moments=[],
     )
@@ -170,9 +175,13 @@ def test_finalize_returns_llm_synthesis():
     assert result == {
         "summary": "Fans were furious the finale denied the long-teased reunion.",
         "key_moments": ["showrunner confirms no reunion planned"],
+        "unresolved_facts": ["whether the showrunner's quote was sarcastic"],
     }
     assert "top comment: robbed" in fake.prompt
     assert "background: finale aired June 28" in fake.prompt
+    # BUG-023-follow-up regression: finalize must see what was SEARCHED FOR
+    # (not just what was found) to judge what's actually unresolved.
+    assert "is the reunion confirmed cut" in fake.prompt
 
 
 def test_act_reddit_appends_to_existing_text(monkeypatch):
@@ -199,6 +208,7 @@ def test_act_reddit_appends_to_existing_text(monkeypatch):
         urls=["https://reddit.com/r/x/comments/0"],
         reddit_queries=["earlier query"],
         tavily_queries=[],
+        unresolved_facts=[],
         summary="",
         key_moments=[],
     )
@@ -224,7 +234,7 @@ def _fresh_state(topic):
         topic=topic, reddit_text="", tavily_text="", reddit_calls=0,
         tavily_calls=0, apify_cost_estimate=0.0, within_community="",
         next_action="", next_query="", urls=[], reddit_queries=[], tavily_queries=[],
-        summary="", key_moments=[],
+        unresolved_facts=[], summary="", key_moments=[],
     )
 
 
@@ -315,6 +325,7 @@ def test_act_tavily_starts_fresh_when_empty(monkeypatch):
         urls=[],
         reddit_queries=[],
         tavily_queries=["earlier web query"],
+        unresolved_facts=[],
         summary="",
         key_moments=[],
     )
@@ -343,6 +354,7 @@ def test_build_context_bundle_both_sources():
         urls=["https://reddit.com/r/x/comments/1", "https://example.com/article"],
         reddit_queries=[],
         tavily_queries=[],
+        unresolved_facts=[],
         summary="Fans were furious the finale denied the long-teased reunion.",
         key_moments=["showrunner confirms no reunion planned"],
     )
@@ -373,6 +385,7 @@ def test_build_context_bundle_no_sources():
         urls=[],
         reddit_queries=[],
         tavily_queries=[],
+        unresolved_facts=[],
         summary="",
         key_moments=[],
     )
@@ -380,6 +393,30 @@ def test_build_context_bundle_no_sources():
     bundle = build_context_bundle(state)
 
     assert bundle.sources == []
+
+
+def test_build_context_bundle_threads_unresolved_facts():
+    state = ContextAgentState(
+        topic="",
+        reddit_text="top comment: robbed",
+        tavily_text="",
+        reddit_calls=1,
+        tavily_calls=0,
+        apify_cost_estimate=0.0,
+        within_community="",
+        next_action="stop",
+        next_query="",
+        urls=[],
+        reddit_queries=[],
+        tavily_queries=[],
+        unresolved_facts=["whether the lead character is confirmed dead"],
+        summary="",
+        key_moments=[],
+    )
+
+    bundle = build_context_bundle(state)
+
+    assert bundle.unresolved_facts == ["whether the lead character is confirmed dead"]
 
 
 def test_run_full_loop(monkeypatch):
@@ -437,6 +474,7 @@ def test_decide_next_step_passthrough():
         urls=[],
         reddit_queries=[],
         tavily_queries=[],
+        unresolved_facts=[],
         summary="",
         key_moments=[],
     )
@@ -459,6 +497,7 @@ def test_decide_next_step_floor_override_reddit():
         urls=[],
         reddit_queries=[],
         tavily_queries=[],
+        unresolved_facts=[],
         summary="",
         key_moments=[],
     )
@@ -481,6 +520,7 @@ def test_decide_next_step_floor_override_tavily():
         urls=[],
         reddit_queries=[],
         tavily_queries=[],
+        unresolved_facts=[],
         summary="",
         key_moments=[],
     )
@@ -503,6 +543,7 @@ def test_decide_next_step_floor_satisfied():
         urls=[],
         reddit_queries=[],
         tavily_queries=[],
+        unresolved_facts=[],
         summary="",
         key_moments=[],
     )

@@ -75,6 +75,7 @@ class ContextSynthesis(BaseModel):
 
     summary: str
     key_moments: list[str]
+    unresolved_facts: list[str] = Field(default_factory=list)
 
 
 class ContextBundle(BaseModel):
@@ -86,6 +87,7 @@ class ContextBundle(BaseModel):
     references: list[str]
     sources: list[str]
     apify_cost_estimate: float = 0.0
+    unresolved_facts: list[str] = Field(default_factory=list)
 
     def to_context_block(self) -> str:
         """Render this bundle as a ``<context>`` block for prompt injection.
