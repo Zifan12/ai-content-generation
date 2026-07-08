@@ -60,19 +60,32 @@ _REDDIT_MAX_POSTS = 5
 _REDDIT_MAX_COMMENTS_PER_POST = 20
 _REDDIT_MAX_COMMENTS_COUNT = 10
 
+# Character budget for gather()'s reaction_sample (BUG-023 follow-up). The
+# number itself is an inherited, undocumented guess from the original --topic
+# on-ramp commit (aa4f56d) — Path A bounds its sample by comment COUNT
+# (scraper.py's top_comments_in_sample), a different unit entirely, so this
+# isn't "matching an existing convention". Not revisited here; only how the
+# cut is made (on a whole block, never mid-block) is being fixed.
+_REACTION_SAMPLE_MAX_CHARS = 2000
+
 PLAN_SYSTEM_PROMPT = """You are a research planner for a content pipeline. You are gathering \
 context on a topic by searching Reddit (fan reactions) and the general web (background facts) \
 before a writer turns it into a video.
 
 You are given the topic, what you have gathered from Reddit so far, what you have gathered \
-from the web so far, and how many times you have already called each search tool. Decide ONE \
-of three things:
+from the web so far, and the exact list of search phrases you have already tried on each tool. \
+Decide ONE of three things:
 - next_action="reddit_search": you need more fan reaction text. Set next_query to a short \
 search phrase (not a full sentence) for what to search Reddit for.
 - next_action="tavily_search": you need more general background/factual context. Set \
 next_query to a short search phrase for the web.
 - next_action="stop": you have enough reaction text AND enough background context to write a \
-useful summary. Set next_query to an empty string.
+useful summary, or every phrase you can think of has already been tried. Set next_query to an \
+empty string.
+
+Never choose a next_query that repeats, or is a trivial reword of, a phrase already in the \
+"already tried" lists below — if you cannot think of a genuinely different angle, choose \
+next_action="stop" instead of re-running a search that will just return what you already have.
 
 Prefer specific, short search phrases (e.g. "Wistoria season 2 finale", not a full question). \
 If what you have gathered so far looks thin or off-topic, search again with a different or \
@@ -117,6 +130,8 @@ class ContextAgentState(BaseModel):
     next_action: str
     next_query: str
     urls: list[str]
+    reddit_queries: list[str]
+    tavily_queries: list[str]
     summary: str
     key_moments: list[str]
 
@@ -174,6 +189,38 @@ def _effective_query(state: ContextAgentState) -> str:
     The topic is always a valid, on-subject phrase, so fall back to it.
     """
     return state.next_query.strip() or state.topic
+
+
+def _truncate_to_whole_blocks(text: str, max_chars: int) -> str:
+    """Cut ``text`` down to ``max_chars`` without slicing into a block.
+
+    ``text`` is ``"\\n\\n".join(blocks)`` (see ``reddit_search``'s docstring) —
+    each block is one whole ``[POST]``/``[COMMENT]`` thread, already ranked
+    highest-upvoted first. Keeping whole blocks from the front therefore keeps
+    the most-representative content and never produces a mid-sentence cutoff
+    (BUG-023 follow-up — the previous ``text[:max_chars]`` slice did exactly
+    that).
+
+    Falls back to a hard slice of just the first block if even that alone
+    exceeds ``max_chars`` — rare (one thread would have to be enormous), but
+    returning an empty string in that case would be worse than a partial cut.
+    """
+    if len(text) <= max_chars:
+        return text
+
+    blocks = text.split("\n\n")
+    kept: list[str] = []
+    total = 0
+    for block in blocks:
+        addition = len(block) if not kept else len(block) + 2  # +2 for the "\n\n" joiner
+        if total + addition > max_chars:
+            break
+        kept.append(block)
+        total += addition
+
+    if not kept:
+        return blocks[0][:max_chars]
+    return "\n\n".join(kept)
 
 
 class ContextAgent:
@@ -254,12 +301,15 @@ class ContextAgent:
         Returns only the two keys this node is responsible for updating —
         next_action and next_query — not a full new state.
         """
+        reddit_tried = "\n".join(f"- {q}" for q in state.reddit_queries) or "(none yet)"
+        tavily_tried = "\n".join(f"- {q}" for q in state.tavily_queries) or "(none yet)"
         user_prompt = (
             f"<topic>\n{state.topic}\n</topic>\n\n"
             f"<reddit_gathered>\n{state.reddit_text}\n</reddit_gathered>\n\n"
             f"<web_gathered>\n{state.tavily_text}\n</web_gathered>\n\n"
-            f"Reddit searched {state.reddit_calls} time(s), web searched "
-            f"{state.tavily_calls} time(s) so far. Decide the next action."
+            f"Reddit search phrases already tried:\n{reddit_tried}\n\n"
+            f"Web search phrases already tried:\n{tavily_tried}\n\n"
+            f"Decide the next action."
         )
 
         decision: PlanDecision = self.llm.parse(
@@ -302,6 +352,7 @@ class ContextAgent:
                 max_comments_count=_REDDIT_MAX_COMMENTS_COUNT,
             ),
             "urls": state.urls + result.urls,
+            "reddit_queries": state.reddit_queries + [_effective_query(state)],
         }
 
     @traced(name="context_agent.act_tavily")
@@ -316,6 +367,7 @@ class ContextAgent:
             "tavily_text": text,
             "tavily_calls": calls,
             "urls": state.urls + result.urls,
+            "tavily_queries": state.tavily_queries + [_effective_query(state)],
         }
 
     @traced(name="context_agent.finalize")
@@ -401,6 +453,8 @@ class ContextAgent:
             next_action="",
             next_query="",
             urls=[],
+            reddit_queries=[],
+            tavily_queries=[],
             summary="",
             key_moments=[],
         )
@@ -431,9 +485,9 @@ class ContextAgent:
         - ``origin``        = "manual" — triggers the Task 6 gate branch
         """
         bundle = self.run(topic)
-        reaction = bundle.reaction_sample or ""
-        if len(reaction) > 2000:
-            reaction = reaction[:2000]
+        reaction = _truncate_to_whole_blocks(
+            bundle.reaction_sample or "", _REACTION_SAMPLE_MAX_CHARS
+        )
         event = TrendingEvent(
             headline=topic,
             subreddit="",

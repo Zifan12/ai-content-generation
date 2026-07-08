@@ -730,3 +730,70 @@ Track every shipped feature that fails, what was tried, and what fixed it.
   craft gate (fail gracefully at the lookup); (c) add an `other` playbook entry (papers over — no
   real "other" content pattern exists). Not yet chosen.
 - Attempted fixes: none (parked 2026-07-07 — logged, low priority).
+
+
+### BUG-023 - context_agent's planner has no memory of its own past search queries, repeats them verbatim
+- Date opened: 2026-07-07 (found tracing why event 8's gathered reaction was ~2/3 duplicate content)
+- Status: fixed 2026-07-07
+- Feature: `ContextAgent._plan` (`src/monitor/context_agent.py`), the LangGraph plan node that
+  decides each loop turn whether to call `reddit_search`/`tavily_search` again.
+- Environment: any Path B (`--topic`) run where the planner searches more than once.
+- Error/behavior: `_plan`'s prompt told the LLM only a call *count* ("Reddit searched N time(s)"),
+  never the actual past query strings. Confirmed via a live Langfuse trace (event 8, run_at
+  2026-07-03 07:20:49 UTC): the planner issued `"Wistoria Elfie Zeo Will episode 11"` as the
+  `reddit_search` query on calls 1 AND 2 — the exact same string, not a rephrasing — then a
+  near-identical third call. Each call was an honest, correct Apify search; the duplication was
+  the planner re-asking a question it had no way to know it had already asked. Net effect: the
+  accumulated `reaction_sample` was ~2/3 duplicate text before the downstream 2000-char truncation
+  even ran, and `gap_agent` built `audience_want` off a noisy, redundant sample.
+- Root cause: `ContextAgentState` tracked call counts but never the query strings themselves, so
+  `_plan`'s prompt had no way to show the model its own search history.
+- Fix: added `reddit_queries`/`tavily_queries: list[str]` fields to `ContextAgentState`, appended
+  to on each `_act_reddit`/`_act_tavily` call (mirroring the existing `urls` accumulation), and
+  `_plan`'s prompt now renders the actual past-query lists instead of a bare count.
+  `PLAN_SYSTEM_PROMPT` explicitly instructs the model not to repeat, or trivially reword, a query
+  already in that list. Regression test: `test_plan_returns_llm_decision` asserts a seeded past
+  query string appears in the rendered prompt.
+- Follow-up fix (same day): `gather()`'s final truncation was also a blind `text[:2000]`
+  character slice, cutting mid-sentence. Replaced with `_truncate_to_whole_blocks` — splits on
+  the `"\n\n"` block separator (each block already ranked highest-upvoted first by
+  `reddit_search`) and keeps whole blocks up to the budget, never slicing into one. Falls back to
+  a hard slice only if a single block alone exceeds the budget. The 2000-char budget itself is
+  unchanged — traced to commit `aa4f56d` (2026-06-30), an undocumented guess never revisited, and
+  inconsistent with Path A's comment-count-based cap (`scraper.py`'s `top_comments_in_sample`) —
+  not fixed here, only how the cut is made.
+- Related, not fixed here: the accumulated text still had no dedup-by-post-identity safety net,
+  in case two *different* queries legitimately return overlapping posts (this fix only prevents
+  the planner from *asking* a redundant query; a same-query race or genuinely distinct queries
+  that happen to surface the same thread would still duplicate it). Flagged separately, not yet
+  fixed.
+
+
+### BUG-024 - reddit_search over-fetches ~5x what survives the 2000-char budget, paying Apify for discarded content
+- Date opened: 2026-07-07 (found while reviewing BUG-023's truncation fix)
+- Status: open (parked — flagged, not tuned, per explicit decision not to change it this session)
+- Feature: the `reddit_search` call params `ContextAgent._act_reddit` uses
+  (`_REDDIT_MAX_POSTS=5`, `_REDDIT_MAX_COMMENTS_PER_POST=20`, `_REDDIT_MAX_COMMENTS_COUNT=10` in
+  `src/monitor/context_agent.py`), feeding into `gather()`'s `_REACTION_SAMPLE_MAX_CHARS=2000` cap.
+- Error/behavior: one `reddit_search` call at current settings requests up to
+  `5 * (1 + 20) + 10 = 115` billed items (`estimate_cost`'s own formula, `reddit_search.py:47`) —
+  at $0.002/item, ~$0.23/call. Apify bills every returned item whether or not its text survives
+  the later cut. Event 8's real (post-dedup) gathered text was ~10,000 characters — roughly 5x
+  the 2000-char budget that actually reaches the LLM. The rest is fetched, paid for, and thrown
+  away by `_truncate_to_whole_blocks`.
+- Root cause: the fetch-size constants and the final char budget were never sized relative to
+  each other — 2000 chars was set once (commit `aa4f56d`, undocumented, see BUG-023) and the
+  fetch params separately, with no attempt to keep them in a sane ratio.
+- Not a pure waste, though: `reddit_search` ranks everything it fetches by upvotes and keeps the
+  highest first — some over-fetch is legitimate (gives the ranking step real candidates to choose
+  from instead of locking in whatever the first few items happen to be). The question is the
+  RATIO, not whether to over-fetch at all.
+- Checked second-brain (Huyen's RAG chapter, `raw/ai-engineering-ch06-rag-and-agents.txt`) for a
+  documented fetch:keep ratio guideline — none exists. The corpus names the general
+  fetch-wide-then-rerank pattern but is explicit that retrieval-k sizing is "experiment, no
+  universal formula" (`:118`, `:277`), and its truncation-cost discussion is scoped to
+  model-context/token cost, never per-item billed API cost. Confirmed absence, not a gap in
+  searching.
+- Fix: not attempted — explicit decision (2026-07-07) to log and park rather than tune now.
+  Whoever picks this up next needs to choose a fetch:keep ratio empirically (no formula to defer
+  to) for `_REDDIT_MAX_POSTS`/`_REDDIT_MAX_COMMENTS_PER_POST`/`_REDDIT_MAX_COMMENTS_COUNT`.

@@ -3,7 +3,13 @@ from src.monitor.schemas import ContextBundle, ContextSynthesis, PlanDecision
 from src.monitor.tools import estimate_cost
 from src.monitor.tools._types import ToolResult
 import src.monitor.context_agent as context_agent_module
-from src.monitor.context_agent import ContextAgent, build_context_bundle, decide_next_step, ContextAgentState
+from src.monitor.context_agent import (
+    ContextAgent,
+    build_context_bundle,
+    decide_next_step,
+    ContextAgentState,
+    _truncate_to_whole_blocks,
+)
 from src.monitor.tools.subreddit_search import COMMUNITY_SEARCH_COST, Subreddit
 
 
@@ -69,6 +75,8 @@ def test_decide_next_step():
         next_action="reddit_search",
         next_query="",
         urls=[],
+        reddit_queries=[],
+        tavily_queries=[],
         summary="",
         key_moments=[],
     )
@@ -93,6 +101,8 @@ def test_decide_next_step_apify_cost_ceiling():
         next_action="reddit_search",
         next_query="",
         urls=[],
+        reddit_queries=[],
+        tavily_queries=[],
         summary="",
         key_moments=[],
     )
@@ -116,6 +126,8 @@ def test_plan_returns_llm_decision():
         next_action="",
         next_query="",
         urls=[],
+        reddit_queries=["Wistoria Elfie Zeo Will episode 11"],
+        tavily_queries=[],
         summary="",
         key_moments=[],
     )
@@ -124,6 +136,9 @@ def test_plan_returns_llm_decision():
 
     assert result == {"next_action": "reddit_search", "next_query": "Wistoria season 2 finale"}
     assert "Wistoria season 2 finale" in fake.prompt
+    # Regression for BUG-023: the planner must see its own past queries so it
+    # doesn't repeat one verbatim (observed live on event 8 — see bugs.md).
+    assert "Wistoria Elfie Zeo Will episode 11" in fake.prompt
 
 
 def test_finalize_returns_llm_synthesis():
@@ -144,6 +159,8 @@ def test_finalize_returns_llm_synthesis():
         next_action="stop",
         next_query="",
         urls=[],
+        reddit_queries=[],
+        tavily_queries=[],
         summary="",
         key_moments=[],
     )
@@ -180,6 +197,8 @@ def test_act_reddit_appends_to_existing_text(monkeypatch):
         next_action="reddit_search",
         next_query="some query",
         urls=["https://reddit.com/r/x/comments/0"],
+        reddit_queries=["earlier query"],
+        tavily_queries=[],
         summary="",
         key_moments=[],
     )
@@ -196,6 +215,7 @@ def test_act_reddit_appends_to_existing_text(monkeypatch):
         "reddit_calls": 2,
         "apify_cost_estimate": 0.86 + _expected_reddit_call_cost(),
         "urls": ["https://reddit.com/r/x/comments/0", "https://reddit.com/r/x/comments/1"],
+        "reddit_queries": ["earlier query", "some query"],
     }
 
 
@@ -203,7 +223,8 @@ def _fresh_state(topic):
     return ContextAgentState(
         topic=topic, reddit_text="", tavily_text="", reddit_calls=0,
         tavily_calls=0, apify_cost_estimate=0.0, within_community="",
-        next_action="", next_query="", urls=[], summary="", key_moments=[],
+        next_action="", next_query="", urls=[], reddit_queries=[], tavily_queries=[],
+        summary="", key_moments=[],
     )
 
 
@@ -292,6 +313,8 @@ def test_act_tavily_starts_fresh_when_empty(monkeypatch):
         next_action="tavily_search",
         next_query="some query",
         urls=[],
+        reddit_queries=[],
+        tavily_queries=["earlier web query"],
         summary="",
         key_moments=[],
     )
@@ -302,6 +325,7 @@ def test_act_tavily_starts_fresh_when_empty(monkeypatch):
         "tavily_text": "background facts",
         "tavily_calls": 1,
         "urls": ["https://example.com/article"],
+        "tavily_queries": ["earlier web query", "some query"],
     }
 
 
@@ -317,6 +341,8 @@ def test_build_context_bundle_both_sources():
         next_action="stop",
         next_query="",
         urls=["https://reddit.com/r/x/comments/1", "https://example.com/article"],
+        reddit_queries=[],
+        tavily_queries=[],
         summary="Fans were furious the finale denied the long-teased reunion.",
         key_moments=["showrunner confirms no reunion planned"],
     )
@@ -345,6 +371,8 @@ def test_build_context_bundle_no_sources():
         next_action="stop",
         next_query="",
         urls=[],
+        reddit_queries=[],
+        tavily_queries=[],
         summary="",
         key_moments=[],
     )
@@ -407,6 +435,8 @@ def test_decide_next_step_passthrough():
         next_action="tavily_search",
         next_query="",
         urls=[],
+        reddit_queries=[],
+        tavily_queries=[],
         summary="",
         key_moments=[],
     )
@@ -427,6 +457,8 @@ def test_decide_next_step_floor_override_reddit():
         next_action="stop",
         next_query="",
         urls=[],
+        reddit_queries=[],
+        tavily_queries=[],
         summary="",
         key_moments=[],
     )
@@ -447,6 +479,8 @@ def test_decide_next_step_floor_override_tavily():
         next_action="stop",
         next_query="",
         urls=[],
+        reddit_queries=[],
+        tavily_queries=[],
         summary="",
         key_moments=[],
     )
@@ -467,12 +501,41 @@ def test_decide_next_step_floor_satisfied():
         next_action="stop",
         next_query="",
         urls=[],
+        reddit_queries=[],
+        tavily_queries=[],
         summary="",
         key_moments=[],
     )
     result = decide_next_step(state, max_tool_calls=5, max_run_apify_cost=2.00)
 
     assert result == "stop"
+
+
+def test_truncate_to_whole_blocks_under_budget_unchanged():
+    text = "[POST | 10 upvotes] short\n\n[POST | 5 upvotes] also short"
+    assert _truncate_to_whole_blocks(text, max_chars=2000) == text
+
+
+def test_truncate_to_whole_blocks_keeps_whole_blocks_only():
+    block_a = "[POST | 100 upvotes] " + "a" * 50
+    block_b = "[POST | 90 upvotes] " + "b" * 50
+    block_c = "[POST | 80 upvotes] " + "c" * 50
+    text = "\n\n".join([block_a, block_b, block_c])
+
+    # budget fits block_a and block_b whole, but not block_c too
+    result = _truncate_to_whole_blocks(text, max_chars=len(block_a) + 2 + len(block_b))
+
+    assert result == "\n\n".join([block_a, block_b])
+    # BUG-023 follow-up: never cut a block in half.
+    assert "c" * 50 not in result
+    assert not result.endswith("c")
+
+
+def test_truncate_to_whole_blocks_first_block_alone_too_big():
+    huge_block = "[POST | 1 upvotes] " + "x" * 5000
+    result = _truncate_to_whole_blocks(huge_block, max_chars=2000)
+    assert result == huge_block[:2000]
+    assert len(result) == 2000
 
 
 def test_run_floor_override_uses_topic_not_empty_query(monkeypatch):
