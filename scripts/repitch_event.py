@@ -29,7 +29,7 @@ from src.database import SessionLocal  # noqa: E402
 from src.models.trending_event import TrendingEventRecord  # noqa: E402
 from src.monitor.gap_agent import GapAgent  # noqa: E402
 from src.monitor.idea_fit_gate import IdeaFitGate  # noqa: E402
-from src.monitor.schemas import TrendingEvent  # noqa: E402
+from src.monitor.schemas import ContextBundle, TrendingEvent  # noqa: E402
 from src.monitor.story_craft_gate import StoryCraftGate  # noqa: E402
 from src.monitor.story_pitcher import StoryPitcher  # noqa: E402
 from src.providers.llm.factory import llm_for_seat  # noqa: E402
@@ -79,6 +79,18 @@ def load_event(db, event_id: int) -> TrendingEvent:
     )
 
 
+def load_bundle(db, event_id: int) -> ContextBundle | None:
+    """Reconstruct the stored ContextBundle for event_id, or None if the
+    record has no context_bundle (e.g. a Path A / scraped-only event, or an
+    event captured before this column existed)."""
+    record = db.get(TrendingEventRecord, event_id)
+    if record is None:
+        raise SystemExit(f"No TrendingEventRecord with id={event_id}.")
+    if record.context_bundle is None:
+        return None
+    return ContextBundle.model_validate(record.context_bundle)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Re-pitch one stored event.")
     parser.add_argument("--event-id", type=int, required=True)
@@ -105,8 +117,19 @@ def main() -> None:
     db = SessionLocal()
     try:
         event = load_event(db, args.event_id)
+        bundle = load_bundle(db, args.event_id)
     finally:
         db.close()
+
+    if bundle is not None:
+        print(f"\nStored unresolved_facts for event {args.event_id}:")
+        if bundle.unresolved_facts:
+            for fact in bundle.unresolved_facts:
+                print(f"  - {fact}")
+        else:
+            print("  (none — nothing was flagged as unresolved)")
+    else:
+        print(f"\nEvent {args.event_id} has no stored context_bundle (Path A event, or pre-dates this column).")
 
     idea_fit_gate = IdeaFitGate(llm=llm_for_seat("idea_fit_gate"))
     gap_agent = GapAgent(llm=llm_for_seat("gap_agent"))
@@ -134,6 +157,7 @@ def main() -> None:
             output_dir=args.output_dir,
             top_n=1,
             force=args.force,
+            single_event_bundle=bundle,
         )
     finally:
         db.close()

@@ -138,11 +138,36 @@ def test_plan_returns_llm_decision():
 
     result = agent._plan(state)
 
-    assert result == {"next_action": "reddit_search", "next_query": "Wistoria season 2 finale"}
+    assert result == {
+        "next_action": "reddit_search",
+        "next_query": "Wistoria season 2 finale",
+        "next_url": "",
+    }
     assert "Wistoria season 2 finale" in fake.prompt
     # Regression for BUG-023: the planner must see its own past queries so it
     # doesn't repeat one verbatim (observed live on event 8 — see bugs.md).
     assert "Wistoria Elfie Zeo Will episode 11" in fake.prompt
+
+
+def test_plan_threads_next_url_for_firecrawl_extract():
+    """Regression: _plan's return dict must include next_url, not just
+    next_action/next_query. LangGraph only applies state keys a node's
+    return dict includes, so a firecrawl_extract decision with a real
+    next_url that _plan dropped would leave state.next_url stuck at "" —
+    and _act_firecrawl_extract's exact-match guard (state.next_url not in
+    state.urls) would then silently no-op on every real run."""
+    decision = PlanDecision(
+        next_action="firecrawl_extract",
+        next_query="",
+        next_url="https://example.com/wiki/X",
+    )
+    fake = FakePlanLLM(decision=decision)
+    agent = ContextAgent(llm=fake)
+    state = _fresh_state("Wistoria season 2 finale")
+
+    result = agent._plan(state)
+
+    assert result["next_url"] == "https://example.com/wiki/X"
 
 
 def test_plan_system_prompt_targets_specific_ambiguity():
@@ -238,6 +263,113 @@ def test_act_reddit_appends_to_existing_text(monkeypatch):
         "urls": ["https://reddit.com/r/x/comments/0", "https://reddit.com/r/x/comments/1"],
         "reddit_queries": ["earlier query", "some query"],
     }
+
+
+def test_act_firecrawl_extract_skips_unknown_url(monkeypatch, caplog):
+    """D4: next_url must exact-match something already in state.urls, else
+    the call is skipped (fail-soft), not made — prevents the LLM targeting a
+    hallucinated/recalled URL never actually found by a real search."""
+    called = []
+    monkeypatch.setattr(
+        context_agent_module, "firecrawl_extract",
+        lambda url, **kwargs: called.append(url) or ToolResult(text="x", urls=[]),
+    )
+    agent = ContextAgent(llm=object())
+    state = _fresh_state("Wistoria")
+    state = state.model_copy(update={
+        "next_url": "https://example.com/never-found",
+        "urls": ["https://example.com/actually-found"],
+        "tavily_text": "existing",
+    })
+
+    result = agent._act_firecrawl_extract(state)
+
+    assert called == []
+    assert result == {"tavily_calls": 1}
+
+
+def test_act_firecrawl_extract_appends_on_success(monkeypatch):
+    monkeypatch.setattr(
+        context_agent_module, "firecrawl_extract",
+        lambda url, **kwargs: ToolResult(text="Age: 16", urls=[]),
+    )
+    agent = ContextAgent(llm=object())
+    state = _fresh_state("Wistoria")
+    state = state.model_copy(update={
+        "next_url": "https://wistoria.fandom.com/wiki/Elfaria",
+        "urls": ["https://wistoria.fandom.com/wiki/Elfaria"],
+        "tavily_text": "earlier web text",
+        "tavily_calls": 1,
+        "tavily_queries": ["Wistoria characters"],
+    })
+
+    result = agent._act_firecrawl_extract(state)
+
+    assert result == {
+        "tavily_text": "earlier web text\n\nAge: 16",
+        "tavily_calls": 2,
+        "tavily_queries": [
+            "Wistoria characters",
+            "https://wistoria.fandom.com/wiki/Elfaria",
+        ],
+    }
+
+
+def test_act_firecrawl_extract_fails_soft_on_fetch_error(monkeypatch):
+    def raising(url, **kwargs):
+        raise RuntimeError("Failed to fetch url")
+
+    monkeypatch.setattr(context_agent_module, "firecrawl_extract", raising)
+    agent = ContextAgent(llm=object())
+    state = _fresh_state("Wistoria")
+    state = state.model_copy(update={
+        "next_url": "https://wistoria.fandom.com/wiki/Elfaria",
+        "urls": ["https://wistoria.fandom.com/wiki/Elfaria"],
+    })
+
+    result = agent._act_firecrawl_extract(state)
+
+    assert result == {"tavily_calls": 1}
+
+
+def test_act_firecrawl_extract_failure_counts_toward_loop_termination_cap(monkeypatch):
+    """The empirically-demonstrated infinite-loop gap: if the LLM planner keeps
+    picking firecrawl_extract and it keeps failing, decide_next_step's
+    total_calls ceiling is the only thing that stops the loop (see
+    _DEFAULT_MAX_TOOL_CALLS). That only works if a failed attempt still
+    increments tavily_calls. Drive one failing call from one call short of
+    the cap and confirm decide_next_step now says "stop"."""
+
+    def raising(url, **kwargs):
+        raise RuntimeError("Failed to fetch url")
+
+    monkeypatch.setattr(context_agent_module, "firecrawl_extract", raising)
+    agent = ContextAgent(llm=object())
+    state = _fresh_state("Wistoria")
+    state = state.model_copy(update={
+        "next_url": "https://wistoria.fandom.com/wiki/Elfaria",
+        "urls": ["https://wistoria.fandom.com/wiki/Elfaria"],
+        "reddit_calls": 0,
+        "tavily_calls": agent.max_tool_calls - 1,
+    })
+
+    result = agent._act_firecrawl_extract(state)
+    state_after = state.model_copy(update=result)
+
+    assert decide_next_step(
+        state_after,
+        max_tool_calls=agent.max_tool_calls,
+        max_run_apify_cost=agent.max_run_apify_cost,
+    ) == "stop"
+
+
+def test_plan_system_prompt_mentions_firecrawl_extract():
+    assert "firecrawl_extract" in PLAN_SYSTEM_PROMPT
+
+
+def test_max_tool_calls_default_is_20():
+    agent = ContextAgent(llm=object())
+    assert agent.max_tool_calls == 20
 
 
 def _fresh_state(topic):

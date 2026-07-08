@@ -235,6 +235,18 @@ def reddit_search(
     # One (upvotes, block, url) bundle per post so the upvote count stays glued
     # to its text and url through the sort below — sorting the blocks alone would
     # desync the parallel urls list.
+    # Comment noise floor (spec D7, 2026-07-08): comments scoring under 5
+    # upvotes are dropped before they're ever formatted — never enter
+    # reddit_text at all, so neither gap_agent's quotes nor _finalize's
+    # ambiguity check ever see them. Live-tested against real event-8 data:
+    # the thread's two most factually load-bearing comments for that
+    # event's actual ambiguity survived at 37 and 42 upvotes, redundantly
+    # backing up what the lowest-voted (1-2 upvote) copies of the same
+    # signal said — a <5 floor did not blind detection for that event.
+    # Post-level ranking (BUG-009) is untouched; a post with zero surviving
+    # comments still gets its own block (title only), not dropped entirely.
+    _MIN_COMMENT_SCORE = 5
+
     ranked: list[tuple[int, str, str | None]] = []
     for item in items:
         if item.get("dataType") != "post":
@@ -242,6 +254,8 @@ def reddit_search(
         bare_id = str(item.get("id") or "").removeprefix("t3_")
         post_lines = [f"{_tag('POST', item, 'upVotes')} {item.get('title') or ''}"]
         for comment in comments_by_post.get(bare_id, []):
+            if _upvotes(comment, "commentUpVotes") < _MIN_COMMENT_SCORE:
+                continue
             post_lines.append(
                 f"  {_tag('COMMENT', comment, 'commentUpVotes')} {comment.get('body') or ''}"
             )

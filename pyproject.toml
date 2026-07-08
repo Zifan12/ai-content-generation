@@ -55,6 +55,7 @@ dependencies = [
     "langgraph>=0.2.0",
     # Context agent web-search tool
     "tavily-python>=0.5.0",
+    "firecrawl>=4.0.0",
     # Postgres driver (pgvector + async)
     "psycopg[binary]>=3.2.0",
     "asyncpg>=0.30.0",

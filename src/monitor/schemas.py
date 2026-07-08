@@ -66,8 +66,9 @@ class IdeaFitResult(BaseModel):
 class PlanDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    next_action: Literal["reddit_search", "tavily_search", "stop"]
-    next_query: str  # search query to use; empty when next_action == "stop"
+    next_action: Literal["reddit_search", "tavily_search", "firecrawl_extract", "stop"]
+    next_query: str  # search query to use; empty unless next_action is reddit_search/tavily_search
+    next_url: str = ""  # URL to fetch in full; set only when next_action == "firecrawl_extract"
 
 
 class ContextSynthesis(BaseModel):
