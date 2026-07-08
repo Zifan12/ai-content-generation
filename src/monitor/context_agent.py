@@ -62,7 +62,11 @@ _FINALIZE_MAX_TOKENS = 4096
 # 20 posts — ~3.7x over-real, tripping the $2.00 run ceiling at ~$0.69 of
 # actual spend and understating research the budget could still afford).
 _REDDIT_MAX_POSTS = 5
-_REDDIT_MAX_COMMENTS_PER_POST = 20
+# BUG-024: halved 2026-07-08 — no formula exists for the "right" fetch:keep
+# ratio (confirmed absent, second-brain check logged in bugs.md), this is a
+# reasoned, conservative first cut of the single biggest cost driver
+# (5 * (1+20) + 10 = 115 items/call -> 5 * (1+10) + 10 = 65, ~43% cheaper).
+_REDDIT_MAX_COMMENTS_PER_POST = 10
 _REDDIT_MAX_COMMENTS_COUNT = 10
 
 # Character budget for gather()'s reaction_sample (BUG-023 follow-up). The
