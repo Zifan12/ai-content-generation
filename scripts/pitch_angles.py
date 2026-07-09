@@ -599,7 +599,7 @@ def main() -> None:
     # session burned ~$9.40 because defaults were 10 srs × 10 posts × 50 comments).
     # Path B (--topic) bypasses this guard: it uses reddit_search in search-mode
     # (one topic, not N subreddits), cost-guarded inside the tool itself plus the
-    # context agent's $2.00 run ceiling. --from-dataset also bypasses it: a
+    # context agent's $1.00 run ceiling. --from-dataset also bypasses it: a
     # dataset replay is a free GET, there is no Apify spend to guard.
     if args.topic is None and args.from_dataset is None:
         from src.monitor.tools.reddit_search import _APIFY_COST_PER_ITEM

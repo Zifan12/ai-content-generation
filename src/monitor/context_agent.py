@@ -46,7 +46,18 @@ _DEFAULT_MAX_TOOL_CALLS = 20
 # theory pick reddit_search all 5 times, so per-call limits alone still
 # allow ~$4-5/run. This is the incident-driven fix for BUG-003's root cause
 # (a real, unbounded-in-practice Apify spend before this cap existed).
-_DEFAULT_MAX_RUN_APIFY_COST = 2.00
+_DEFAULT_MAX_RUN_APIFY_COST = 1.00
+
+# BUG-026: 16 differently-worded reddit_search calls on a small subreddit kept
+# re-finding the same ~15 posts (a real $2.115 run) — the planner's own
+# next_action had no way to notice repetition it can't see in a growing wall
+# of text. This is a code-enforced saturation guard, not left to LLM
+# judgment: after this many reddit_search calls in a row return zero URLs
+# not already in state.urls, decide_next_step forces a stop regardless of
+# what the planner wants next. 3 chosen deliberately patient-over-eager
+# (user call, 2026-07-08) — no formula for the "right" number, tune from
+# observed runs.
+_DEFAULT_MAX_CONSECUTIVE_STALE_REDDIT_CALLS = 3
 
 # ContextSynthesis (summary + key_moments) over long gathered reddit/web text
 # overflows parse()'s shared 1024 default and truncates mid-JSON (same failure
@@ -157,19 +168,31 @@ class ContextAgentState(BaseModel):
     unresolved_facts: list[str]
     summary: str
     key_moments: list[str]
+    # How many reddit_search calls in a row have returned zero URLs not
+    # already in `urls` — a saturation signal decide_next_step uses to force
+    # a stop the LLM planner's own next_action can't see (2026-07-08 fix:
+    # 16 differently-worded reddit_search calls on a small subreddit kept
+    # re-finding the same ~15 posts; the planner had no way to notice).
+    consecutive_stale_reddit_calls: int
 
 
 @traced(name="context_agent.decide_next_step")
 def decide_next_step(
-    state: ContextAgentState, *, max_tool_calls: int, max_run_apify_cost: float
+    state: ContextAgentState,
+    *,
+    max_tool_calls: int,
+    max_run_apify_cost: float,
+    max_consecutive_stale_reddit_calls: int,
 ) -> str:
     """Decide whether the agent loop should keep going or stop.
 
     Enforces the floor/rubric/ceiling stop condition: the ceiling is checked
-    first and overrides everything (hard cost cap, no exceptions); the floor
-    is checked next and overrides the LLM's own "stop" choice if neither
-    tool has been called yet; otherwise the LLM's ``next_action`` decision is
-    honored as-is.
+    first and overrides everything (hard cost cap, no exceptions); the
+    saturation guard is checked next (also a hard override — a small
+    subreddit exhausted of new content should stop regardless of remaining
+    budget); the floor is checked next and overrides the LLM's own "stop"
+    choice if neither tool has been called yet; otherwise the LLM's
+    ``next_action`` decision is honored as-is.
 
     Args:
         state: Current agent state.
@@ -180,6 +203,11 @@ def decide_next_step(
             ``max_tool_calls`` — reddit_search's own guard only bounds a
             single call, not a run that can call it up to ``max_tool_calls``
             times.
+        max_consecutive_stale_reddit_calls: Hard cap on consecutive
+            reddit_search calls that returned zero URLs not already seen
+            (BUG-026) — a code-enforced saturation guard, since the LLM
+            planner has no reliable way to notice repetition from raw
+            accumulated text alone.
 
     Returns:
         ``"reddit_search"``, ``"tavily_search"``, ``"firecrawl_extract"``, or
@@ -190,6 +218,8 @@ def decide_next_step(
     if total_calls >= max_tool_calls:
         return "stop"
     if state.apify_cost_estimate >= max_run_apify_cost:
+        return "stop"
+    if state.consecutive_stale_reddit_calls >= max_consecutive_stale_reddit_calls:
         return "stop"
 
     if state.next_action == "stop":
@@ -258,10 +288,12 @@ class ContextAgent:
         llm: AnthropicLLM | OpenRouterLLM,
         max_tool_calls: int = _DEFAULT_MAX_TOOL_CALLS,
         max_run_apify_cost: float = _DEFAULT_MAX_RUN_APIFY_COST,
+        max_consecutive_stale_reddit_calls: int = _DEFAULT_MAX_CONSECUTIVE_STALE_REDDIT_CALLS,
     ):
         self.llm = llm
         self.max_tool_calls = max_tool_calls
         self.max_run_apify_cost = max_run_apify_cost
+        self.max_consecutive_stale_reddit_calls = max_consecutive_stale_reddit_calls
 
     @traced(name="context_agent.lookup_community")
     def _lookup_community(self, state: ContextAgentState) -> dict:
@@ -373,6 +405,9 @@ class ContextAgent:
         text = f"{state.reddit_text}\n\n{result.text}" if state.reddit_text else result.text
         calls = state.reddit_calls + 1
 
+        new_urls = [url for url in result.urls if url not in state.urls]
+        stale_streak = 0 if new_urls else state.consecutive_stale_reddit_calls + 1
+
         return {
             "reddit_text": text,
             "reddit_calls": calls,
@@ -384,6 +419,7 @@ class ContextAgent:
             ),
             "urls": state.urls + result.urls,
             "reddit_queries": state.reddit_queries + [_effective_query(state)],
+            "consecutive_stale_reddit_calls": stale_streak,
         }
 
     @traced(name="context_agent.act_tavily")
@@ -498,6 +534,7 @@ class ContextAgent:
                 decide_next_step,
                 max_tool_calls=self.max_tool_calls,
                 max_run_apify_cost=self.max_run_apify_cost,
+                max_consecutive_stale_reddit_calls=self.max_consecutive_stale_reddit_calls,
             ),
             {
                 "reddit_search": "reddit_search",
@@ -536,6 +573,7 @@ class ContextAgent:
             unresolved_facts=[],
             summary="",
             key_moments=[],
+            consecutive_stale_reddit_calls=0,
         )
 
         app = self.build_graph()

@@ -81,8 +81,11 @@ def test_decide_next_step():
         unresolved_facts=[],
         summary="",
         key_moments=[],
+        consecutive_stale_reddit_calls=0,
     )
-    result = decide_next_step(state, max_tool_calls=5, max_run_apify_cost=2.00)
+    result = decide_next_step(
+        state, max_tool_calls=5, max_run_apify_cost=2.00, max_consecutive_stale_reddit_calls=3
+    )
 
     assert result == "stop"
 
@@ -108,8 +111,40 @@ def test_decide_next_step_apify_cost_ceiling():
         unresolved_facts=[],
         summary="",
         key_moments=[],
+        consecutive_stale_reddit_calls=0,
     )
-    result = decide_next_step(state, max_tool_calls=5, max_run_apify_cost=2.00)
+    result = decide_next_step(
+        state, max_tool_calls=5, max_run_apify_cost=2.00, max_consecutive_stale_reddit_calls=3
+    )
+
+    assert result == "stop"
+
+
+def test_decide_next_step_stale_streak_ceiling():
+    """BUG-026 regression: the saturation guard overrides the LLM's own
+    next_action, same as the cost ceiling — even when calls/cost are both
+    well under their caps."""
+    state = ContextAgentState(
+        topic="",
+        reddit_text="",
+        tavily_text="",
+        reddit_calls=3,
+        tavily_calls=0,
+        apify_cost_estimate=0.39,
+        within_community="",
+        next_action="reddit_search",
+        next_query="one more phrase",
+        urls=[],
+        reddit_queries=[],
+        tavily_queries=[],
+        unresolved_facts=[],
+        summary="",
+        key_moments=[],
+        consecutive_stale_reddit_calls=3,
+    )
+    result = decide_next_step(
+        state, max_tool_calls=20, max_run_apify_cost=1.50, max_consecutive_stale_reddit_calls=3
+    )
 
     assert result == "stop"
 
@@ -134,6 +169,7 @@ def test_plan_returns_llm_decision():
         unresolved_facts=[],
         summary="",
         key_moments=[],
+        consecutive_stale_reddit_calls=0,
     )
 
     result = agent._plan(state)
@@ -204,6 +240,7 @@ def test_finalize_returns_llm_synthesis():
         unresolved_facts=[],
         summary="",
         key_moments=[],
+        consecutive_stale_reddit_calls=0,
     )
 
     result = agent._finalize(state)
@@ -247,6 +284,7 @@ def test_act_reddit_appends_to_existing_text(monkeypatch):
         unresolved_facts=[],
         summary="",
         key_moments=[],
+        consecutive_stale_reddit_calls=0,
     )
 
     result = agent._act_reddit(state)
@@ -262,7 +300,54 @@ def test_act_reddit_appends_to_existing_text(monkeypatch):
         "apify_cost_estimate": 0.86 + _expected_reddit_call_cost(),
         "urls": ["https://reddit.com/r/x/comments/0", "https://reddit.com/r/x/comments/1"],
         "reddit_queries": ["earlier query", "some query"],
+        "consecutive_stale_reddit_calls": 0,
     }
+
+
+def test_act_reddit_resets_stale_streak_when_new_url_found(monkeypatch):
+    """BUG-026 regression: a call that finds even one genuinely new URL must
+    reset the streak, not just start it at 0 — proves reset, not default."""
+    monkeypatch.setattr(
+        context_agent_module,
+        "reddit_search",
+        lambda query, within_community=None, **kwargs: ToolResult(
+            text="fresh", urls=["https://reddit.com/r/x/comments/new"]
+        ),
+    )
+    agent = ContextAgent(llm=object())
+    state = _fresh_state("Wistoria").model_copy(
+        update={
+            "urls": ["https://reddit.com/r/x/comments/old"],
+            "consecutive_stale_reddit_calls": 2,
+        }
+    )
+
+    result = agent._act_reddit(state)
+
+    assert result["consecutive_stale_reddit_calls"] == 0
+
+
+def test_act_reddit_increments_stale_streak_when_no_new_urls(monkeypatch):
+    """BUG-026 regression: a call that returns only already-seen URLs must
+    increment the streak instead of resetting it."""
+    monkeypatch.setattr(
+        context_agent_module,
+        "reddit_search",
+        lambda query, within_community=None, **kwargs: ToolResult(
+            text="same old", urls=["https://reddit.com/r/x/comments/old"]
+        ),
+    )
+    agent = ContextAgent(llm=object())
+    state = _fresh_state("Wistoria").model_copy(
+        update={
+            "urls": ["https://reddit.com/r/x/comments/old"],
+            "consecutive_stale_reddit_calls": 1,
+        }
+    )
+
+    result = agent._act_reddit(state)
+
+    assert result["consecutive_stale_reddit_calls"] == 2
 
 
 def test_act_firecrawl_extract_skips_unknown_url(monkeypatch, caplog):
@@ -360,6 +445,7 @@ def test_act_firecrawl_extract_failure_counts_toward_loop_termination_cap(monkey
         state_after,
         max_tool_calls=agent.max_tool_calls,
         max_run_apify_cost=agent.max_run_apify_cost,
+        max_consecutive_stale_reddit_calls=agent.max_consecutive_stale_reddit_calls,
     ) == "stop"
 
 
@@ -378,6 +464,7 @@ def _fresh_state(topic):
         tavily_calls=0, apify_cost_estimate=0.0, within_community="",
         next_action="", next_query="", urls=[], reddit_queries=[], tavily_queries=[],
         unresolved_facts=[], summary="", key_moments=[],
+        consecutive_stale_reddit_calls=0,
     )
 
 
@@ -471,6 +558,7 @@ def test_act_tavily_starts_fresh_when_empty(monkeypatch):
         unresolved_facts=[],
         summary="",
         key_moments=[],
+        consecutive_stale_reddit_calls=0,
     )
 
     result = agent._act_tavily(state)
@@ -500,6 +588,7 @@ def test_build_context_bundle_both_sources():
         unresolved_facts=[],
         summary="Fans were furious the finale denied the long-teased reunion.",
         key_moments=["showrunner confirms no reunion planned"],
+        consecutive_stale_reddit_calls=0,
     )
 
     bundle = build_context_bundle(state)
@@ -531,6 +620,7 @@ def test_build_context_bundle_no_sources():
         unresolved_facts=[],
         summary="",
         key_moments=[],
+        consecutive_stale_reddit_calls=0,
     )
 
     bundle = build_context_bundle(state)
@@ -555,6 +645,7 @@ def test_build_context_bundle_threads_unresolved_facts():
         unresolved_facts=["whether the lead character is confirmed dead"],
         summary="",
         key_moments=[],
+        consecutive_stale_reddit_calls=0,
     )
 
     bundle = build_context_bundle(state)
@@ -620,8 +711,11 @@ def test_decide_next_step_passthrough():
         unresolved_facts=[],
         summary="",
         key_moments=[],
+        consecutive_stale_reddit_calls=0,
     )
-    result = decide_next_step(state, max_tool_calls=5, max_run_apify_cost=2.00)
+    result = decide_next_step(
+        state, max_tool_calls=5, max_run_apify_cost=2.00, max_consecutive_stale_reddit_calls=3
+    )
 
     assert result == "tavily_search"
 
@@ -643,8 +737,11 @@ def test_decide_next_step_floor_override_reddit():
         unresolved_facts=[],
         summary="",
         key_moments=[],
+        consecutive_stale_reddit_calls=0,
     )
-    result = decide_next_step(state, max_tool_calls=5, max_run_apify_cost=2.00)
+    result = decide_next_step(
+        state, max_tool_calls=5, max_run_apify_cost=2.00, max_consecutive_stale_reddit_calls=3
+    )
 
     assert result == "reddit_search"
 
@@ -666,8 +763,11 @@ def test_decide_next_step_floor_override_tavily():
         unresolved_facts=[],
         summary="",
         key_moments=[],
+        consecutive_stale_reddit_calls=0,
     )
-    result = decide_next_step(state, max_tool_calls=5, max_run_apify_cost=2.00)
+    result = decide_next_step(
+        state, max_tool_calls=5, max_run_apify_cost=2.00, max_consecutive_stale_reddit_calls=3
+    )
 
     assert result == "tavily_search"
 
@@ -689,8 +789,11 @@ def test_decide_next_step_floor_satisfied():
         unresolved_facts=[],
         summary="",
         key_moments=[],
+        consecutive_stale_reddit_calls=0,
     )
-    result = decide_next_step(state, max_tool_calls=5, max_run_apify_cost=2.00)
+    result = decide_next_step(
+        state, max_tool_calls=5, max_run_apify_cost=2.00, max_consecutive_stale_reddit_calls=3
+    )
 
     assert result == "stop"
 
