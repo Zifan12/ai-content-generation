@@ -46,7 +46,6 @@ SAMPLE_GAP = GapAnalysis(
     dominant_emotion="longing",
     audience_want="to see the dragon actually breathe fire",
     evidence_quotes=["I wish we got to see it actually breathe fire."],
-    virality_window_hours=18.0,
     reasoning="The crowd was teased a payoff the footage never delivered.",
 )
 

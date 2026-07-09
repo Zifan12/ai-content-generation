@@ -68,7 +68,6 @@ LIVE_GAP = GapAnalysis(
         "All that buildup and we never see him actually snap. Robbed.",
         "Eight seasons of teasing the rampage and they cut to black.",
     ],
-    virality_window_hours=24.0,
     reasoning="The finale promised an explosion of violence and withheld it; fans feel denied the payoff.",
 )
 

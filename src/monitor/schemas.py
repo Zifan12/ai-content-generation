@@ -23,7 +23,6 @@ class GapAnalysis(BaseModel):
     dominant_emotion: str
     audience_want: str
     evidence_quotes: list[str] = Field(default_factory=list, max_length=3)
-    virality_window_hours: float
     reasoning: str
 
 
@@ -110,6 +109,9 @@ class ContextBundle(BaseModel):
         if self.references:
             lines.append("references:")
             lines.append("\n".join(f"- {r}" for r in self.references))
+        if self.unresolved_facts:
+            lines.append("unresolved_facts:")
+            lines.append("\n".join(f"- {f}" for f in self.unresolved_facts))
         lines.append("</context>")
         return "\n".join(lines)
 

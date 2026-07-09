@@ -77,7 +77,6 @@ def _sample_gap() -> GapAnalysis:
         dominant_emotion="longing",
         audience_want="to see the dragon actually breathe fire",
         evidence_quotes=[SAMPLE_QUOTE],
-        virality_window_hours=18.0,
         reasoning="The crowd was teased a payoff the footage never delivered.",
     )
 
@@ -89,7 +88,6 @@ def _empty_quotes_gap() -> GapAnalysis:
         dominant_emotion="longing",
         audience_want="to see the dragon actually breathe fire",
         evidence_quotes=[],
-        virality_window_hours=18.0,
         reasoning="No direct quotes were captured, only aggregate sentiment.",
     )
 

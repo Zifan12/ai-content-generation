@@ -191,25 +191,34 @@ def estimate_pitch_credits(pitch: StoryPitch) -> float:
     return len(pitch.beats) * (_STILL_CREDITS + _CLIP_CREDITS)
 
 
-def _format_playbook(include_example: bool = True) -> str:
+def _format_playbook(include_example: bool = True, include_description: bool = True) -> str:
     """
     Render every mode playbook entry as a text block for prompt injection.
 
     Returns all modes (Option A: the pitcher sees the full menu and picks per
-    pitch), each with its description, default arc, and craft emphasis. The
-    per-mode worked example (``example_logline``) is appended only when
-    ``include_example`` is True — the production default, byte-identical to the
-    original single-arg behaviour. The groundedness ablation harness calls with
-    ``include_example=False`` to strip ONLY that one line (holding description,
-    arc, and craft emphasis fixed), so any change in pitch groundedness is
-    attributable to the worked example alone, not to a wholesale playbook change.
+    pitch), each with its default arc and craft emphasis. The per-mode
+    ``description`` is included only when ``include_description`` is True, and
+    the worked example (``example_logline``) only when ``include_example`` is
+    True. Both default True — byte-identical to the original behaviour when
+    called with no args. ``include_example=False`` is the groundedness
+    ablation's existing toggle (strips only that one line).
+    ``include_description=False`` is the production default set in
+    ``StoryPitcher.__init__`` — ``description`` bakes in named-show anchors
+    ("the Homelander pattern", "the Laufey pattern") that risk the same
+    anchoring-toward-genericness problem the ablation already proved for
+    ``example_logline``, plus mode-locked tone words ("positive, cathartic",
+    "deadpan... funny, fast") that over-specify a register the model should
+    read from the actual gap instead. ``arc`` and ``craft_emphasis`` alone
+    still steer wish/satire correctly (parked 2026-07-09 pending a real
+    ablation of this toggle, same rigor as the example_logline one, if this
+    ever needs re-validating).
     """
     entries = load_mode_playbook()
     blocks = [
         (
             f"MODE: {name}\n"
-            f"{entry.description}\n"
-            f"arc (default beat shape): {', '.join(entry.arc)}\n"
+            + (f"{entry.description}\n" if include_description else "")
+            + f"arc (default beat shape): {', '.join(entry.arc)}\n"
             f"craft emphasis: {entry.craft_emphasis}"
             + (f"\nexample logline: {entry.example_logline}" if include_example else "")
         )
@@ -244,12 +253,12 @@ class StoryPitcher:
     def __init__(self, llm: AnthropicLLM | OpenRouterLLM, embedder: TextEmbedder):
         self.llm = llm
         self.embedder = embedder
-        # Strip the worked example: the groundedness ablation
-        # (scripts/run_pitch_ablation.py) showed the playbook's example_logline
-        # anchors the pitcher toward generic pitches — dropping it raised
-        # grounded / less-generic scores on all three metrics (n=4). Mode + arc
-        # guidance (kept) still steer wish/satire correctly without it.
-        self.playbook_block = _format_playbook(include_example=False)
+        # Strip the worked example (ablation-validated, n=4, all 3 metrics
+        # improved) and the per-mode description (same named-anchor risk,
+        # untested but toggled off on the strength of the same finding — see
+        # _format_playbook's docstring). Mode name + arc + craft_emphasis
+        # (kept) still steer wish/satire correctly without either.
+        self.playbook_block = _format_playbook(include_example=False, include_description=False)
 
     @traced(name="story_pitcher")
     def pitch(

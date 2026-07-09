@@ -418,7 +418,6 @@ def run_pitch_pipeline(
         "mode": chosen_record.mode,
         "story": chosen_entry["pitch"].model_dump(mode="json"),
         "trendiness_score": chosen_entry["event"].trendiness_score,
-        "virality_window_hours": chosen_entry["gap"].virality_window_hours,
     }
     db.commit()
 
