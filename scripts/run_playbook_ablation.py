@@ -36,7 +36,8 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parent.parent / "config" / ".env")
 
-from src.monitor.schemas import GapAnalysis, StoryPitchSlate, TrendingEvent  # noqa: E402
+from src.monitor.gap_agent import GapAgent  # noqa: E402
+from src.monitor.schemas import StoryPitchSlate, TrendingEvent  # noqa: E402
 from src.monitor.story_pitcher import StoryPitcher  # noqa: E402
 from src.providers.llm.factory import llm_for_seat  # noqa: E402
 from src.rag.embedder import BgeM3Embedder  # noqa: E402
@@ -53,33 +54,34 @@ _BLINDED_PATH = _OUT_DIR / "ab_blinded.md"
 _KEY_PATH = _OUT_DIR / "ab_key.md"
 
 
-def _load_pairs(fixture: Path, limit: int | None) -> list[tuple[TrendingEvent, GapAnalysis]]:
-    """Rebuild (event, gap) pairs from the fixture (mirrors run_pitch_ablation).
+def _load_events(fixture: Path, limit: int | None) -> list[TrendingEvent]:
+    """Rebuild TrendingEvents from the fixture — events ONLY, stored gaps ignored.
 
-    Reads UTF-8 and drops the stale ``virality_window_hours`` key from each gap
-    (the fixture predates its removal from GapAnalysis, which now forbids extras).
-    Event metadata beyond the persisted fields is synthesized — the fixture is a
-    scoring input, not a live scrape.
+    The fixture's stored gaps were written by the pre-2026-07-09 gap_agent and no
+    longer match the current pipeline, so we regenerate a fresh gap per event with
+    today's gap_agent instead (see :func:`main`). The events themselves are just
+    scraped reddit text and stay valid. Reads UTF-8; event metadata beyond the
+    persisted fields is synthesized (the fixture is a scoring input, not a scrape).
     """
     raw_entries = json.loads(fixture.read_text(encoding="utf-8"))[:limit]
-    pairs: list[tuple[TrendingEvent, GapAnalysis]] = []
+    events: list[TrendingEvent] = []
     for entry in raw_entries:
-        event = TrendingEvent.model_validate(
-            {
-                **{
-                    k: entry[k]
-                    for k in ("headline", "reaction_sample", "trendiness_score",
-                              "virality_window_hours")
-                },
-                "subreddit": "",
-                "url": "",
-                "raw_source_data": {},
-                "origin": "manual",
-            }
+        events.append(
+            TrendingEvent.model_validate(
+                {
+                    **{
+                        k: entry[k]
+                        for k in ("headline", "reaction_sample", "trendiness_score",
+                                  "virality_window_hours")
+                    },
+                    "subreddit": "",
+                    "url": "",
+                    "raw_source_data": {},
+                    "origin": "manual",
+                }
+            )
         )
-        gap_data = {k: v for k, v in entry["gap"].items() if k != "virality_window_hours"}
-        pairs.append((event, GapAnalysis.model_validate(gap_data)))
-    return pairs
+    return events
 
 
 def _format_slate(slate: StoryPitchSlate) -> str:
@@ -103,27 +105,34 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=None, help="cap events (cost control)")
     args = parser.parse_args()
 
-    pairs = _load_pairs(args.fixture, args.limit)
-    if not pairs:
-        log.error("No fixture pairs loaded from %s", args.fixture)
+    events = _load_events(args.fixture, args.limit)
+    if not events:
+        log.error("No events loaded from %s", args.fixture)
         raise SystemExit(1)
-    log.info("Playbook ablation over %d events (2 arms each)", len(pairs))
+    log.info("Playbook ablation over %d events (fresh gap + 2 arms each)", len(events))
 
     # One embedder shared by both pitchers (loading BgeM3 twice just doubles VRAM).
     # Arm "with" keeps the production playbook; arm "without" strips it entirely —
     # the single changed variable.
     embedder = BgeM3Embedder()
-    pitcher_with = StoryPitcher(llm=llm_for_seat("story_pitcher"), embedder=embedder)
+    gap_agent = GapAgent(llm=llm_for_seat("gap_agent"))
+    # use_playbook=True opts the "with" arm into the (stripped) playbook — the
+    # production default is now OFF (2026-07-10), so this must be explicit.
+    pitcher_with = StoryPitcher(
+        llm=llm_for_seat("story_pitcher"), embedder=embedder, use_playbook=True
+    )
     pitcher_without = StoryPitcher(llm=llm_for_seat("story_pitcher"), embedder=embedder)
     pitcher_without.playbook_block = ""
 
     blinded_blocks: list[str] = []
     key_blocks: list[str] = []
 
-    for event, gap in pairs:
-        # Per-event isolation (mirrors run_pitch_ablation): a failed pitch drops
-        # THIS event and keeps the rest.
+    for event in events:
+        # Regenerate the gap with TODAY's gap_agent (the fixture's stored gaps are
+        # stale), then pitch BOTH arms from that same fresh gap so the playbook is
+        # the only difference. A failed gap/pitch drops THIS event and keeps the rest.
         try:
+            gap = gap_agent.analyze(event)
             slate_with = pitcher_with.pitch(event, gap)
             slate_without = pitcher_without.pitch(event, gap)
         except Exception as e:

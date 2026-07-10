@@ -123,12 +123,13 @@ def _sample_bundle() -> ContextBundle:
 def test_pitch_returns_slate_and_injects_playbook_gap_event() -> None:
     llm = FakeLLM(_slate())
     embedder = FakeEmbedder()
-    pitcher = StoryPitcher(llm=llm, embedder=embedder)
+    # Opt into the playbook (default is now off, 2026-07-10) to test injection.
+    pitcher = StoryPitcher(llm=llm, embedder=embedder, use_playbook=True)
 
     result = pitcher.pitch(SAMPLE_EVENT, SAMPLE_GAP)
 
     assert len(result.pitches) == 2
-    # Both playbook modes injected (Option A: full menu in every prompt).
+    # Both playbook modes injected when use_playbook=True (Option A: full menu).
     assert "wish" in llm.prompt
     assert "satire" in llm.prompt
     assert SAMPLE_EVENT.headline in llm.prompt

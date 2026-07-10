@@ -250,15 +250,25 @@ def _event_block(event: TrendingEvent) -> str:
 
 
 class StoryPitcher:
-    def __init__(self, llm: AnthropicLLM | OpenRouterLLM, embedder: TextEmbedder):
+    def __init__(
+        self,
+        llm: AnthropicLLM | OpenRouterLLM,
+        embedder: TextEmbedder,
+        use_playbook: bool = False,
+    ):
         self.llm = llm
         self.embedder = embedder
-        # Strip the worked example (ablation-validated, n=4, all 3 metrics
-        # improved) and the per-mode description (same named-anchor risk,
-        # untested but toggled off on the strength of the same finding — see
-        # _format_playbook's docstring). Mode name + arc + craft_emphasis
-        # (kept) still steer wish/satire correctly without either.
-        self.playbook_block = _format_playbook(include_example=False, include_description=False)
+        # Playbook OFF by default (2026-07-10 user decision). When on, inject the
+        # STRIPPED playbook: no worked example (ablation-validated, n=4, all 3
+        # metrics improved) and no per-mode description (same named-anchor risk) —
+        # only mode name + arc + craft_emphasis, which steer wish/satire without
+        # either. When off, playbook_block is "" and the <playbook> tag renders
+        # empty. Flip use_playbook=True to restore the (stripped) playbook.
+        self.playbook_block = (
+            _format_playbook(include_example=False, include_description=False)
+            if use_playbook
+            else ""
+        )
 
     @traced(name="story_pitcher")
     def pitch(
