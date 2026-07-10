@@ -48,19 +48,23 @@ and the chain-contract `model_validator` are all removed.
 
 _Avoid_: "chained continuity", "segment", "3-shot", "handoff", "device menu" — retired 2026-06-22.
 
-## Premise source — news-reactive cultural monitoring (2026-06-23)
+## Premise source — reaction-driven cultural monitoring (current: 2026-06-27, was 2026-06-23)
 
-Where the writer's **premise** comes from (resolved 2026-06-23, superseding both grounded `premise_generator.py` and pure imagination — both shelved, dormant not deleted). An on-demand **Cultural Monitor** (`src/monitor/`, PLANNED) scans Reddit for trending events; a **Gap Agent** reads the audience reaction and names the *unmet desire*; an **Angle Pitcher** proposes 3 distinct takes. The human approves one; its `take` becomes the writer's premise. Insight: a trending event carries a built-in audience — satisfy the unmet desire and you ride it, instead of hoping the algorithm finds an invented premise. Spec: `docs/superpowers/specs/2026-06-23-audience-reaction-content-system-design.md`.
+Where the writer's **premise** comes from. Superseded twice: grounded `premise_generator.py` and pure imagination (both shelved 2026-06-23), then the 2026-06-23 news-reactive design itself narrowed to **reaction-driven** on 2026-06-27 (any recognizable fictional character mid-reaction-wave, not just news). `src/monitor/` is BUILT and live (not planned): a scraper/event extractor watches Reddit for trending events (Path A) or a **Context Agent** researches a user-given topic (Path B, `--topic`); an **Idea-Fit Gate** screens for mode + heat + recency; a **Gap Agent** reads the reaction and names the *unmet desire*; a **Story Pitcher** proposes a slate of distinct takes; a **Story-Craft Gate** judges each pitch against craft rules (bounded-retry repair on failure). The human approves one; its take becomes the writer's premise. Full pipeline detail lives in this repo's `CLAUDE.md` (Architecture section), not here — this entry is vocabulary only.
 
-_Avoid_: treating "imagination-led premise" or "grounded premise" as the live path — both retired 2026-06-23.
+_Avoid_: treating "imagination-led premise", "grounded premise", or "news-reactive" (narrower than the current reaction-driven scope) as the live path.
 
 ## Gap (audience-reaction)
 
-The specific **unmet desire** behind a trending reaction — what the audience would be satisfied by if it existed. Output of the Gap Agent (`GapAnalysis`: `dominant_emotion`, `audience_want`, `gap_type` ∈ {alternate_reality, vindication, ridicule, explanation, tribute, speculation, solidarity, other}, `producibility_score`, `virality_window_hours`). Hard rule: a gap is a *positive desire* ("people wanted the climax they were teased and never got"), NOT a negative reaction ("people hated the ending"). The agent reads SCRAPED reactions — it cannot rely on the LLM's own knowledge of the event (cutoff), so reaction-text quality is the system's most fragile dependency.
+The specific **unmet desire** behind a trending reaction — what the audience would be satisfied by if it existed. Output of the Gap Agent (`GapAnalysis`: `dominant_emotion`, `audience_want`, `evidence_quotes` [0-3 verbatim quotes], `reasoning`). `audience_want` is phrased in the model's own words, never copied reaction slang — that's what `evidence_quotes` is for. When the reaction never states the want outright, the agent is licensed to hypothesize it from context/genre convention, and must hedge in `reasoning` when the hypothesis rests on an unresolved fact. Hard rule: a gap is a *positive desire* ("people wanted the climax they were teased and never got"), NOT a negative reaction ("people hated the ending"). Optionally grounded by a `ContextBundle` (Path B research) appended to the prompt.
 
-## Angle Pitch
+_Avoid_: `gap_type` enum, `producibility_score`, `virality_window_hours` on `GapAnalysis` — all retired; `virality_window_hours` lives on `TrendingEvent` only.
 
-One of 3 distinct creative takes the Angle Pitcher proposes per gap (`AnglePitch`: `take`, free-text `format_description`, `render_backend`, `estimated_cost_credits`, `gap_satisfaction_rationale`, `legal_flag`). The three must differ meaningfully (loose embedding-diversity check). Format is open-ended; the **render backend** is what's actually buildable today — v1 = `visual_satire` (single-shot) only; `commentary_voiceover` and `narrative_alt` (Seedance 2.5) are later phases, substituted by the Format Router until built. `legal_flag` marks real-person/IP likeness; posture is a risk dial leaning parody/commentary, NOT abstract-only.
+## Story Pitch
+
+One of 2-3 distinct creative takes the Story Pitcher proposes per gap (`StoryPitch`: `logline`, `mode` [wish | satire | other], `characters`, `desired_moment`, `scene_setting`, 3-5 `beats` [`StoryBeat`: role, visual_line, shot_size, optional dialogue], `caption_policy`, `hook_line`, `why_it_lands`, `legal_flag`). Craft rules enforced at validation: beats can't all share one `shot_size`, at most one `hero_moment` beat, `hook_line` present iff `caption_policy` is `hook_only`. `legal_flag` marks real-person/IP likeness.
+
+_Avoid_: "Angle Pitch" / `AnglePitch` / `render_backend` / `estimated_cost_credits` — the routing-era model, removed in the Task 7 orchestration swap. Current term is Story Pitch.
 
 ## Executor
 
