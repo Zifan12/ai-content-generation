@@ -17,6 +17,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.models.web_research_chunk import WebResearchChunk
@@ -43,6 +44,9 @@ _OVERLAP_CHARS = 120
 # Embed in small batches: BGE-M3 at batch=32 OOMs the local 4070 with the desktop
 # open (memory: gpu_vram_budget); 8 is the safe size.
 _EMBED_BATCH_SIZE = 8
+# Default number of chunks a retrieve() call returns. Small suits the precision
+# "find THE fact" use case; empirical, tune from real runs (no universal best).
+_DEFAULT_RETRIEVE_K = 3
 
 
 def _clean_block(block: str) -> str:
@@ -147,3 +151,42 @@ def index_web_text(
     session.add_all(rows)
     session.commit()
     return len(rows)
+
+
+def retrieve(
+    topic: str,
+    query: str,
+    embedder: TextEmbedder,
+    session: Session,
+    k: int = _DEFAULT_RETRIEVE_K,
+) -> list[str]:
+    """Return the ``k`` chunk texts most relevant to ``query``, scoped to ``topic``.
+
+    Embeds ``query`` with the SAME embedder used at index time (query and chunk
+    vectors must share one space), then runs a pgvector cosine-nearest search over
+    this topic's :class:`WebResearchChunk` rows.
+
+    No score floor in v1: a topic with no truly relevant chunk still returns its
+    ``k`` nearest (add a similarity threshold if real runs show junk). Returns
+    fewer than ``k`` when the topic has fewer chunks, and ``[]`` when it has none.
+
+    Args:
+        topic: the run's topic — retrieval is scoped to rows carrying this topic.
+        query: text to find relevant chunks for (typically an unsupported pitch
+            claim from the Task 1.4 groundedness trigger).
+        embedder: the same embedder ``index_web_text`` used (injected — sharing the
+            already-loaded model avoids a ~2.27GB reload).
+        session: DB session (injected).
+        k: maximum number of chunks to return, nearest first.
+
+    Returns:
+        Up to ``k`` ``chunk_text`` strings, ordered nearest first.
+    """
+    vec = embedder.embed([query])[0]
+    stmt = (
+        select(WebResearchChunk.chunk_text)
+        .where(WebResearchChunk.topic == topic)
+        .order_by(WebResearchChunk.embedding.cosine_distance(vec))
+        .limit(k)
+    )
+    return list(session.execute(stmt).scalars().all())
