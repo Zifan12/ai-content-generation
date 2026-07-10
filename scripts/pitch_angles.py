@@ -26,6 +26,7 @@ from pathlib import Path
 
 from src.models.angle_pitch import AnglePitchRecord
 from src.models.trending_event import TrendingEventRecord
+from src.monitor.fridge import index_web_text
 
 
 def _print_slate(displayed: list[dict]) -> None:
@@ -101,6 +102,8 @@ def run_pitch_pipeline(
     topic: str | None = None,
     force: bool = False,
     single_event_bundle=None,
+    embedder=None,
+    grounding_checker=None,
 ) -> dict | None:
     """Run the monitor pipeline, present the slate, and persist the approved angle.
 
@@ -185,10 +188,17 @@ def run_pitch_pipeline(
             f"[Path B] Apify cost ceiling this run: ${context_agent.max_run_apify_cost:.2f} "
             f"(hard cap, see context_agent.py:decide_next_step)"
         )
-        event, bundle = context_agent.gather(topic)
+        event, bundle, web_text = context_agent.gather(topic)
         print(f"[Path B] Apify cost spent: ${bundle.apify_cost_estimate:.2f}")
         events = [event]
         bundles[id(event)] = bundle
+        # Web-research fridge (Task 1.5): index the RAW web text the agent
+        # gathered (and the bundle discards) so the grounding check can retrieve
+        # canon to check against. Path B only; skipped on dry runs (the fridge is
+        # a DB write) and when no fridge machinery was injected. The inline
+        # conditions also narrow the injected Optionals to non-None for mypy.
+        if grounding_checker is not None and embedder is not None and not dry_run:
+            index_web_text(topic, web_text, embedder, db)
     else:
         raw_events = scraper.fetch()
         events = extractor.extract(raw_events, top_n=top_n)
@@ -286,19 +296,45 @@ def run_pitch_pipeline(
                     event, gap, pitch, verdict.failure_notes, bundle
                 )
                 verdict = story_craft_gate.evaluate(pitch, event, gap)
+
+            # Grounding check (Task 1.5): craft-survivors only, Path B only. A
+            # contradiction with the fridge's canon gets ONE bounded repair
+            # (repitch with the conflicts as failure notes), then grounding is
+            # re-checked — craft is NOT re-judged (ADR-0008 / Q6: the human slate
+            # backstops a craft regression from a grounding fix). The inline
+            # conditions also narrow the injected Optionals for mypy.
+            grounding = None
+            if (
+                verdict.passes
+                and grounding_checker is not None
+                and embedder is not None
+                and topic is not None
+                and not dry_run
+            ):
+                grounding = grounding_checker.check(pitch, topic, embedder, db)
+                if not grounding.coheres and grounding.conflicts:
+                    pitch = story_pitcher.repitch(
+                        event, gap, pitch, "; ".join(grounding.conflicts), bundle
+                    )
+                    grounding = grounding_checker.check(pitch, topic, embedder, db)
+
             entry = {
                 "event": event,
                 "fit": fit,
                 "gap": gap,
                 "pitch": pitch,
                 "verdict": verdict,
+                "grounding": grounding,
                 "bundle": bundle,
             }
-            (displayed if verdict.passes else killed).append(entry)
+            # A pitch reaches the slate only if it passes craft AND does not
+            # contradict canon (a silent/empty fridge coheres by design).
+            passes_all = verdict.passes and (grounding is None or grounding.coheres)
+            (displayed if passes_all else killed).append(entry)
 
     _print_slate(displayed)
     if not displayed:
-        print("\nWave died — every pitch failed the craft gate.")
+        print("\nWave died — every pitch failed the craft gate or contradicted canon.")
 
     if dry_run:
         print("\n[dry-run] nothing persisted.")
@@ -345,6 +381,7 @@ def run_pitch_pipeline(
         """
         pitch = entry["pitch"]
         verdict = entry["verdict"]
+        grounding = entry.get("grounding")
         return AnglePitchRecord(
             trending_event_id=event_records[id(entry["event"])].id,
             take=pitch.logline,
@@ -355,6 +392,9 @@ def run_pitch_pipeline(
             story_json=pitch.model_dump(mode="json"),
             mode=pitch.mode.value,
             craft_verdict_json=verdict.model_dump(mode="json"),
+            grounding_verdict_json=(
+                grounding.model_dump(mode="json") if grounding is not None else None
+            ),
             killed_by_gate=killed_by_gate,
         )
 
@@ -625,6 +665,7 @@ def main() -> None:
     from src.monitor.story_craft_gate import StoryCraftGate
     from src.monitor.story_pitcher import StoryPitcher
     from src.providers.llm.factory import llm_for_seat
+    from src.monitor.pitch_grounding import PitchGroundingChecker
     from src.rag.embedder import BgeM3Embedder
 
     # Path A scraper is built first so --no-llm (a print-only debug path) can
@@ -661,7 +702,10 @@ def main() -> None:
     # provider/model is a YAML edit, not a code change.
     idea_fit_gate = IdeaFitGate(llm=llm_for_seat("idea_fit_gate"))
     gap_agent = GapAgent(llm=llm_for_seat("gap_agent"))
-    story_pitcher = StoryPitcher(llm=llm_for_seat("story_pitcher"), embedder=BgeM3Embedder())
+    # One embedder, shared by the pitcher's RAG and the web-research fridge
+    # (index + grounding retrieval) — a second BgeM3Embedder would reload ~2.27GB.
+    embedder = BgeM3Embedder()
+    story_pitcher = StoryPitcher(llm=llm_for_seat("story_pitcher"), embedder=embedder)
     story_craft_gate = StoryCraftGate(llm=llm_for_seat("story_craft_gate"))
 
     if args.topic is not None:
@@ -670,11 +714,15 @@ def main() -> None:
 
         extractor = None
         context_agent = ContextAgent(llm=llm_for_seat("context_agent"))
+        # Grounding check is Path B only — Path A gathers no web text, so the
+        # fridge stays empty and there is nothing to check against (Task 1.5).
+        grounding_checker = PitchGroundingChecker(llm=llm_for_seat("pitch_grounding"))
         topic = args.topic
     else:
         # Path A: scraper already built above; add the extractor.
         extractor = EventExtractor(llm=llm_for_seat("event_extractor"))
         context_agent = None
+        grounding_checker = None
         topic = None
 
     db = SessionLocal()
@@ -696,6 +744,8 @@ def main() -> None:
             context_agent=context_agent,
             topic=topic,
             force=args.force,
+            embedder=embedder,
+            grounding_checker=grounding_checker,
         )
     finally:
         db.close()

@@ -156,7 +156,7 @@ class ContextAgentState(BaseModel):
 
     topic: str
     reddit_text: str
-    tavily_text: str
+    web_text: str  # tavily_search + firecrawl_extract combined (the <web_gathered> blob)
     reddit_calls: int
     tavily_calls: int
     apify_cost_estimate: float
@@ -292,11 +292,11 @@ def phase0_dump_path(topic: str) -> Path:
     return Path("output") / "phase0" / f"{slug}.txt"
 
 
-def _maybe_dump_phase0_web_text(topic: str, tavily_text: str) -> None:
+def _maybe_dump_phase0_web_text(topic: str, web_text: str) -> None:
     """Dump the raw web-research text to ``output/phase0/`` when AICG_PHASE0_DUMP=1.
 
     Phase-0 recon only (the web-research fridge A/B, plan
-    ``docs/superpowers/plans/2026-07-09-web-research-fridge.md``): ``tavily_text``
+    ``docs/superpowers/plans/2026-07-09-web-research-fridge.md``): ``web_text``
     normally dies inside the graph state — ``build_context_bundle`` never copies
     it onto the ``ContextBundle`` — so there is no other way to see how large the
     discarded raw web material actually is, or to feed it to the ablation's
@@ -309,9 +309,9 @@ def _maybe_dump_phase0_web_text(topic: str, tavily_text: str) -> None:
         return
     path = phase0_dump_path(topic)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(tavily_text, encoding="utf-8")
+    path.write_text(web_text, encoding="utf-8")
     logger.info(
-        "PHASE0 dump: %d chars of raw web text -> %s", len(tavily_text), path
+        "PHASE0 dump: %d chars of raw web text -> %s", len(web_text), path
     )
 
 
@@ -406,7 +406,7 @@ class ContextAgent:
         user_prompt = (
             f"<topic>\n{state.topic}\n</topic>\n\n"
             f"<reddit_gathered>\n{state.reddit_text}\n</reddit_gathered>\n\n"
-            f"<web_gathered>\n{state.tavily_text}\n</web_gathered>\n\n"
+            f"<web_gathered>\n{state.web_text}\n</web_gathered>\n\n"
             f"Reddit search phrases already tried:\n{reddit_tried}\n\n"
             f"Web search phrases already tried:\n{tavily_tried}\n\n"
             f"Decide the next action."
@@ -465,11 +465,11 @@ class ContextAgent:
         """LangGraph node: run tavily_search and accumulate the result into state."""
         result = tavily_search(_effective_query(state))
 
-        text = f"{state.tavily_text}\n\n{result.text}" if state.tavily_text else result.text
+        text = f"{state.web_text}\n\n{result.text}" if state.web_text else result.text
         calls = state.tavily_calls + 1
 
         return {
-            "tavily_text": text,
+            "web_text": text,
             "tavily_calls": calls,
             "urls": state.urls + result.urls,
             "tavily_queries": state.tavily_queries + [_effective_query(state)],
@@ -483,7 +483,7 @@ class ContextAgent:
         state.urls before spending the call — the LLM must target a URL a
         real search actually returned, never one it recalls or guesses (spec
         D4; mandatory-grounding concern, BUG-017). A non-matching URL, or any
-        fetch failure, is fail-soft: log and leave tavily_text/urls/queries
+        fetch failure, is fail-soft: log and leave web_text/urls/queries
         untouched, but still count the attempt against tavily_calls. Every
         attempted call must count toward decide_next_step's total_calls
         ceiling — the only loop-termination guard for this node (see
@@ -507,9 +507,9 @@ class ContextAgent:
             )
             return {"tavily_calls": state.tavily_calls + 1}
 
-        text = f"{state.tavily_text}\n\n{result.text}" if state.tavily_text else result.text
+        text = f"{state.web_text}\n\n{result.text}" if state.web_text else result.text
         return {
-            "tavily_text": text,
+            "web_text": text,
             "tavily_calls": state.tavily_calls + 1,
             "tavily_queries": state.tavily_queries + [state.next_url],
         }
@@ -526,7 +526,7 @@ class ContextAgent:
         user_prompt = (
             f"<topic>\n{state.topic}\n</topic>\n\n"
             f"<reddit_gathered>\n{state.reddit_text}\n</reddit_gathered>\n\n"
-            f"<web_gathered>\n{state.tavily_text}\n</web_gathered>\n\n"
+            f"<web_gathered>\n{state.web_text}\n</web_gathered>\n\n"
             f"Web search phrases tried (compare against what <web_gathered> actually "
             f"contains to judge what's still unresolved):\n{tavily_tried}"
         )
@@ -588,17 +588,24 @@ class ContextAgent:
 
         return graph.compile()
 
-    def run(self, topic: str) -> ContextBundle:
-        """Run the full context-gathering loop for a topic and return the bundle.
+    def run(self, topic: str) -> tuple[ContextBundle, str]:
+        """Run the full context-gathering loop; return the bundle AND raw web text.
 
         Public entry point — builds the empty starting state, runs the
         compiled graph to completion, then assembles the ContextBundle from
         the final state.
+
+        Returns ``(bundle, web_text)``: the compressed ContextBundle for the
+        downstream chain, plus the RAW ``web_text`` (tavily + firecrawl) the
+        graph gathered and the bundle discards. The raw text is surfaced
+        separately — never folded into the bundle — so the web-research fridge
+        (Task 1.5) can index it without bloating the bundle that gets persisted
+        to the DB.
         """
         initial_state = ContextAgentState(
             topic=topic,
             reddit_text="",
-            tavily_text="",
+            web_text="",
             reddit_calls=0,
             tavily_calls=0,
             apify_cost_estimate=0.0,
@@ -618,11 +625,11 @@ class ContextAgent:
         final = app.invoke(initial_state)
         final_state = ContextAgentState(**final)
 
-        _maybe_dump_phase0_web_text(topic, final_state.tavily_text)
+        _maybe_dump_phase0_web_text(topic, final_state.web_text)
 
-        return build_context_bundle(final_state)
+        return build_context_bundle(final_state), final_state.web_text
 
-    def gather(self, topic: str) -> tuple[TrendingEvent, ContextBundle]:
+    def gather(self, topic: str) -> tuple[TrendingEvent, ContextBundle, str]:
         """Run context-gathering for a user ``--topic`` and return (event, bundle).
 
         Cold mode (Path B): synthesize a manual-origin ``TrendingEvent`` from
@@ -641,7 +648,7 @@ class ContextAgent:
         - ``raw_source_data`` carries provenance (topic, sources, references)
         - ``origin``        = "manual" — triggers the Task 6 gate branch
         """
-        bundle = self.run(topic)
+        bundle, web_text = self.run(topic)
         reaction = _truncate_to_whole_blocks(
             bundle.reaction_sample or "", _REACTION_SAMPLE_MAX_CHARS
         )
@@ -659,7 +666,7 @@ class ContextAgent:
             },
             origin="manual",
         )
-        return event, bundle
+        return event, bundle, web_text
 
 
 def build_context_bundle(state: ContextAgentState) -> ContextBundle:

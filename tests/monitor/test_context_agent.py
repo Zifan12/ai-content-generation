@@ -68,7 +68,7 @@ def test_decide_next_step():
     state = ContextAgentState(
         topic="",
         reddit_text="",
-        tavily_text="",
+        web_text="",
         reddit_calls=3,
         tavily_calls=2,
         apify_cost_estimate=0.0,
@@ -98,7 +98,7 @@ def test_decide_next_step_apify_cost_ceiling():
     state = ContextAgentState(
         topic="",
         reddit_text="",
-        tavily_text="",
+        web_text="",
         reddit_calls=1,
         tavily_calls=0,
         apify_cost_estimate=2.00,
@@ -127,7 +127,7 @@ def test_decide_next_step_stale_streak_ceiling():
     state = ContextAgentState(
         topic="",
         reddit_text="",
-        tavily_text="",
+        web_text="",
         reddit_calls=3,
         tavily_calls=0,
         apify_cost_estimate=0.39,
@@ -156,7 +156,7 @@ def test_plan_returns_llm_decision():
     state = ContextAgentState(
         topic="Wistoria season 2 finale",
         reddit_text="",
-        tavily_text="",
+        web_text="",
         reddit_calls=0,
         tavily_calls=0,
         apify_cost_estimate=0.0,
@@ -227,7 +227,7 @@ def test_finalize_returns_llm_synthesis():
     state = ContextAgentState(
         topic="Wistoria season 2 finale",
         reddit_text="top comment: robbed",
-        tavily_text="background: finale aired June 28",
+        web_text="background: finale aired June 28",
         reddit_calls=1,
         tavily_calls=1,
         apify_cost_estimate=0.0,
@@ -271,7 +271,7 @@ def test_act_reddit_appends_to_existing_text(monkeypatch):
     state = ContextAgentState(
         topic="",
         reddit_text="earlier reaction text",
-        tavily_text="",
+        web_text="",
         reddit_calls=1,
         tavily_calls=0,
         apify_cost_estimate=0.86,
@@ -364,7 +364,7 @@ def test_act_firecrawl_extract_skips_unknown_url(monkeypatch, caplog):
     state = state.model_copy(update={
         "next_url": "https://example.com/never-found",
         "urls": ["https://example.com/actually-found"],
-        "tavily_text": "existing",
+        "web_text": "existing",
     })
 
     result = agent._act_firecrawl_extract(state)
@@ -383,7 +383,7 @@ def test_act_firecrawl_extract_appends_on_success(monkeypatch):
     state = state.model_copy(update={
         "next_url": "https://wistoria.fandom.com/wiki/Elfaria",
         "urls": ["https://wistoria.fandom.com/wiki/Elfaria"],
-        "tavily_text": "earlier web text",
+        "web_text": "earlier web text",
         "tavily_calls": 1,
         "tavily_queries": ["Wistoria characters"],
     })
@@ -391,7 +391,7 @@ def test_act_firecrawl_extract_appends_on_success(monkeypatch):
     result = agent._act_firecrawl_extract(state)
 
     assert result == {
-        "tavily_text": "earlier web text\n\nAge: 16",
+        "web_text": "earlier web text\n\nAge: 16",
         "tavily_calls": 2,
         "tavily_queries": [
             "Wistoria characters",
@@ -460,7 +460,7 @@ def test_max_tool_calls_default_is_20():
 
 def _fresh_state(topic):
     return ContextAgentState(
-        topic=topic, reddit_text="", tavily_text="", reddit_calls=0,
+        topic=topic, reddit_text="", web_text="", reddit_calls=0,
         tavily_calls=0, apify_cost_estimate=0.0, within_community="",
         next_action="", next_query="", urls=[], reddit_queries=[], tavily_queries=[],
         unresolved_facts=[], summary="", key_moments=[],
@@ -545,7 +545,7 @@ def test_act_tavily_starts_fresh_when_empty(monkeypatch):
     state = ContextAgentState(
         topic="",
         reddit_text="",
-        tavily_text="",
+        web_text="",
         reddit_calls=0,
         tavily_calls=0,
         apify_cost_estimate=0.0,
@@ -564,7 +564,7 @@ def test_act_tavily_starts_fresh_when_empty(monkeypatch):
     result = agent._act_tavily(state)
 
     assert result == {
-        "tavily_text": "background facts",
+        "web_text": "background facts",
         "tavily_calls": 1,
         "urls": ["https://example.com/article"],
         "tavily_queries": ["earlier web query", "some query"],
@@ -575,7 +575,7 @@ def test_build_context_bundle_both_sources():
     state = ContextAgentState(
         topic="",
         reddit_text="top comment: robbed",
-        tavily_text="background: finale aired June 28",
+        web_text="background: finale aired June 28",
         reddit_calls=1,
         tavily_calls=1,
         apify_cost_estimate=0.86,
@@ -607,7 +607,7 @@ def test_build_context_bundle_no_sources():
     state = ContextAgentState(
         topic="",
         reddit_text="",
-        tavily_text="",
+        web_text="",
         reddit_calls=0,
         tavily_calls=0,
         apify_cost_estimate=0.0,
@@ -632,7 +632,7 @@ def test_build_context_bundle_threads_unresolved_facts():
     state = ContextAgentState(
         topic="",
         reddit_text="top comment: robbed",
-        tavily_text="",
+        web_text="",
         reddit_calls=1,
         tavily_calls=0,
         apify_cost_estimate=0.0,
@@ -680,7 +680,7 @@ def test_run_full_loop(monkeypatch):
     fake = FakeSequenceLLM(plan_decisions=plan_decisions, synthesis=synthesis)
     agent = ContextAgent(llm=fake, max_tool_calls=5)
 
-    bundle = agent.run("Wistoria season 2 finale")
+    bundle, _ = agent.run("Wistoria season 2 finale")
 
     assert bundle == ContextBundle(
         reaction_sample="top comment: robbed",
@@ -698,7 +698,7 @@ def test_decide_next_step_passthrough():
     state = ContextAgentState(
         topic="",
         reddit_text="",
-        tavily_text="",
+        web_text="",
         reddit_calls=0,
         tavily_calls=0,
         apify_cost_estimate=0.0,
@@ -724,7 +724,7 @@ def test_decide_next_step_floor_override_reddit():
     state = ContextAgentState(
         topic="",
         reddit_text="",
-        tavily_text="",
+        web_text="",
         reddit_calls=0,
         tavily_calls=0,
         apify_cost_estimate=0.0,
@@ -750,7 +750,7 @@ def test_decide_next_step_floor_override_tavily():
     state = ContextAgentState(
         topic="",
         reddit_text="",
-        tavily_text="",
+        web_text="",
         reddit_calls=1,
         tavily_calls=0,
         apify_cost_estimate=0.86,
@@ -776,7 +776,7 @@ def test_decide_next_step_floor_satisfied():
     state = ContextAgentState(
         topic="",
         reddit_text="",
-        tavily_text="",
+        web_text="",
         reddit_calls=1,
         tavily_calls=1,
         apify_cost_estimate=0.86,

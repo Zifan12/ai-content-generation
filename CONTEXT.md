@@ -66,6 +66,22 @@ One of 2-3 distinct creative takes the Story Pitcher proposes per gap (`StoryPit
 
 _Avoid_: "Angle Pitch" / `AnglePitch` / `render_backend` / `estimated_cost_credits` — the routing-era model, removed in the Task 7 orchestration swap. Current term is Story Pitch.
 
+## Web-research Fridge
+
+The store of **raw web-research text** the Context Agent gathered (tavily_search + firecrawl_extract combined — the `web_text` state field) but *discarded* when it compressed everything into the `ContextBundle`. The Fridge re-captures that raw material — chunk → BGE-M3 embed → pgvector (`WebResearchChunk` table) — so a downstream stage can `retrieve()` a specific gathered-but-summarized-out fact on demand (`src/monitor/fridge.py`). v1 = **within-run, web-text only**; reddit already travels the chain uncompressed in `ContextBundle.reaction_sample`, so the Fridge does not re-store it. Populated **Path B only** (Path A gathers no web research).
+
+The load-bearing distinction: **`web_text` (raw) and `ContextBundle` (compressed) are two different things and travel separately** — `gather()` hands back the raw text as its own return value, never folded into the bundle (the bundle is what gets persisted to the DB; putting raw in it defeats the compression the Fridge exists to recover from).
+
+_Avoid_: calling the raw field "tavily_text" (renamed to `web_text` 2026-07-10 — it holds firecrawl text too); treating the Fridge as a cross-run cache (v1 is within-run).
+
+## Pitch Grounding (coherence check)
+
+The check that asks whether a Story Pitch **contradicts the source's canon** — NOT whether it is faithful to it. A pitch (any mode — wish/satire/other) deliberately invents content that never happened; that invention is the product. So this is a **coherence** judgment: would a fan who knows the source accept the pitch as consistent with the established world/characters, or reject it as nonsense. **Canon = the retrieved Fridge chunks** (best available approximation of source truth).
+
+**The load-bearing rule: fail ONLY on CONTRADICTION, never on absence.** Canon silent on something = PASS (that is the invention, by design); canon that directly clashes with an assumed premise = FAIL. Conservative ceiling: can only catch a contradiction whose contradicting fact is actually in the retrieved canon. Implemented as a fixed 2-call RAG pipeline (derive assumed-canon queries → retrieve → judge contradiction-only → `{coheres, conflicts}`), deliberately **not** an agent (`src/monitor/pitch_grounding.py`).
+
+_Avoid_: "faithfulness check" / "unsupported-claims check" / "fact-check" — all the dead earlier framing; the invented moment is not an unsupported claim, it is the point. Do NOT search the web on a conflict in v1 (deferred agentic upgrade).
+
 ## Executor
 
 The render runner (`src/generation/executor.py`, new in the single-shot rebuild) — the piece

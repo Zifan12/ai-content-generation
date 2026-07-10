@@ -21,6 +21,10 @@ class AnglePitchRecord(Base):
     story_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     mode: Mapped[str | None] = mapped_column(String, nullable=True)
     craft_verdict_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Grounding verdict (Task 1.5): the pitch_grounding coherence check's
+    # {reasoning, coheres, conflicts}. Nullable — only Path B pitches are
+    # grounding-checked; Path A and pre-1.5 rows stay NULL.
+    grounding_verdict_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     killed_by_gate: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=false()
     )

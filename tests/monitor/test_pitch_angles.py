@@ -4,10 +4,12 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+import scripts.pitch_angles as pitch_angles_module
 from scripts.pitch_angles import run_pitch_pipeline
 from src.database import Base
 from src.models.angle_pitch import AnglePitchRecord
 from src.models.trending_event import TrendingEventRecord
+from src.monitor.pitch_grounding import GroundingVerdict
 from src.monitor.schemas import (
     BeatRole,
     CaptionPolicy,
@@ -287,21 +289,61 @@ class FakeStoryCraftGate:
 
 
 class FakeContextAgent:
-    """Returns a fixed (event, bundle) pair; records the topic."""
+    """Returns a fixed (event, bundle, web_text) triple; records the topic."""
 
     def __init__(
         self,
         event: TrendingEvent | None = None,
         bundle: ContextBundle | None = None,
+        web_text: str = "raw web research text about the topic",
     ) -> None:
         self._event = event if event is not None else SAMPLE_TOPIC_EVENT
         self._bundle = bundle if bundle is not None else SAMPLE_BUNDLE
+        self._web_text = web_text
         self.calls: list[str] = []
         self.max_run_apify_cost = 2.00
 
-    def gather(self, topic: str) -> tuple[TrendingEvent, ContextBundle]:
+    def gather(self, topic: str) -> tuple[TrendingEvent, ContextBundle, str]:
         self.calls.append(topic)
-        return self._event, self._bundle
+        return self._event, self._bundle, self._web_text
+
+
+class FakeGroundingChecker:
+    """coheres per a predicate on the pitch (default: everything coheres).
+
+    Mirrors FakeStoryCraftGate's predicate style so a test can make the original
+    pitch conflict and its repaired copy cohere. Records every checked pitch. A
+    conflict returns one fixed contradiction sentence.
+    """
+
+    def __init__(self, cohere_predicate=None) -> None:
+        self._coheres = cohere_predicate or (lambda pitch: True)
+        self.calls: list[StoryPitch] = []
+
+    def check(self, pitch, topic, embedder, session, k: int = 3) -> GroundingVerdict:
+        self.calls.append(pitch)
+        if self._coheres(pitch):
+            return GroundingVerdict(reasoning="coheres", coheres=True, conflicts=[])
+        return GroundingVerdict(
+            reasoning="clash",
+            coheres=False,
+            conflicts=["canon: they are siblings; pitch: they are lovers"],
+        )
+
+
+class _RecordingIndex:
+    """Stand-in for fridge.index_web_text (sqlite can't run pgvector). Records
+    each call's (topic, web_text) and reports a chunk count."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str]] = []
+
+    def __call__(self, topic, web_text, embedder, session) -> int:
+        self.calls.append((topic, web_text))
+        return 1
+
+
+_SENTINEL_EMBEDDER = object()  # only reaches the (faked) index + checker
 
 
 def pick_first() -> str:
@@ -658,3 +700,137 @@ def test_topic_branch_without_context_agent_raises(db, tmp_path):
             context_agent=None,
             topic="some topic",
         )
+
+
+# ---------------------------------------------------------------------------
+# Grounding check wiring (Task 1.5) — Path B only, index on gather, one repair.
+# ---------------------------------------------------------------------------
+
+
+def test_grounding_pass_indexes_and_persists_verdict(db, tmp_path, monkeypatch):
+    """Path B with fridge machinery: raw web text is indexed on gather, each
+    craft-survivor is grounding-checked, and a cohering verdict is persisted."""
+    recorder = _RecordingIndex()
+    monkeypatch.setattr(pitch_angles_module, "index_web_text", recorder)
+    checker = FakeGroundingChecker()  # everything coheres
+    context_agent = FakeContextAgent()
+
+    run_pitch_pipeline(
+        db,
+        None,
+        None,
+        FakeIdeaFitGate(),
+        FakeGapAgent(),
+        FakeStoryPitcher(),
+        FakeStoryCraftGate(),
+        dry_run=False,
+        choice_provider=pick_first,
+        output_dir=tmp_path,
+        context_agent=context_agent,
+        topic="Wuthering Waves Jinhsi",
+        embedder=_SENTINEL_EMBEDDER,
+        grounding_checker=checker,
+    )
+
+    # Raw web text indexed exactly once, scoped to the run's topic.
+    assert recorder.calls == [("Wuthering Waves Jinhsi", context_agent._web_text)]
+    # Every craft-survivor was grounding-checked (slate has 2, both cohere).
+    assert len(checker.calls) == len(SAMPLE_SLATE.pitches)
+    approved = db.query(AnglePitchRecord).filter_by(approved=True).one()
+    assert approved.grounding_verdict_json is not None
+    assert approved.grounding_verdict_json["coheres"] is True
+
+
+def test_grounding_conflict_repitched_then_coheres(db, tmp_path, monkeypatch):
+    """A pitch that contradicts canon is repitched once with the conflicts as
+    failure notes, then coheres -> lands on the slate as the repaired copy."""
+    monkeypatch.setattr(pitch_angles_module, "index_web_text", _RecordingIndex())
+    pitcher = FakeStoryPitcher()
+    checker = FakeGroundingChecker(cohere_predicate=lambda p: "[repaired]" in p.logline)
+
+    run_pitch_pipeline(
+        db,
+        None,
+        None,
+        FakeIdeaFitGate(),
+        FakeGapAgent(),
+        pitcher,
+        FakeStoryCraftGate(),  # craft passes everything -> repairs are grounding-driven
+        dry_run=False,
+        choice_provider=pick_first,
+        output_dir=tmp_path,
+        context_agent=FakeContextAgent(),
+        topic="Wuthering Waves Jinhsi",
+        embedder=_SENTINEL_EMBEDDER,
+        grounding_checker=checker,
+    )
+
+    # Each original pitch conflicted once and was repitched with the conflicts.
+    assert len(pitcher.repitch_calls) == len(SAMPLE_SLATE.pitches)
+    assert pitcher.repitch_calls[0][1] == "canon: they are siblings; pitch: they are lovers"
+    approved = db.query(AnglePitchRecord).filter_by(approved=True).one()
+    assert "[repaired]" in approved.take
+    assert approved.grounding_verdict_json["coheres"] is True
+    assert approved.killed_by_gate is False
+
+
+def test_grounding_conflict_survives_repair_is_killed(db, tmp_path, monkeypatch):
+    """A canon contradiction that survives the one repair -> pitch killed,
+    verdict persisted with coheres=False, nothing approved."""
+    monkeypatch.setattr(pitch_angles_module, "index_web_text", _RecordingIndex())
+    checker = FakeGroundingChecker(cohere_predicate=lambda p: False)  # never coheres
+
+    result = run_pitch_pipeline(
+        db,
+        None,
+        None,
+        FakeIdeaFitGate(),
+        FakeGapAgent(),
+        FakeStoryPitcher(),
+        FakeStoryCraftGate(),  # craft passes; grounding is what kills
+        dry_run=False,
+        choice_provider=pick_first,
+        output_dir=tmp_path,
+        context_agent=FakeContextAgent(),
+        topic="Wuthering Waves Jinhsi",
+        embedder=_SENTINEL_EMBEDDER,
+        grounding_checker=checker,
+    )
+
+    assert result is None
+    pitches = db.query(AnglePitchRecord).all()
+    assert len(pitches) == len(SAMPLE_SLATE.pitches)
+    assert all(p.killed_by_gate for p in pitches)
+    assert all(
+        p.grounding_verdict_json is not None
+        and p.grounding_verdict_json["coheres"] is False
+        for p in pitches
+    )
+    assert db.query(AnglePitchRecord).filter_by(approved=True).count() == 0
+
+
+def test_grounding_skipped_in_dry_run(db, tmp_path, monkeypatch):
+    """dry_run keeps the fridge side-effect-free: no index write, no check."""
+    recorder = _RecordingIndex()
+    monkeypatch.setattr(pitch_angles_module, "index_web_text", recorder)
+    checker = FakeGroundingChecker()
+
+    run_pitch_pipeline(
+        db,
+        None,
+        None,
+        FakeIdeaFitGate(),
+        FakeGapAgent(),
+        FakeStoryPitcher(),
+        FakeStoryCraftGate(),
+        dry_run=True,
+        choice_provider=None,
+        output_dir=tmp_path,
+        context_agent=FakeContextAgent(),
+        topic="Wuthering Waves Jinhsi",
+        embedder=_SENTINEL_EMBEDDER,
+        grounding_checker=checker,
+    )
+
+    assert recorder.calls == []
+    assert checker.calls == []
