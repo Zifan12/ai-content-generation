@@ -7,8 +7,10 @@ then synthesizes a ContextBundle. See docs/superpowers/specs/
 """
 
 import logging
+import os
 import re
 from functools import partial
+from pathlib import Path
 
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, ConfigDict
@@ -275,6 +277,32 @@ def _truncate_to_whole_blocks(text: str, max_chars: int) -> str:
     if not kept:
         return blocks[0][:max_chars]
     return "\n\n".join(kept)
+
+
+def _maybe_dump_phase0_web_text(topic: str, tavily_text: str) -> None:
+    """Dump the raw web-research text to ``output/phase0/`` when AICG_PHASE0_DUMP=1.
+
+    Phase-0 recon only (the web-research fridge A/B, plan
+    ``docs/superpowers/plans/2026-07-09-web-research-fridge.md``): ``tavily_text``
+    normally dies inside the graph state — ``build_context_bundle`` never copies
+    it onto the ``ContextBundle`` — so there is no other way to see how large the
+    discarded raw web material actually is, or to feed it to the ablation's
+    condition B. Guarded by an env flag so a normal run is byte-for-byte
+    unaffected. Writes to ``output/phase0/`` (gitignored) keyed by a
+    filesystem-safe slug of the topic, and logs the character count so the
+    "is the raw web text big?" question gets a real number without opening the
+    file.
+    """
+    if os.environ.get("AICG_PHASE0_DUMP") != "1":
+        return
+    slug = re.sub(r"[^a-z0-9]+", "_", topic.lower()).strip("_") or "topic"
+    out_dir = Path("output") / "phase0"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"{slug}.txt"
+    path.write_text(tavily_text, encoding="utf-8")
+    logger.info(
+        "PHASE0 dump: %d chars of raw web text -> %s", len(tavily_text), path
+    )
 
 
 class ContextAgent:
@@ -579,6 +607,8 @@ class ContextAgent:
         app = self.build_graph()
         final = app.invoke(initial_state)
         final_state = ContextAgentState(**final)
+
+        _maybe_dump_phase0_web_text(topic, final_state.tavily_text)
 
         return build_context_bundle(final_state)
 
