@@ -279,6 +279,19 @@ def _truncate_to_whole_blocks(text: str, max_chars: int) -> str:
     return "\n\n".join(kept)
 
 
+def phase0_dump_path(topic: str) -> Path:
+    """Filesystem path where a topic's raw web-text Phase-0 dump lives.
+
+    The single source of the slug + location, so the dump WRITER
+    (``_maybe_dump_phase0_web_text``) and the dump READER
+    (``scripts/run_fridge_phase0.py``) can never drift on where the file is.
+    ``output/phase0/`` is gitignored; the slug is a filesystem-safe form of the
+    topic.
+    """
+    slug = re.sub(r"[^a-z0-9]+", "_", topic.lower()).strip("_") or "topic"
+    return Path("output") / "phase0" / f"{slug}.txt"
+
+
 def _maybe_dump_phase0_web_text(topic: str, tavily_text: str) -> None:
     """Dump the raw web-research text to ``output/phase0/`` when AICG_PHASE0_DUMP=1.
 
@@ -288,17 +301,14 @@ def _maybe_dump_phase0_web_text(topic: str, tavily_text: str) -> None:
     it onto the ``ContextBundle`` — so there is no other way to see how large the
     discarded raw web material actually is, or to feed it to the ablation's
     condition B. Guarded by an env flag so a normal run is byte-for-byte
-    unaffected. Writes to ``output/phase0/`` (gitignored) keyed by a
-    filesystem-safe slug of the topic, and logs the character count so the
-    "is the raw web text big?" question gets a real number without opening the
-    file.
+    unaffected. Writes to the ``phase0_dump_path`` location (gitignored) and logs
+    the character count so the "is the raw web text big?" question gets a real
+    number without opening the file.
     """
     if os.environ.get("AICG_PHASE0_DUMP") != "1":
         return
-    slug = re.sub(r"[^a-z0-9]+", "_", topic.lower()).strip("_") or "topic"
-    out_dir = Path("output") / "phase0"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / f"{slug}.txt"
+    path = phase0_dump_path(topic)
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(tavily_text, encoding="utf-8")
     logger.info(
         "PHASE0 dump: %d chars of raw web text -> %s", len(tavily_text), path
