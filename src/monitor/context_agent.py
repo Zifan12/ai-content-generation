@@ -630,7 +630,7 @@ class ContextAgent:
         return build_context_bundle(final_state), final_state.web_text
 
     def gather(self, topic: str) -> tuple[TrendingEvent, ContextBundle, str]:
-        """Run context-gathering for a user ``--topic`` and return (event, bundle).
+        """Run context-gathering for a user ``--topic`` and return (event, bundle, web_text).
 
         Cold mode (Path B): synthesize a manual-origin ``TrendingEvent`` from
         the gathered bundle so it can flow through the same gate → gap → pitch

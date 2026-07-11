@@ -142,7 +142,6 @@ def test_contradiction_fails(db):
         queries=CanonQueries(queries=[_CANON_CHUNK]),
         verdict=GroundingVerdict(
             reasoning="Canon says twin siblings; the pitch makes them lovers.",
-            coheres=False,
             conflicts=["Canon: Rin and Len are siblings; pitch: they are lovers."],
         ),
     )
@@ -167,7 +166,6 @@ def test_coheres_passes(db):
         queries=CanonQueries(queries=[_CANON_CHUNK]),
         verdict=GroundingVerdict(
             reasoning="Canon is silent on the kiss; no premise is contradicted.",
-            coheres=True,
             conflicts=[],
         ),
     )
@@ -188,8 +186,8 @@ def test_empty_fridge_short_circuits_to_pass(db):
 
     llm = _FakeLLM(
         queries=CanonQueries(queries=["Rin and Len relationship"]),
-        # verdict must never be used; a False here would fail the test if call-2 ran
-        verdict=GroundingVerdict(reasoning="should not run", coheres=False, conflicts=["x"]),
+        # verdict must never be used; conflicts here would fail the test if call-2 ran
+        verdict=GroundingVerdict(reasoning="should not run", conflicts=["x"]),
     )
     checker = PitchGroundingChecker(llm=llm)
 

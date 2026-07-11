@@ -323,10 +323,9 @@ class FakeGroundingChecker:
     def check(self, pitch, topic, embedder, session, k: int = 3) -> GroundingVerdict:
         self.calls.append(pitch)
         if self._coheres(pitch):
-            return GroundingVerdict(reasoning="coheres", coheres=True, conflicts=[])
+            return GroundingVerdict(reasoning="coheres", conflicts=[])
         return GroundingVerdict(
             reasoning="clash",
-            coheres=False,
             conflicts=["canon: they are siblings; pitch: they are lovers"],
         )
 
