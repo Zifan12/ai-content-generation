@@ -218,14 +218,28 @@ def test_scene_call_envelope_carries_dialogue(rules):
     assert 'Eve says "Wait, don\'t!"' in scene_call["prompt"]
 
 
-def test_scene_line_over_60_words_raises(rules):
-    long_line = "word " * 61
+def test_scene_line_over_90_words_raises(rules):
+    # Hard cap recalibrated 40-soft/60-hard -> 65-soft/90-hard (2026-07-11,
+    # video-researcher evidence). 91 words is a genuine runaway.
+    long_line = "word " * 91
     fake = FakeLLM(
         _plan(_draft_shots(3)),
         conversion_prompts=[long_line, "CONVERTED[1]. Audio: rain.", "CONVERTED[2]. Audio: rain."],
     )
     with pytest.raises(ValueError, match="hard cap"):
         _write(_pitch(3), fake, rules)
+
+
+def test_scene_line_at_65_words_is_accepted(rules):
+    # The realistic case the old 60-cap false-failed: a line packing camera +
+    # action + space + dialogue + audio lands ~55-65 words and must NOT be rejected.
+    line_65 = "word " * 65 + "Audio: rain."
+    fake = FakeLLM(
+        _plan(_draft_shots(3)),
+        conversion_prompts=[line_65, "CONVERTED[1]. Audio: rain.", "CONVERTED[2]. Audio: rain."],
+    )
+    package = _write(_pitch(3), fake, rules)  # no raise
+    assert package.shots[0].scene_line.startswith("word")
 
 
 def test_provenance_code_set(rules):

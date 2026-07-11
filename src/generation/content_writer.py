@@ -48,10 +48,16 @@ logger = logging.getLogger(__name__)
 # two prior rolls of the SAME pitch fit under it). 4th max_tokens bite project-wide.
 WRITER_MAX_TOKENS = 16384
 
-# Hard code-level reject for a runaway scene line (the soft-40-word prompt
-# budget is unreliable — 2026-07-06/07 validation lesson). 60 catches a
-# genuinely broken line without false-failing a slightly-over-40 one.
-_SCENE_LINE_MAX_WORDS = 60
+# Hard code-level reject for a runaway scene line. Recalibrated 2026-07-11 from
+# 60 -> 90 on video-researcher evidence: the old 40-soft/60-hard numbers were
+# locally invented, not Seedance-derived. Seedance tolerates ~4000 chars/shot,
+# and the docs' own worked examples carrying our exact content mix (camera +
+# action + space + dialogue + audio) run 55-65 words — right where the LLM kept
+# landing, so 60 was false-failing normal lines. 90 catches a genuine runaway
+# while leaving headroom under the measured 3000-char TOTAL-prompt adapter cap
+# (~5 shots x ~100 words). See ai_video_resources/lanshu .../02-进阶公式.md:108-110,
+# video_model_system_guide.md:138-148, render_taste_test/DECISIONS_LOCKED.md:108.
+_SCENE_LINE_MAX_WORDS = 90
 
 PLAN_SYSTEM_PROMPT = """\
 <role>
@@ -188,7 +194,7 @@ Hard rules:
   "small figure in an oversized coat"); replace fight/battle/strike/kill/blood
   with physical but neutral phrasing ("their magic surges and meets in a burst
   of light", "she staggers back a step").
-- Keep each line under 40 words — the whole scene must fit one prompt budget shared with identity and constraint text. Concrete nouns and verbs beat adjectives; cut everything decorative.
+- Keep each line under 65 words — the whole scene must fit one prompt budget shared with identity and constraint text. Concrete nouns and verbs beat adjectives; cut everything decorative.
 - The lines must read as ONE continuous scene: reuse the established space and
   light; when the location changes between shots, make the new shot's SPACE
   clause name it explicitly.
@@ -336,7 +342,7 @@ class ContentWriter:
             if word_count > _SCENE_LINE_MAX_WORDS:
                 raise ValueError(
                     f"scene line {index} is {word_count} words (hard cap "
-                    f"{_SCENE_LINE_MAX_WORDS}) — the prompt's soft budget is 40; "
+                    f"{_SCENE_LINE_MAX_WORDS}) — the prompt's soft budget is 65; "
                     "this line ran away and must be rejected, not silently trimmed"
                 )
         for index, line in enumerate(conversion.scene_lines):
