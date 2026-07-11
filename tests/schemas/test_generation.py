@@ -236,6 +236,19 @@ def test_package_code_set_defaults():
     assert package.pitch_id is None
     assert package.reference_image_paths == []
     assert package.shots[0].model_cli_id == ""
+    # Location grounding is opt-in: an ungrounded package defaults to empty
+    # carriers (backward-compat with pre-grounding packages).
+    assert package.world_anchor == ""
+    assert package.location_reference_paths == []
+
+
+def test_package_accepts_location_fields():
+    package = _package([4, 4, 4])
+    package.world_anchor = "A grand ice-tower chamber, pale marble floor."
+    package.location_reference_paths = ["refs/_location/elfie_bedroom/room.jpg"]
+    restored = MultiShotPackage.model_validate_json(package.model_dump_json())
+    assert restored.world_anchor.startswith("A grand ice-tower")
+    assert restored.location_reference_paths == ["refs/_location/elfie_bedroom/room.jpg"]
 
 
 def test_package_round_trip_json():

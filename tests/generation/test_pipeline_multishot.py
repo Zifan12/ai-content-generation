@@ -78,10 +78,10 @@ def test_pitch_to_costed_jobs_dry_run(tmp_path):
     assert job.model_cli_id == rules.scene_model()
     assert job.covers_shots == [0, 1, 2]
     assert job.reference_images == ["refs/eve/front.png", "refs/eve/profile.png"]
-    assert job.duration == 10  # scene_lane.defaults, capped at the CLI limit
+    assert job.duration == 15  # scene_lane.defaults (bumped 10->15, 2026-07-10), capped at the CLI limit
     assert "Then cut to:" in job.prompt
     assert "Eve is the character shown in image1, image2." in job.prompt
 
     result = execute_scene(job, str(tmp_path), dry_run=True, run_cli=_fake_cli, rules=rules)
-    assert result.credits_spent == 45.0  # 10s x 4.5cr/s @720p, yaml-rate estimate
+    assert result.credits_spent == 67.5  # 15s x 4.5cr/s @720p, yaml-rate estimate (duration bumped 10->15, 2026-07-10)
     assert result.still_paths == [] and result.clips == []

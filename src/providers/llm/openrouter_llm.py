@@ -93,11 +93,26 @@ def _sanitize_schema(node, *, in_properties: bool = False):
     return node
 
 
+# Data-URL MIME type per image extension. A wrong MIME (e.g. labelling a JPEG
+# as image/png) can 400 on some providers — the harvester only ever made PNGs,
+# but the location-grounding vision step reads canon screencaps (often .jpg),
+# so the type must follow the file. Unknown extensions default to png (the
+# harvester's original assumption, preserved).
+_IMAGE_MIME_BY_SUFFIX = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+}
+
+
 def _build_user_content(prompt: str, images: list[str] | None) -> str | list[dict]:
     """Build the ``user`` message content: plain string, or an OpenAI
     multimodal parts-list (text part + one ``image_url`` part per image) when
-    ``images`` is given. PNG is assumed — the reference harvester (the only
-    caller passing images) produces PNG frames only.
+    ``images`` is given. Each image's data-URL MIME type is derived from its
+    file extension (``_IMAGE_MIME_BY_SUFFIX``) so a JPEG screencap is not
+    mislabelled as PNG.
 
     ``images=None`` keeps content a plain string, byte-identical to the
     pre-vision behavior (regression guard for every existing text-only seat).
@@ -106,11 +121,13 @@ def _build_user_content(prompt: str, images: list[str] | None) -> str | list[dic
         return prompt
     parts: list[dict] = [{"type": "text", "text": prompt}]
     for image_path in images:
+        suffix = Path(image_path).suffix.lower()
+        mime = _IMAGE_MIME_BY_SUFFIX.get(suffix, "image/png")
         data = base64.b64encode(Path(image_path).read_bytes()).decode()
         parts.append(
             {
                 "type": "image_url",
-                "image_url": {"url": f"data:image/png;base64,{data}"},
+                "image_url": {"url": f"data:{mime};base64,{data}"},
             }
         )
     return parts

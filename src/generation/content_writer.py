@@ -269,6 +269,8 @@ class ContentWriter:
         rules: RenderRules,
         reference_image_paths: list[str],
         pitch_id: int | None = None,
+        world_anchor: str = "",
+        location_reference_paths: list[str] | None = None,
     ) -> MultiShotPackage:
         """Generate one MultiShotPackage from an approved StoryPitch.
 
@@ -286,6 +288,13 @@ class ContentWriter:
                 validated here — the render layer owns that gate). Order defines
                 the positional "(imageN)" binding the adapter composes.
             pitch_id: AnglePitchRecord id for provenance, when written from the DB.
+            world_anchor: Cached setting description for the pitch's location,
+                loaded from the location folder (NOT LLM-invented, spec decision
+                #4); stamped through verbatim for the adapter's setting block.
+                Empty string = ungrounded setting.
+            location_reference_paths: Canonical screencap(s) of the setting,
+                stamped onto the package as a non-character ref lane. None/empty
+                = no location reference.
 
         Returns:
             A validated MultiShotPackage with len(pitch.beats) shots.
@@ -378,4 +387,6 @@ class ContentWriter:
             rationale=plan.rationale,
             pitch_id=pitch_id,
             reference_image_paths=list(reference_image_paths),
+            world_anchor=world_anchor,
+            location_reference_paths=list(location_reference_paths or []),
         )

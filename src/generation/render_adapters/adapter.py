@@ -109,6 +109,37 @@ def _identity_block(package: MultiShotPackage, ordered: list[tuple[str, str]]) -
     return " ".join([package.anchors_block, *bindings])
 
 
+def _setting_block(package: MultiShotPackage, start_position: int) -> str:
+    """Compose the location setting block, or '' when the package is ungrounded.
+
+    The world_anchor text (concrete setting nouns, cached per location) is
+    appended verbatim, then a binding sentence names the location refs by their
+    upload position. Location refs upload AFTER the character refs, so
+    start_position is len(character_refs) + 1. Binding is TEXTUAL on the
+    Higgsfield CLI, exactly as for character identity (methodology/19 §1) — the
+    model never infers the setting from upload position alone.
+
+    Returns '' when the package carries neither a world_anchor nor a location
+    ref, so an ungrounded package composes byte-identically to before this
+    feature (backward-compat).
+
+    Args:
+        package: The package whose world_anchor / location_reference_paths drive
+            the block.
+        start_position: The 1-based "(imageN)" slot of the FIRST location ref
+            (i.e. one past the last character ref).
+
+    Returns:
+        The setting block string, or '' if there is nothing to ground.
+    """
+    if not package.world_anchor and not package.location_reference_paths:
+        return ""
+    count = len(package.location_reference_paths)
+    slots = ", ".join(f"image{start_position + i}" for i in range(count))
+    binding = f" The setting is shown in {slots}." if count else ""
+    return f"{package.world_anchor}{binding}".strip()
+
+
 def _scene_prompt(package: MultiShotPackage, rules: RenderRules) -> str:
     """Compose the final scene prompt per spec A3 — order is the contract.
 
@@ -130,6 +161,7 @@ def _scene_prompt(package: MultiShotPackage, rules: RenderRules) -> str:
         f"{package.style_anchor}"
     )
     identity = _identity_block(package, ordered)
+    setting = _setting_block(package, start_position=len(ordered) + 1)
     body = " ".join(
         shot.scene_line if i == 0 else f"Then cut to: {shot.scene_line}"
         for i, shot in enumerate(package.shots)
@@ -140,7 +172,10 @@ def _scene_prompt(package: MultiShotPackage, rules: RenderRules) -> str:
         "No music. "  # D5: music + narration are assembly-side
         f"{quality_suffix}"
     )
-    prompt = "\n\n".join([preamble, identity, body, tail])
+    # Setting block sits in the identity zone (after identity, before the action
+    # body) when the package is grounded; ungrounded packages skip it entirely.
+    blocks = [preamble, identity, *([setting] if setting else []), body, tail]
+    prompt = "\n\n".join(blocks)
 
     max_chars = model_block["limits"]["max_prompt_chars"]
     if len(prompt) > max_chars:
@@ -170,13 +205,18 @@ def _scene_job(package: MultiShotPackage, rules: RenderRules) -> RenderJob:
             f"{len(cast)} characters in scene ({sorted(cast)}) — over the "
             f"{limits['max_characters_in_scene']} cap (limits.max_characters_in_scene)"
         )
-    if len(package.reference_image_paths) > limits["max_image_references"]:
+
+    # Character refs first (positional identity binding), then location refs
+    # (positional setting binding) — this ordered list IS the CLI upload order
+    # and must match the "(imageN)" slots the scene prompt composes.
+    ordered = _ordered_refs_by_character(package)
+    all_refs = [ref for _name, ref in ordered] + list(package.location_reference_paths)
+    if len(all_refs) > limits["max_image_references"]:
         raise ValueError(
-            f"{len(package.reference_image_paths)} image refs — over the "
+            f"{len(all_refs)} image refs (characters + location) — over the "
             f"{limits['max_image_references']} cap (limits.max_image_references)"
         )
 
-    ordered = _ordered_refs_by_character(package)
     defaults = rules.data["scene_lane"]["defaults"]
     return RenderJob(
         model_cli_id=model_id,
@@ -185,7 +225,7 @@ def _scene_job(package: MultiShotPackage, rules: RenderRules) -> RenderJob:
         aspect_ratio=str(defaults["aspect_ratio"]),
         shot_index=0,
         duration=min(int(defaults["duration_seconds"]), int(limits["max_duration_seconds"])),
-        reference_images=[ref for _name, ref in ordered],
+        reference_images=all_refs,
         covers_shots=list(range(len(package.shots))),
     )
 

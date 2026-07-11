@@ -112,6 +112,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Reference key-art image paths that ground every still (>=1).",
     )
     parser.add_argument(
+        "--location",
+        default=None,
+        help="Location slug under refs/_location/<slug>/ (room image + "
+        "world_anchor.txt). Grounds the setting to canon; omit for an "
+        "ungrounded render.",
+    )
+    parser.add_argument(
         "--real",
         action="store_true",
         help="Live render + assembly. Prints the credit table first and requires "
@@ -198,6 +205,40 @@ def resolve_pitch(args, db) -> tuple[StoryPitch, int]:
     return pitch, args.pitch_id
 
 
+def load_location(slug: str) -> tuple[list[str], str]:
+    """Resolve a location slug to (image_paths, world_anchor_text).
+
+    Reads refs/_location/<slug>/: every image file (png/jpg/jpeg, sorted by
+    filename) is a location reference; world_anchor.txt (utf-8) is the cached
+    setting description. Exits loudly if the folder, an image, or the text file
+    is missing — a mistyped slug should fail before any paid render, not
+    silently ground nothing.
+
+    Args:
+        slug: Folder name under refs/_location/ (e.g. "elfie_bedroom").
+
+    Returns:
+        (image_paths, world_anchor_text) ready to pass to ContentWriter.write.
+
+    Raises:
+        SystemExit: if the folder is absent, holds no image, or lacks
+            world_anchor.txt.
+    """
+    folder = Path("refs/_location") / slug
+    if not folder.is_dir():
+        raise SystemExit(f"No location folder refs/_location/{slug} — check the slug.")
+    images = sorted(
+        str(p) for p in folder.iterdir()
+        if p.suffix.lower() in {".png", ".jpg", ".jpeg"}
+    )
+    if not images:
+        raise SystemExit(f"No image files in refs/_location/{slug} — need a room screencap.")
+    anchor_file = folder / "world_anchor.txt"
+    if not anchor_file.is_file():
+        raise SystemExit(f"No world_anchor.txt in refs/_location/{slug} — generate it first.")
+    return images, anchor_file.read_text(encoding="utf-8").strip()
+
+
 def main() -> None:
     """Parse args, run pitch → write → jobs → dry-run cost, print everything."""
     args = _build_parser().parse_args()
@@ -223,6 +264,7 @@ def main() -> None:
             "git_sha": sha,
             "pitch_id": args.pitch_id,
             "refs": list(args.refs),
+            "location": args.location,
             "real": bool(args.real),
             "bgm": args.bgm,
         }
@@ -238,6 +280,15 @@ def main() -> None:
         flow["story_pitch"] = pitch.model_dump(mode="json")
         _dump_flow()
 
+        loc_images: list[str] = []
+        world_anchor = ""
+        if args.location:
+            loc_images, world_anchor = load_location(args.location)
+            print(
+                f"[location] {args.location}: {len(loc_images)} ref(s), "
+                f"anchor {len(world_anchor)} chars"
+            )
+
         rules = RenderRules()
         print("[write] two-call multi-shot writer")
         package = ContentWriter(llm=llm_for_seat("content_writer")).write(
@@ -245,6 +296,8 @@ def main() -> None:
             rules=rules,
             reference_image_paths=list(args.refs),
             pitch_id=pitch_id,
+            world_anchor=world_anchor,
+            location_reference_paths=loc_images,
         )
 
         # TEMP (pitch 24 manual render): the blind text-only writer wrote
@@ -268,6 +321,9 @@ def main() -> None:
         print(f"STYLE ANCHOR:  {package.style_anchor}")
         print(f"ANCHORS:       {package.anchors_block}")
         print(f"REFS:          {package.reference_image_paths}")
+        if package.location_reference_paths:
+            print(f"LOCATION REFS: {package.location_reference_paths}")
+            print(f"WORLD ANCHOR:  {package.world_anchor}")
         for i, shot in enumerate(package.shots):
             print("-" * 70)
             print(

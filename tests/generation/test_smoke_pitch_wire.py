@@ -15,12 +15,13 @@ in-memory SQLite fixture with no Postgres and no LLM/render calls.
 
 import argparse
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from scripts.smoke_content_writer import _build_parser, resolve_pitch
+from scripts.smoke_content_writer import _build_parser, load_location, resolve_pitch
 from src.database import Base
 from src.models.angle_pitch import AnglePitchRecord
 from src.models.trending_event import TrendingEventRecord
@@ -110,3 +111,56 @@ def test_parser_requires_pitch_id_and_refs():
     args = parser.parse_args(["--pitch-id", "1", "--refs", "a.jpg", "b.jpg"])
     assert args.pitch_id == 1
     assert args.refs == ["a.jpg", "b.jpg"]
+
+
+# --- load_location: the --location slug -> (images, anchor text) resolver --------
+# load_location builds refs/_location/<slug> from the cwd, so each test chdirs into
+# a tmp dir and lays out the folder it expects.
+
+
+def _make_location(tmp_path, slug, *, images=("room.jpg",), anchor="Ice-tower room."):
+    """Create refs/_location/<slug>/ under tmp_path with the given images/anchor.
+
+    Passing images=() or anchor=None omits that piece so the missing-file
+    branches can be exercised.
+    """
+    folder = tmp_path / "refs" / "_location" / slug
+    folder.mkdir(parents=True)
+    for name in images:
+        (folder / name).write_bytes(b"fake-image-bytes")
+    if anchor is not None:
+        (folder / "world_anchor.txt").write_text(anchor, encoding="utf-8")
+    return folder
+
+
+def test_load_location_returns_images_and_anchor(tmp_path, monkeypatch):
+    _make_location(tmp_path, "elfie_bedroom", images=("b.png", "a.png"), anchor="Ice-tower room.\n")
+    monkeypatch.chdir(tmp_path)
+
+    images, anchor = load_location("elfie_bedroom")
+
+    # images sorted by filename; paths use the OS separator (str(Path(...)));
+    # anchor stripped of trailing whitespace
+    base = Path("refs/_location/elfie_bedroom")
+    assert images == [str(base / "a.png"), str(base / "b.png")]
+    assert anchor == "Ice-tower room."
+
+
+def test_load_location_missing_folder_exits(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)  # no refs/_location at all
+    with pytest.raises(SystemExit, match="No location folder"):
+        load_location("nope")
+
+
+def test_load_location_no_image_exits(tmp_path, monkeypatch):
+    _make_location(tmp_path, "empty_room", images=(), anchor="text")
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(SystemExit, match="No image files"):
+        load_location("empty_room")
+
+
+def test_load_location_missing_anchor_text_exits(tmp_path, monkeypatch):
+    _make_location(tmp_path, "no_anchor", images=("room.jpg",), anchor=None)
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(SystemExit, match="No world_anchor.txt"):
+        load_location("no_anchor")

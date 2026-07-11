@@ -191,6 +191,17 @@ class MultiShotPackage(BaseModel):
       reference_image_paths: Character-ref files attached to the scene generation
         (code-set; grounding is mandatory per DECISIONS_LOCKED L3). Upload order
         defines the positional "(imageN)" binding in the identity block.
+      world_anchor: ~40-60 words of concrete setting nouns (materials, fixtures,
+        light sources) describing the canonical location — vision-generated from
+        the location screencap and cached per location, NOT writer-invented
+        (spec 2026-07-10 decision #4; invention can contradict the image). The
+        adapter appends it verbatim in the identity zone, byte-identical across
+        the generation, mirroring style_anchor. Empty string = ungrounded setting.
+      location_reference_paths: Canonical screencap(s) of the depicted setting
+        (code-set), uploaded AFTER the character refs and bound as a NON-character
+        "(imageN)" ref — a location is not a cast member, so these bypass the
+        adapter's cast-slug crash-guard and get their own setting binding. Empty
+        list = no location reference (backward-compatible with pre-grounding packages).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -207,6 +218,8 @@ class MultiShotPackage(BaseModel):
     # --- code-set provenance, never trusted from the LLM ---
     pitch_id: int | None = None
     reference_image_paths: list[str] = Field(default_factory=list)
+    world_anchor: str = ""
+    location_reference_paths: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _check_total_duration(self) -> "MultiShotPackage":

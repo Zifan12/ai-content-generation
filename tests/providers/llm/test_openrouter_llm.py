@@ -202,6 +202,25 @@ def test_images_param_produces_content_parts_with_base64_data_url(tmp_path):
     assert image_part["image_url"]["url"] == expected_data_url
 
 
+def test_jpg_image_uses_jpeg_mime_not_png(tmp_path):
+    """A .jpg screencap (location grounding) must be labelled image/jpeg, not
+    the harvester's hardcoded image/png — a wrong MIME can 400 on some providers."""
+    jpg_bytes = b"\xff\xd8\xff\xe0fake-jpeg-bytes"
+    image_path = tmp_path / "room.jpg"
+    image_path.write_bytes(jpg_bytes)
+
+    fake = FakeClient([_Completion('{"ok": true, "note": "fine"}')])
+    llm = OpenRouterLLM(model="test/model", client=fake)
+
+    llm.parse("describe this room", Verdict, images=[str(image_path)])
+
+    import base64
+
+    content = fake.requests[0]["messages"][-1]["content"]
+    expected_data_url = f"data:image/jpeg;base64,{base64.b64encode(jpg_bytes).decode()}"
+    assert content[1]["image_url"]["url"] == expected_data_url
+
+
 def test_images_param_forwarded_by_parse_with_raw(tmp_path):
     image_path = tmp_path / "frame.png"
     image_path.write_bytes(b"\x89PNG\r\n\x1a\nfake")

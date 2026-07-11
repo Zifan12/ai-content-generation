@@ -72,7 +72,7 @@ def test_scene_package_yields_one_multi_shot_job(rules):
     assert job.kind == "multi_shot"
     assert job.model_cli_id == rules.scene_model()
     assert job.covers_shots == [0, 1, 2]
-    assert job.duration == 10  # scene_lane.defaults.duration_seconds, under the cap
+    assert job.duration == 15  # scene_lane.defaults.duration_seconds (bumped 10->15, 2026-07-10), under the cap
     assert job.aspect_ratio == "9:16"
 
 
@@ -138,6 +138,72 @@ def test_scene_ungrounded_cast_member_crashes_loud(rules):
     refs = ["refs/eve/front.png"]  # Adam has no sheet
     with pytest.raises(ValueError, match="no reference images"):
         render_jobs(_scene_package(refs=refs), rules)
+
+
+# --- LOCATION GROUNDING (spec 2026-07-10, decisions locked 2026-07-11) ------------
+# A location is NOT a cast member: its refs upload AFTER character refs, get their
+# own positional "(imageN)" setting binding, and bypass the cast crash-guard.
+
+
+def _single_char_package(refs: list[str]) -> MultiShotPackage:
+    """A 3-shot package with Eve as the only cast member, for predictable slots."""
+    return _scene_package(
+        shots=[_scene_shot(0, ["Eve"]), _scene_shot(1, ["Eve"]), _scene_shot(2, ["Eve"])],
+        refs=refs,
+    )
+
+
+def test_location_ref_uploads_after_character_refs(rules):
+    pkg = _single_char_package(["refs/eve/front.png"])
+    pkg.world_anchor = "A grand ice-tower chamber, pale marble floor."
+    pkg.location_reference_paths = ["refs/_location/elfie_bedroom/room.jpg"]
+    job = render_jobs(pkg, rules)[0]
+    # character ref first, location ref LAST — order IS the CLI upload order
+    assert job.reference_images == [
+        "refs/eve/front.png",
+        "refs/_location/elfie_bedroom/room.jpg",
+    ]
+    # world_anchor appended verbatim + positional setting binding at slot 2
+    assert "A grand ice-tower chamber" in job.prompt
+    assert "The setting is shown in image2." in job.prompt
+
+
+def test_location_setting_block_sits_after_identity_before_body(rules):
+    pkg = _single_char_package(["refs/eve/front.png"])
+    pkg.world_anchor = "A grand ice-tower chamber."
+    pkg.location_reference_paths = ["refs/_location/elfie_bedroom/room.jpg"]
+    prompt = render_jobs(pkg, rules)[0].prompt
+    positions = [
+        prompt.index(ANCHORS),                       # identity
+        prompt.index("A grand ice-tower chamber."),  # setting
+        prompt.index("LINE[0]"),                     # body
+    ]
+    assert positions == sorted(positions)
+
+
+def test_no_location_prompt_and_refs_unchanged(rules):
+    # An ungrounded package composes exactly as before this feature.
+    job = render_jobs(_scene_package(), rules)[0]
+    assert "The setting is shown in" not in job.prompt
+    assert all("_location" not in ref for ref in job.reference_images)
+
+
+def test_location_ref_does_not_trip_cast_crash_guard(rules):
+    # refs/_location/... has no matching cast slug — it must NOT crash the way an
+    # unattributed CHARACTER ref does (that path is the separate lane).
+    pkg = _single_char_package(["refs/eve/front.png"])
+    pkg.location_reference_paths = ["refs/_location/elfie_bedroom/room.jpg"]
+    job = render_jobs(pkg, rules)[0]  # no raise
+    assert "refs/_location/elfie_bedroom/room.jpg" in job.reference_images
+
+
+def test_location_ref_counts_against_image_cap(rules):
+    cap = rules.model(rules.scene_model())["limits"]["max_image_references"]
+    char_refs = [f"refs/eve/{i:02d}.png" for i in range(cap)]  # fills the cap
+    pkg = _single_char_package(char_refs)
+    pkg.location_reference_paths = ["refs/_location/elfie_bedroom/room.jpg"]  # cap + 1
+    with pytest.raises(ValueError, match="max_image_references"):
+        render_jobs(pkg, rules)
 
 
 def test_scene_prompt_over_char_ceiling_raises(rules):

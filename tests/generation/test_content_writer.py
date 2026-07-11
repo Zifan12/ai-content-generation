@@ -236,6 +236,26 @@ def test_provenance_code_set(rules):
     assert package.reference_image_paths == ["a.jpg", "b.jpg"]
 
 
+def test_location_grounding_stamped_through(rules):
+    package = ContentWriter(llm=FakeLLM(_plan(_draft_shots(3)))).write(
+        _pitch(3),
+        rules=rules,
+        reference_image_paths=["refs/eve/front.png"],
+        pitch_id=7,
+        world_anchor="A grand ice-tower chamber, pale marble floor.",
+        location_reference_paths=["refs/_location/elfie_bedroom/room.jpg"],
+    )
+    assert package.world_anchor == "A grand ice-tower chamber, pale marble floor."
+    assert package.location_reference_paths == ["refs/_location/elfie_bedroom/room.jpg"]
+
+
+def test_location_grounding_defaults_empty_when_absent(rules):
+    # An ungrounded write (the current smoke default) stamps empty carriers.
+    package = _write(_pitch(3), FakeLLM(_plan(_draft_shots(3))), rules)
+    assert package.world_anchor == ""
+    assert package.location_reference_paths == []
+
+
 # --- anchors/style exclusion (spec §7 Stage-2 criterion 6) ------------------------
 
 
