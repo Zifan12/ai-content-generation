@@ -10,7 +10,12 @@ that location — this is a one-time step, never the per-render hot path.
 
 WHAT IT DOES:
   refs/_location/<slug>/<image>  --(Gemini Flash vision, seat 'location_anchor')-->
-  ~40-60 words of concrete setting nouns  -->  refs/_location/<slug>/world_anchor.txt
+  ONE compact ~15-20 word must-not-drift anchor  -->  refs/_location/<slug>/world_anchor.txt
+
+Kept short deliberately (evidence, 2026-07-11 video-researcher): every Seedance
+worked example grounds a location with the image + a bare label, and re-describing
+in detail what the image already shows can reduce render quality. The anchor
+REINFORCES the screencap, it does not re-narrate it.
 
 The adapter later appends that text verbatim as the scene prompt's setting block
 and binds the screencap as a non-character "(imageN)" ref.
@@ -44,11 +49,13 @@ from src.providers.llm.factory import llm_for_seat  # noqa: E402
 _IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg"}
 
 _VISION_PROMPT = (
-    "Describe THIS location for a video-generation prompt in 40-60 words. "
-    "List only concrete, visible nouns: architecture, materials, furniture, "
-    "fixtures, light sources, and the overall palette and mood. Describe the "
-    "SPACE only — no characters, no people, no story, no camera direction. "
-    "Output a single flowing description, no headings or lists."
+    "Name THIS location in ONE compact line of about 15-20 words. This line "
+    "REINFORCES a reference image the model already has, so name ONLY the most "
+    "distinctive, must-not-change features — key architecture/materials, the "
+    "dominant colors, and the light — not every detail (restating everything the "
+    "image shows can hurt the render, so stay short). Describe the SPACE only: no "
+    "characters, no people, no story, no camera direction. Output one line, no "
+    "headings or lists."
 )
 
 
