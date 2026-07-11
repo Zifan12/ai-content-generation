@@ -35,6 +35,10 @@ class AnglePitchRecord(Base):
     approved_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Location grounding (spec 2026-07-11): the pitch's pointer to its shared
+    # refs/_location/<slug>/ folder. Human-set at approval (pitch_angles.py),
+    # optionally backfilled by smoke --location. NULL = no location grounding.
+    location_slug: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

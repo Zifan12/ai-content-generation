@@ -54,11 +54,16 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
 from src.database import SessionLocal  # noqa: E402
 from src.generation.assembly import assemble  # noqa: E402
 from src.generation.content_writer import ContentWriter  # noqa: E402
+from src.generation.reference_check import (  # noqa: E402
+    check_references,
+    render_manifest,
+)
 from src.generation.executor import execute_scene  # noqa: E402
 from src.providers.tts.higgsfield_tts import HiggsfieldTTS  # noqa: E402
 from src.generation.render_adapters.adapter import render_jobs  # noqa: E402
 from src.generation.render_adapters.rules import RenderRules  # noqa: E402
 from src.models.angle_pitch import AnglePitchRecord  # noqa: E402
+from src.models.trending_event import TrendingEventRecord  # noqa: E402, F401  (registers the FK target table for commit-time table sort)
 from src.monitor.schemas import StoryPitch  # noqa: E402
 from src.providers.llm.factory import llm_for_seat  # noqa: E402
 
@@ -104,12 +109,6 @@ def _build_parser() -> argparse.ArgumentParser:
         type=int,
         required=True,
         help="Approved AnglePitchRecord id; its story_json is the writer's input.",
-    )
-    parser.add_argument(
-        "--refs",
-        nargs="+",
-        required=True,
-        help="Reference key-art image paths that ground every still (>=1).",
     )
     parser.add_argument(
         "--location",
@@ -263,7 +262,6 @@ def main() -> None:
             "timestamp": ts,
             "git_sha": sha,
             "pitch_id": args.pitch_id,
-            "refs": list(args.refs),
             "location": args.location,
             "real": bool(args.real),
             "bgm": args.bgm,
@@ -280,24 +278,36 @@ def main() -> None:
         flow["story_pitch"] = pitch.model_dump(mode="json")
         _dump_flow()
 
-        loc_images: list[str] = []
+        # Resolve the effective location: --location overrides the pitch's stored
+        # tag and BACKFILLS it (a late tag is remembered next time). Otherwise the
+        # pitch's own location_slug (set at approval) drives grounding.
+        record = load_pitch(db, pitch_id)
+        if args.location and args.location != record.location_slug:
+            record.location_slug = args.location
+            db.commit()
+            print(f"[location] backfilled pitch #{pitch_id} -> {args.location!r}")
+        location_slug = args.location or record.location_slug
+
+        # Reference gate: derive required refs from the pitch, verify the shared
+        # library, HALT before any spend if anything is missing (spec 2026-07-11).
+        manifest = check_references(pitch, location_slug)
+        print(render_manifest(manifest))
+        if not manifest.ready:
+            raise SystemExit("Reference check failed — nothing spent.")
+
         world_anchor = ""
-        if args.location:
-            loc_images, world_anchor = load_location(args.location)
-            print(
-                f"[location] {args.location}: {len(loc_images)} ref(s), "
-                f"anchor {len(world_anchor)} chars"
-            )
+        if location_slug:
+            _images, world_anchor = load_location(location_slug)
 
         rules = RenderRules()
         print("[write] two-call multi-shot writer")
         package = ContentWriter(llm=llm_for_seat("content_writer")).write(
             pitch,
             rules=rules,
-            reference_image_paths=list(args.refs),
+            reference_image_paths=manifest.character_reference_paths,
             pitch_id=pitch_id,
             world_anchor=world_anchor,
-            location_reference_paths=loc_images,
+            location_reference_paths=manifest.location_reference_paths,
         )
 
         # TEMP (pitch 24 manual render): the blind text-only writer wrote

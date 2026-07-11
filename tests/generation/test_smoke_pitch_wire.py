@@ -102,15 +102,32 @@ def test_missing_pitch_row_exits_loudly(db):
         resolve_pitch(args, db)
 
 
-def test_parser_requires_pitch_id_and_refs():
+def test_angle_pitch_location_slug_defaults_none(db):
+    record = _seed_pitch(db, story_json=None)
+    assert record.location_slug is None
+
+
+def test_parser_requires_pitch_id_only():
+    # --refs retired (spec 2026-07-11): the reference check derives folders from
+    # the pitch, so --pitch-id alone is a valid invocation.
     parser = _build_parser()
     with pytest.raises(SystemExit):
-        parser.parse_args(["--refs", "a.jpg"])  # no pitch-id
-    with pytest.raises(SystemExit):
-        parser.parse_args(["--pitch-id", "1"])  # no refs
-    args = parser.parse_args(["--pitch-id", "1", "--refs", "a.jpg", "b.jpg"])
+        parser.parse_args([])  # pitch-id still required
+    args = parser.parse_args(["--pitch-id", "1"])
     assert args.pitch_id == 1
-    assert args.refs == ["a.jpg", "b.jpg"]
+    args_loc = parser.parse_args(["--pitch-id", "1", "--location", "elfie_bedroom"])
+    assert args_loc.location == "elfie_bedroom"
+
+
+def test_check_references_halts_when_missing(tmp_path, monkeypatch):
+    # An empty cwd has no refs/ — the check must report not-ready so the smoke
+    # script halts before the paid writer call.
+    from src.generation.reference_check import check_references
+    from tests.helpers.story_pitch import build_story_pitch
+
+    monkeypatch.chdir(tmp_path)
+    manifest = check_references(build_story_pitch(3), location_slug=None)
+    assert manifest.ready is False
 
 
 # --- load_location: the --location slug -> (images, anchor text) resolver --------

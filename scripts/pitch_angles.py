@@ -96,6 +96,7 @@ def run_pitch_pipeline(
     *,
     dry_run: bool,
     choice_provider: Callable[[], str] | None,
+    location_provider: Callable[[], str] | None = None,
     output_dir,
     top_n: int = 3,
     context_agent=None,
@@ -457,6 +458,16 @@ def run_pitch_pipeline(
     chosen_record.approved = True
     chosen_record.approved_at = datetime.now(timezone.utc)
     chosen_event_record.selected_for_pitching = True
+
+    # Location tag (spec 2026-07-11): the human declares which shared
+    # refs/_location/<slug>/ folder this pitch renders in. Blank = ungrounded
+    # location; the render's reference check reads this back and --location can
+    # still backfill it later.
+    slug = location_provider().strip() if location_provider else ""
+    chosen_record.location_slug = slug or None
+    if slug:
+        print(f"[location] tagged {slug!r}")
+
     db.flush()
 
     # Capture the values the handoff needs before commit so an expire-on-commit
@@ -747,6 +758,13 @@ def main() -> None:
             dry_run=args.dry_run,
             choice_provider=(
                 None if args.dry_run else lambda: input("\nPick an angle [#/s/r]: ")
+            ),
+            location_provider=(
+                None
+                if args.dry_run
+                else lambda: input(
+                    "\nLocation slug (folder under refs/_location/, blank = none): "
+                )
             ),
             output_dir=args.output_dir,
             top_n=args.top_n,
