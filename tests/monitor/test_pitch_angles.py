@@ -833,3 +833,37 @@ def test_grounding_skipped_in_dry_run(db, tmp_path, monkeypatch):
 
     assert recorder.calls == []
     assert checker.calls == []
+
+
+def test_grounding_topic_override_grounds_without_rescrape(db, tmp_path, monkeypatch):
+    """Cheap re-pitch path (repitch_event.py): single_event_bundle + grounding_topic
+    with topic=None runs grounding against the fridge WITHOUT triggering a Path B
+    re-scrape/index. Locks the grounding_topic decouple."""
+    recorder = _RecordingIndex()
+    monkeypatch.setattr(pitch_angles_module, "index_web_text", recorder)
+    checker = FakeGroundingChecker()  # coheres
+
+    run_pitch_pipeline(
+        db,
+        FakeScraper(events=[SAMPLE_TOPIC_EVENT]),
+        FakeExtractor(),
+        FakeIdeaFitGate(),
+        FakeGapAgent(),
+        FakeStoryPitcher(),
+        FakeStoryCraftGate(),
+        dry_run=False,
+        choice_provider=pick_first,
+        output_dir=tmp_path,
+        single_event_bundle=SAMPLE_BUNDLE,
+        embedder=_SENTINEL_EMBEDDER,
+        grounding_checker=checker,
+        grounding_topic="Wuthering Waves Jinhsi",
+    )
+
+    # topic is None -> no re-scrape index fired.
+    assert recorder.calls == []
+    # ...but grounding still ran, scoped to the override topic.
+    assert len(checker.calls) == len(SAMPLE_SLATE.pitches)
+    approved = db.query(AnglePitchRecord).filter_by(approved=True).one()
+    assert approved.grounding_verdict_json is not None
+    assert approved.grounding_verdict_json["coheres"] is True

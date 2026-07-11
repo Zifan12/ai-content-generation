@@ -29,6 +29,7 @@ from src.database import SessionLocal  # noqa: E402
 from src.models.trending_event import TrendingEventRecord  # noqa: E402
 from src.monitor.gap_agent import GapAgent  # noqa: E402
 from src.monitor.idea_fit_gate import IdeaFitGate  # noqa: E402
+from src.monitor.pitch_grounding import PitchGroundingChecker  # noqa: E402
 from src.monitor.schemas import ContextBundle, TrendingEvent  # noqa: E402
 from src.monitor.story_craft_gate import StoryCraftGate  # noqa: E402
 from src.monitor.story_pitcher import StoryPitcher  # noqa: E402
@@ -133,8 +134,15 @@ def main() -> None:
 
     idea_fit_gate = IdeaFitGate(llm=llm_for_seat("idea_fit_gate"))
     gap_agent = GapAgent(llm=llm_for_seat("gap_agent"))
-    story_pitcher = StoryPitcher(llm=llm_for_seat("story_pitcher"), embedder=BgeM3Embedder())
+    # One embedder, shared by the pitcher's RAG and the grounding retrieval — a
+    # second BgeM3Embedder would reload ~2.27GB.
+    embedder = BgeM3Embedder()
+    story_pitcher = StoryPitcher(llm=llm_for_seat("story_pitcher"), embedder=embedder)
     story_craft_gate = StoryCraftGate(llm=llm_for_seat("story_craft_gate"))
+    # Grounding check scoped to this event's topic (event.headline) so a cheap
+    # re-pitch grounds against the fridge chunks a prior live run already indexed
+    # for it — no re-scrape. Empty fridge for the topic -> coheres by default.
+    grounding_checker = PitchGroundingChecker(llm=llm_for_seat("pitch_grounding"))
 
     choice_provider = (
         (lambda: args.choice)
@@ -158,6 +166,9 @@ def main() -> None:
             top_n=1,
             force=args.force,
             single_event_bundle=bundle,
+            embedder=embedder,
+            grounding_checker=grounding_checker,
+            grounding_topic=event.headline,
         )
     finally:
         db.close()

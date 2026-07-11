@@ -104,6 +104,7 @@ def run_pitch_pipeline(
     single_event_bundle=None,
     embedder=None,
     grounding_checker=None,
+    grounding_topic: str | None = None,
 ) -> dict | None:
     """Run the monitor pipeline, present the slate, and persist the approved angle.
 
@@ -285,6 +286,12 @@ def run_pitch_pipeline(
     # (Path B), it is forwarded to gap + pitch/repitch so <context> gets injected.
     displayed: list[dict] = []
     killed: list[dict] = []
+    # Grounding scope: the fridge topic to retrieve canon against. Defaults to the
+    # Path B scrape ``topic``, but ``grounding_topic`` overrides it so a cheap
+    # re-pitch (repitch_event.py — single_event_bundle, topic=None, no re-scrape)
+    # can still ground against an already-populated fridge. Decouples "grounding
+    # on + fridge scope" from "topic triggers a re-scrape".
+    ground_topic = grounding_topic if grounding_topic is not None else topic
     for event, fit in fit_pairs:
         bundle = bundles.get(id(event))
         gap = gap_agent.analyze(event, bundle)
@@ -297,26 +304,28 @@ def run_pitch_pipeline(
                 )
                 verdict = story_craft_gate.evaluate(pitch, event, gap)
 
-            # Grounding check (Task 1.5): craft-survivors only, Path B only. A
-            # contradiction with the fridge's canon gets ONE bounded repair
-            # (repitch with the conflicts as failure notes), then grounding is
-            # re-checked — craft is NOT re-judged (ADR-0008 / Q6: the human slate
-            # backstops a craft regression from a grounding fix). The inline
-            # conditions also narrow the injected Optionals for mypy.
+            # Grounding check (Task 1.5): craft-survivors only, scoped to
+            # ``ground_topic``. A contradiction with the fridge's canon gets ONE
+            # bounded repair (repitch with the conflicts as failure notes), then
+            # grounding is re-checked — craft is NOT re-judged (ADR-0008 / Q6: the
+            # human slate backstops a craft regression from a grounding fix). The
+            # inline conditions also narrow the injected Optionals for mypy.
             grounding = None
             if (
                 verdict.passes
                 and grounding_checker is not None
                 and embedder is not None
-                and topic is not None
+                and ground_topic is not None
                 and not dry_run
             ):
-                grounding = grounding_checker.check(pitch, topic, embedder, db)
+                grounding = grounding_checker.check(pitch, ground_topic, embedder, db)
                 if not grounding.coheres and grounding.conflicts:
                     pitch = story_pitcher.repitch(
                         event, gap, pitch, "; ".join(grounding.conflicts), bundle
                     )
-                    grounding = grounding_checker.check(pitch, topic, embedder, db)
+                    grounding = grounding_checker.check(
+                        pitch, ground_topic, embedder, db
+                    )
 
             entry = {
                 "event": event,
