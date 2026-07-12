@@ -86,3 +86,23 @@ def test_render_manifest_mentions_missing(tmp_path, monkeypatch):
     text = render_manifest(check_references(build_story_pitch(3), None))
     assert "MISSING" in text
     assert "eve" in text
+
+
+def test_missing_voice_profile_is_noted_but_non_blocking(tmp_path, monkeypatch):
+    # eve has images but no voice_profile.md — still renderable (present/ready), just silent.
+    _layout(tmp_path, chars={"eve": 1})
+    monkeypatch.chdir(tmp_path)
+    m = check_references(build_story_pitch(3), location_slug=None)
+    eve = next(i for i in m.items if i.slug == "eve")
+    assert eve.present is True
+    assert m.ready is True
+    assert "no voice profile" in eve.detail.lower()
+
+
+def test_present_voice_profile_has_no_note(tmp_path, monkeypatch):
+    _layout(tmp_path, chars={"eve": 1})
+    (tmp_path / "refs" / "eve" / "voice_profile.md").write_text("## Fingerprint\nx", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    m = check_references(build_story_pitch(3), location_slug=None)
+    eve = next(i for i in m.items if i.slug == "eve")
+    assert "voice profile" not in eve.detail.lower()

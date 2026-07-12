@@ -100,6 +100,12 @@ def check_references(pitch: StoryPitch, location_slug: str | None) -> ReferenceM
         folder = _REFS_ROOT / slug
         images = _images_in(folder)
         present = bool(images)
+        # A voice profile is OPTIONAL grounding: its absence never flips present/
+        # ready (a character with no profile just stays silent, spec Q3-B) — it only
+        # annotates the operator-facing detail so onboarding sees what's missing.
+        has_profile = (folder / "voice_profile.md").is_file()
+        base_detail = f"{len(images)} images" if present else "MISSING — drop key-art here"
+        voice_note = "" if has_profile else "  (no voice profile — silent; run gen_voice_profile)"
         items.append(
             RequiredRef(
                 kind="character",
@@ -109,9 +115,7 @@ def check_references(pitch: StoryPitch, location_slug: str | None) -> ReferenceM
                 images=images,
                 present=present,
                 has_description=None,
-                detail=f"{len(images)} images"
-                if present
-                else "MISSING — drop key-art here",
+                detail=base_detail + voice_note,
             )
         )
 
