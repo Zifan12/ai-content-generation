@@ -202,14 +202,16 @@ def test_prompt_teaches_single_scene_and_no_narration() -> None:
     assert "no caption, no voiceover, no on-screen text" in llm.system
 
 
-def test_prompt_teaches_dialogue_is_optional_and_default_none() -> None:
+def test_prompt_teaches_profiled_characters_must_speak() -> None:
+    """Q3-B: rule 8 now gates dialogue on the cast_voices block, not 'default to none'."""
     llm = FakeLLM(_slate())
     pitcher = StoryPitcher(llm=llm, embedder=FakeEmbedder())
 
     pitcher.pitch(SAMPLE_EVENT, SAMPLE_GAP)
 
     assert "dialogue_line" in llm.system
-    assert "default to none" in llm.system
+    assert "<cast_voices>" in llm.system
+    assert "stays silent" in llm.system
 
 
 def test_low_diversity_slate_warns(caplog) -> None:

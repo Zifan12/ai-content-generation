@@ -124,12 +124,16 @@ caption, no voiceover, no on-screen text of any kind reaches the viewer):
    character must grasp the premise FROM THE PICTURES ALONE. If the desired_moment
    cannot be read off the visual_line beats without narration_line or hook_line to
    explain it, the pitch has failed regardless of craft elsewhere.
-8. AUDIO IS YOUR DECISION, PER STORY. Concrete diegetic SFX exists in every beat by
-   default (the writer adds it later; you do not need to specify sounds). Spoken
-   dialogue is OPTIONAL and YOURS to place: default to none. Add a dialogue_line only
-   when a spoken line is what makes THIS beat land — a warning shouted mid-action, a
-   one-word reaction, a line that could not be shown any other way. Never dialogue for
-   its own sake, and never more than one or two dialogue beats in a 3-5 beat pitch.
+8. GIVE PROFILED CHARACTERS A VOICE. Concrete diegetic SFX exists in every beat by
+   default (the writer adds it; you need not specify sounds). For SPOKEN dialogue:
+   a <cast_voices> block may list characters that have a voice profile. If a
+   character from that block appears in your beats, you MUST give them at least ONE
+   spoken dialogue_line, written to match their profile (diction, tics, how they
+   address people), on the beat where a line lands hardest. A character NOT in
+   <cast_voices> stays silent — do not invent dialogue for them. Every dialogue_line
+   must be sayable in one ~3-5s beat (one short sentence, <=13 words) and paired
+   with speaker; never more than TWO dialogue beats in a 3-5 beat pitch. Write what
+   the character would actually say, not a generic version anyone could say.
 
 Each beat must be renderable as its own short clip within the single continuous scene.
 
@@ -276,13 +280,17 @@ class StoryPitcher:
         event: TrendingEvent,
         gap: GapAnalysis,
         bundle: ContextBundle | None = None,
+        cast_voices: str = "",
     ) -> StoryPitchSlate:
         """
         Propose a slate of 2-3 story pitches for the event's unmet desire.
 
         Injects the full mode playbook so each pitch can commit to a mode. When a
         context bundle is supplied and non-empty, its research block is appended.
-        After parsing, runs a (non-gating) diversity check on the loglines.
+        A non-empty ``cast_voices`` block (character voice profiles) is appended so
+        the pitcher writes profiled characters' dialogue in-character and honors the
+        Q3-B dialogue floor. After parsing, runs a (non-gating) diversity check on
+        the loglines.
         """
         user_prompt = (
             "Propose 2-3 distinct story pitches that deliver the audience's unmet "
@@ -291,6 +299,8 @@ class StoryPitcher:
             f"{_gap_block(gap)}\n\n"
             f"<playbook>\n{self.playbook_block}\n</playbook>"
         )
+        if cast_voices:
+            user_prompt += f"\n\n{cast_voices}"
         if bundle is not None:
             block = bundle.to_context_block()
             if block:
@@ -314,13 +324,16 @@ class StoryPitcher:
         failed_pitch: StoryPitch,
         failure_notes: str,
         bundle: ContextBundle | None = None,
+        cast_voices: str = "",
     ) -> StoryPitch:
         """
         Produce a single repaired pitch for one that failed the craft gate.
 
         Carries the failed pitch and the gate's failure notes into the prompt and
-        instructs the model to repair THAT pitch, keeping its mode. Returns one
-        StoryPitch (not a slate) — the caller decides whether it now passes.
+        instructs the model to repair THAT pitch, keeping its mode. A non-empty
+        ``cast_voices`` block is appended so a repair driven by a dialogue-floor
+        failure can write the required in-character line. Returns one StoryPitch
+        (not a slate) — the caller decides whether it now passes.
         """
         user_prompt = (
             "Repair the failed story pitch below, keeping its mode, so it fixes the "
@@ -331,6 +344,8 @@ class StoryPitcher:
             f"<failed_pitch>\n{failed_pitch.model_dump_json(indent=2)}\n</failed_pitch>\n\n"
             f"<failure_notes>\n{failure_notes}\n</failure_notes>"
         )
+        if cast_voices:
+            user_prompt += f"\n\n{cast_voices}"
         if bundle is not None:
             block = bundle.to_context_block()
             if block:
