@@ -293,17 +293,38 @@ def run_pitch_pipeline(
     # can still ground against an already-populated fridge. Decouples "grounding
     # on + fridge scope" from "topic triggers a re-scrape".
     ground_topic = grounding_topic if grounding_topic is not None else topic
+
+    # Cast voices (spec 2026-07-11): load every character's voice profile once so the
+    # pitcher writes profiled characters in-character, and the dialogue floor (Q3-B)
+    # can require that a profiled character on screen actually speaks. A repair driven
+    # by a floor failure feeds the reason into the SAME bounded re-pitch path.
+    from src.monitor.voice_profiles import (
+        check_dialogue_floor,
+        format_cast_voices,
+        load_cast_profiles,
+    )
+
+    cast_profiles = load_cast_profiles()
+    cast_slugs = set(cast_profiles)
+    cast_voices = format_cast_voices(cast_profiles)
+
     for event, fit in fit_pairs:
         bundle = bundles.get(id(event))
         gap = gap_agent.analyze(event, bundle)
-        slate = story_pitcher.pitch(event, gap, bundle)
+        slate = story_pitcher.pitch(event, gap, bundle, cast_voices=cast_voices)
         for pitch in slate.pitches:
             verdict = story_craft_gate.evaluate(pitch, event, gap)
-            if not verdict.passes and verdict.failure_notes:
-                pitch = story_pitcher.repitch(
-                    event, gap, pitch, verdict.failure_notes, bundle
+            floor_ok, floor_reason = check_dialogue_floor(pitch, cast_slugs)
+            if not verdict.passes or not floor_ok:
+                notes = "\n".join(
+                    n for n in (verdict.failure_notes, floor_reason) if n
                 )
-                verdict = story_craft_gate.evaluate(pitch, event, gap)
+                if notes:
+                    pitch = story_pitcher.repitch(
+                        event, gap, pitch, notes, bundle, cast_voices=cast_voices
+                    )
+                    verdict = story_craft_gate.evaluate(pitch, event, gap)
+                    floor_ok, _ = check_dialogue_floor(pitch, cast_slugs)
 
             # Grounding check (Task 1.5): craft-survivors only, scoped to
             # ``ground_topic``. A contradiction with the fridge's canon gets ONE
@@ -322,7 +343,8 @@ def run_pitch_pipeline(
                 grounding = grounding_checker.check(pitch, ground_topic, embedder, db)
                 if not grounding.coheres and grounding.conflicts:
                     pitch = story_pitcher.repitch(
-                        event, gap, pitch, "; ".join(grounding.conflicts), bundle
+                        event, gap, pitch, "; ".join(grounding.conflicts), bundle,
+                        cast_voices=cast_voices,
                     )
                     grounding = grounding_checker.check(
                         pitch, ground_topic, embedder, db
@@ -339,7 +361,11 @@ def run_pitch_pipeline(
             }
             # A pitch reaches the slate only if it passes craft AND does not
             # contradict canon (a silent/empty fridge coheres by design).
-            passes_all = verdict.passes and (grounding is None or grounding.coheres)
+            passes_all = (
+                verdict.passes
+                and floor_ok
+                and (grounding is None or grounding.coheres)
+            )
             (displayed if passes_all else killed).append(entry)
 
     _print_slate(displayed)

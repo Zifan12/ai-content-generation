@@ -256,6 +256,7 @@ class FakeStoryPitcher:
         event: TrendingEvent,
         gap: GapAnalysis,
         bundle: ContextBundle | None = None,
+        cast_voices: str = "",
     ) -> StoryPitchSlate:
         self.pitch_calls.append((event, gap, bundle))
         return self._slate
@@ -267,6 +268,7 @@ class FakeStoryPitcher:
         failed_pitch: StoryPitch,
         failure_notes: str,
         bundle: ContextBundle | None = None,
+        cast_voices: str = "",
     ) -> StoryPitch:
         self.repitch_calls.append((failed_pitch, failure_notes))
         return failed_pitch.model_copy(
