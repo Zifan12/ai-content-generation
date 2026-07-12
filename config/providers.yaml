@@ -40,6 +40,7 @@ llm:
   eval_judge:          {provider: openrouter, model: "anthropic/claude-sonnet-5"}
   groundedness_judge:  {provider: openrouter, model: "google/gemini-2.5-flash"}
   location_anchor:     {provider: openrouter, model: "google/gemini-2.5-flash"}  # vision: room screencap -> world_anchor text (decision #4)
+  voice_profile:       {provider: openrouter, model: "google/gemini-2.5-flash"}  # text: fetched canon -> voice_profile.md (spec 2026-07-11)
 
 image:
   active: null
