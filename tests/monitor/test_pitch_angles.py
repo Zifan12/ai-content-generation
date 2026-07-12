@@ -810,6 +810,101 @@ def test_grounding_conflict_survives_repair_is_killed(db, tmp_path, monkeypatch)
     assert db.query(AnglePitchRecord).filter_by(approved=True).count() == 0
 
 
+def test_floor_rechecked_after_grounding_repair(db, tmp_path, monkeypatch):
+    """Regression (code review, Critical): a grounding repair that rewrites the
+    pitch and DROPS the profiled speaker's line must be killed by the dialogue
+    floor — even though grounding itself now coheres. Before the fix, floor_ok was
+    stale from before the grounding repitch and the silent pitch shipped.
+    """
+    from src.monitor.schemas import (
+        CaptionPolicy,
+        CharacterRef,
+        ShotSize,
+        StoryBeat,
+        StoryPitch,
+        StoryPitchSlate,
+    )
+
+    monkeypatch.setattr(pitch_angles_module, "index_web_text", _RecordingIndex())
+    # Jinhsi (slug "jinhsi") is the sole profiled cast member.
+    monkeypatch.setattr(
+        "src.monitor.voice_profiles.load_cast_profiles",
+        lambda *a, **k: {"jinhsi": "## Fingerprint\nregal"},
+    )
+
+    def _profiled_pitch(logline: str) -> StoryPitch:
+        cast = ["Jinhsi"]
+        return StoryPitch(
+            logline=logline, mode="wish",
+            characters=[CharacterRef(name="Jinhsi", ip_source="Wuthering Waves")],
+            desired_moment="m", scene_setting="s",
+            beats=[
+                StoryBeat(role="establish", visual_line="v", narration_line=None,
+                          shot_size=ShotSize.wide, characters_in_frame=cast),
+                StoryBeat(role="build", visual_line="v", narration_line=None,
+                          shot_size=ShotSize.medium, characters_in_frame=cast),
+                StoryBeat(role="payoff", visual_line="v", narration_line=None,
+                          dialogue_line="It ends here.", speaker="Jinhsi",
+                          shot_size=ShotSize.close_up, characters_in_frame=cast,
+                          hero_moment=True),
+            ],
+            caption_policy=CaptionPolicy.none, hook_line=None, why_it_lands="w",
+            legal_flag=False,
+        )
+
+    class _StripsDialogueOnRepitch:
+        """pitch() = profiled speaker with a line; repitch() drops the line
+        (simulating a grounding repair that rewrote the beats).
+        """
+
+        def __init__(self) -> None:
+            self._slate = StoryPitchSlate(
+                pitches=[_profiled_pitch("jinhsi one"), _profiled_pitch("jinhsi two")]
+            )
+
+        def pitch(self, event, gap, bundle=None, cast_voices=""):
+            return self._slate
+
+        def repitch(self, event, gap, failed_pitch, failure_notes, bundle=None, cast_voices=""):
+            silent_beats = [
+                b.model_copy(update={"dialogue_line": None, "speaker": None})
+                for b in failed_pitch.beats
+            ]
+            return failed_pitch.model_copy(
+                update={"logline": f"[repaired] {failed_pitch.logline}", "beats": silent_beats}
+            )
+
+    # Grounding coheres only once the pitch is silent — i.e. after the repair. So
+    # the ORIGINAL (with dialogue) conflicts -> grounding repitch -> silent pitch
+    # -> grounding now coheres, but the floor is violated (Jinhsi silent).
+    checker = FakeGroundingChecker(
+        cohere_predicate=lambda p: all(b.dialogue_line is None for b in p.beats)
+    )
+
+    result = run_pitch_pipeline(
+        db,
+        None,
+        None,
+        FakeIdeaFitGate(),
+        FakeGapAgent(),
+        _StripsDialogueOnRepitch(),
+        FakeStoryCraftGate(),  # craft passes; grounding+floor are what act
+        dry_run=False,
+        choice_provider=pick_first,
+        output_dir=tmp_path,
+        context_agent=FakeContextAgent(),
+        topic="Wuthering Waves Jinhsi",
+        embedder=_SENTINEL_EMBEDDER,
+        grounding_checker=checker,
+    )
+
+    # Nothing approved; every pitch killed BY THE FLOOR even though grounding cohered.
+    assert result is None
+    killed = db.query(AnglePitchRecord).all()
+    assert killed and all(p.killed_by_gate for p in killed)
+    assert all(p.grounding_verdict_json["coheres"] is True for p in killed)
+
+
 def test_grounding_skipped_in_dry_run(db, tmp_path, monkeypatch):
     """dry_run keeps the fridge side-effect-free: no index write, no check."""
     recorder = _RecordingIndex()

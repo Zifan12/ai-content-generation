@@ -123,3 +123,25 @@ def test_floor_passes_when_profiled_character_speaks():
     pitch = _elfaria_pitch(dialogue="You are late, again.", speaker="Elfaria Albis Serfort")
     ok, reason = check_dialogue_floor(pitch, cast_slugs={"elfaria_albis_serfort"})
     assert ok is True and reason is None
+
+
+def test_floor_is_any_not_each_of_two_profiled_characters():
+    """Q3-B is ANY: one profiled speaker with a line satisfies the floor even when a
+    second profiled character on screen stays silent.
+    """
+    both = ["Elfaria Albis Serfort", "Zeo"]
+    pitch = _pitch(
+        beats=[
+            _beat("establish", ShotSize.wide, both),
+            _beat("build", ShotSize.medium, both),
+            _beat("payoff", ShotSize.close_up, both,
+                  dialogue="We leave. Now.", speaker="Elfaria Albis Serfort"),
+        ],
+        characters=[
+            CharacterRef(name="Elfaria Albis Serfort", ip_source="Wistoria"),
+            CharacterRef(name="Zeo", ip_source="Wistoria"),
+        ],
+    )
+    # Zeo is profiled and silent, but Elfaria spoke -> floor satisfied.
+    ok, reason = check_dialogue_floor(pitch, {"elfaria_albis_serfort", "zeo"})
+    assert ok is True and reason is None

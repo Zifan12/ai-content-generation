@@ -327,9 +327,11 @@ class StoryPitcher:
         cast_voices: str = "",
     ) -> StoryPitch:
         """
-        Produce a single repaired pitch for one that failed the craft gate.
+        Produce a single repaired pitch for one that failed a gate.
 
-        Carries the failed pitch and the gate's failure notes into the prompt and
+        Invoked for craft, dialogue-floor, or grounding failures alike — the
+        specific problem travels in ``failure_notes``. Carries the failed pitch
+        and those notes into the prompt and
         instructs the model to repair THAT pitch, keeping its mode. A non-empty
         ``cast_voices`` block is appended so a repair driven by a dialogue-floor
         failure can write the required in-character line. Returns one StoryPitch

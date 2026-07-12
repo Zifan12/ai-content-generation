@@ -86,6 +86,12 @@ def check_dialogue_floor(pitch: StoryPitch, cast_slugs: set[str]) -> tuple[bool,
     ``dialogue_line`` spoken by a profiled character. If no profiled character is
     on screen, silence is allowed (pass).
 
+    Semantics are ANY, not EACH (decision Q3-B): one profiled speaker with a line
+    satisfies the floor for the whole pitch — it does NOT require every profiled
+    on-screen character to speak. The ≤2-dialogue-beats ceiling is NOT enforced
+    here; it is a soft prompt-side guide (story_pitcher rule 8) by design (Q6 =
+    "small": the only deterministic gate is this floor).
+
     Args:
         pitch: The StoryPitch to check.
         cast_slugs: Slugs of characters that have a voice profile.

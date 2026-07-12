@@ -349,6 +349,12 @@ def run_pitch_pipeline(
                     grounding = grounding_checker.check(
                         pitch, ground_topic, embedder, db
                     )
+                    # The grounding repair rewrote the pitch — re-check the dialogue
+                    # floor so passes_all reflects the FINAL pitch, not the pre-repair
+                    # one. Unlike craft (deliberately not re-judged, human backstop),
+                    # the floor is a cheap deterministic check; a repair that drops the
+                    # profiled speaker's line must kill the pitch, not slip through.
+                    floor_ok, _ = check_dialogue_floor(pitch, cast_slugs)
 
             entry = {
                 "event": event,
