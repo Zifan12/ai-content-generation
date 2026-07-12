@@ -109,7 +109,11 @@ def _unusable_verdict() -> FrameVerdict:
 class FakePlanner:
     def plan(self, character, pitch, context_block):
         return QueryPlan(
-            queries=["stellar blade official trailer"],
+            queries=[
+                "stellar blade official trailer",
+                "stellar blade gameplay",
+                "stellar blade eve cutscene",
+            ],
             target_description="Eve front-facing, clear",
         )
 
@@ -213,7 +217,11 @@ def test_happy_path_writes_approved_frames_and_manifest(patched_pipeline):
     assert len(approved) == 2
     assert "approved_candidates" in result.approved_dir
     manifest = json.loads(Path(result.manifest_path).read_text(encoding="utf-8"))
-    assert manifest["eve"]["queries"] == ["stellar blade official trailer"]
+    assert manifest["eve"]["queries"] == [
+        "stellar blade official trailer",
+        "stellar blade gameplay",
+        "stellar blade eve cutscene",
+    ]
     assert manifest["eve"]["selected"]
 
 

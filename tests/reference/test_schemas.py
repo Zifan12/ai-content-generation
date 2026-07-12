@@ -42,15 +42,15 @@ def _verdict(**overrides: object) -> FrameVerdict:
 
 
 def test_query_plan_constructs_and_rejects_extra_field() -> None:
-    plan = QueryPlan(queries=["a"], target_description="x")
-    assert plan.queries == ["a"]
+    plan = QueryPlan(queries=["a", "b", "c"], target_description="x")
+    assert plan.queries == ["a", "b", "c"]
     with pytest.raises(ValidationError):
-        QueryPlan(queries=["a"], target_description="x", extra="nope")
+        QueryPlan(queries=["a", "b", "c"], target_description="x", extra="nope")
 
 
-def test_query_plan_enforces_1_to_5_queries() -> None:
+def test_query_plan_enforces_3_to_5_queries() -> None:
     with pytest.raises(ValidationError):
-        QueryPlan(queries=[], target_description="x")
+        QueryPlan(queries=["a", "b"], target_description="x")
     with pytest.raises(ValidationError):
         QueryPlan(queries=["a", "b", "c", "d", "e", "f"], target_description="x")
 

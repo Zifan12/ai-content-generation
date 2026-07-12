@@ -55,7 +55,11 @@ class FakeLLM:
 
 def _sample_plan() -> QueryPlan:
     return QueryPlan(
-        queries=["Stellar Blade Eve trailer", "Stellar Blade Eve boss fight"],
+        queries=[
+            "Stellar Blade Eve trailer",
+            "Stellar Blade Eve boss fight",
+            "Stellar Blade Eve cutscene",
+        ],
         target_description="Eve, front-facing, mid-combat stance",
     )
 

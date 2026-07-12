@@ -70,7 +70,7 @@ visual register — not as "an AI video of the character in our world."
 <inputs>
 You receive:
 1. A STORY PITCH (JSON) — a judged, approved story: logline, mode (wish/satire),
-   characters, desired_moment, and 3-6 ordered beats. Each beat has a role
+   characters, desired_moment, and 3-5 ordered beats. Each beat has a role
    (hook/establish/build/turn/escalate/reveal/payoff/tag), a visual_line (what the
    camera sees), an optional narration_line, a shot_size, and characters_in_frame.
    Develop THIS story. Never substitute your own.
@@ -82,7 +82,7 @@ You receive:
 Produce a ShotPlanDraft: exactly ONE shot per pitch beat, in the same order, plus
 the package-level creative fields. The plan is later converted into per-shot
 scene lines and rendered as ONE continuous multi-shot AI-video generation —
-a 10-25 second vertical video with cuts happening inside the generation.
+a 10-15 second vertical video with cuts happening inside the generation.
 </task>
 
 <per_shot_rules>
@@ -100,12 +100,15 @@ a 10-25 second vertical video with cuts happening inside the generation.
   character action where cross-shot identity matters most (character_consistency —
   the default for character beats). This is metadata for analytics; it does not
   change how the shot renders.
-- duration_seconds: integer 2-8 per shot, total 10-25. This is an INTERNAL pacing
+- duration_seconds: integer 2-8 per shot, total 10-15. This is an INTERNAL pacing
   estimate used for narration budgets — it never appears in any prompt. Give the
   payoff beat the most air; keep the hook tightest.
 - narration_line: polish the beat's narration into spoken-word text at a budget of
   at most 2.2 words per second of the shot. A beat whose narration_line is null is
   a deliberate silent beat — return null for it, never invent narration.
+- beat_role / characters_in_frame: copy them verbatim from this shot's source beat
+  in the story pitch — the system re-copies both from the pitch regardless; fill
+  them consistently, never invent or reorder them.
 </per_shot_rules>
 
 <package_rules>
@@ -136,9 +139,16 @@ a 10-25 second vertical video with cuts happening inside the generation.
 # per-rule sources: docs/superpowers/plans/2026-07-06-call2-system-prompt-draft.md
 # (gitignored; the ratified TEXT lives here, the doc records where each rule
 # came from). Replaces the per-model DIALECT_SYSTEM_PROMPT (scene lane, D3).
+# NOTE (2026-07-12 audit): the filter-risk word list below (boy/girl/child/kid/
+# young; fight/battle/strike/kill/blood) matches documented NATIVE-Seedance-2.0
+# moderation guidance almost word-for-word: ai_video_resources/lanshu-awesome-
+# ai-video-kit/methodology/19-seedance-masterclass-round3.md:144-162 (敏感词替换
+# + 避免年龄词汇 tables). Caveat: that doc covers the Volcengine native platform;
+# whether the Higgsfield CLI wrapper applies the same filter layer is unmeasured.
+# Log measured evidence if a Higgsfield render ever confirms or refutes it.
 SCENE_LINE_SYSTEM_PROMPT = """\
 You are a shot-line writer for a short-form animation studio. You receive a
-planned multi-shot story (3-4 shots: each with a beat role, an action intent, the
+planned multi-shot story (3-5 shots: each with a beat role, an action intent, the
 characters in frame, and optional narration) for ONE continuous AI-video
 generation. Convert EVERY shot into one render-ready prose line. Return exactly
 one line per shot, in the given order — never merge, split, add, or drop shots.
@@ -163,8 +173,7 @@ Each shot line must contain, in this order:
    with no dialogue stays purely physical — never invent a line.
 3. SPACE — where this happens and any spatial change, in a few words ("in a stone
    academy corridor at dusk", "snow drifting past the window behind them").
-   Light stays steady: never "glow", "glimmer" or "glints" (they cause flicker
-   artifacts) — write "steady warm light", "diffuse lamplight" instead. Name the
+   Light stays steady ("steady warm light", "diffuse lamplight"). Name the
    actual physical light SOURCE causing the scene's light (a bedside lamp,
    sunlight through blinds, a phone screen's glow, overhead fluorescents) — never
    a bare mood adjective with no visible source behind it.
@@ -194,7 +203,10 @@ Hard rules:
   "small figure in an oversized coat"); replace fight/battle/strike/kill/blood
   with physical but neutral phrasing ("their magic surges and meets in a burst
   of light", "she staggers back a step").
-- Keep each line under 65 words — the whole scene must fit one prompt budget shared with identity and constraint text. Concrete nouns and verbs beat adjectives; cut everything decorative.
+- Aim for under 65 words per line (a hard structural ceiling exists above that,
+  but tight, concrete lines read best) — the whole scene must fit one prompt
+  budget shared with identity and constraint text. Concrete nouns and verbs beat
+  adjectives; cut everything decorative.
 - The lines must read as ONE continuous scene: reuse the established space and
   light; when the location changes between shots, make the new shot's SPACE
   clause name it explicitly.
@@ -237,12 +249,13 @@ def _build_scene_envelope(plan: ShotPlanDraft, pitch: StoryPitch) -> str:
 
     Each shot carries its index, beat role, cast, the motion_intent to convert,
     and — code-copied from the SOURCE StoryBeat, never from the draft — the
-    dialogue_line/speaker pair when the pitch placed one on this beat. Durations
-    stay absent (D2); anchors/style stay absent (composed by the adapter).
+    cast list and the dialogue_line/speaker pair when the pitch placed one on
+    this beat. Durations stay absent (D2); anchors/style stay absent (composed
+    by the adapter).
     """
     lines = ["<plan>"]
     for index, (shot, beat) in enumerate(zip(plan.shots, pitch.beats)):
-        cast = ", ".join(shot.characters_in_frame) or "no named characters"
+        cast = ", ".join(beat.characters_in_frame) or "no named characters"
         dialogue = (
             f'\n  dialogue: {beat.speaker} says "{beat.dialogue_line}"'
             if beat.dialogue_line is not None

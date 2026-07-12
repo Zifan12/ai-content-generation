@@ -98,11 +98,12 @@ You are given the topic, what you have gathered from Reddit so far, what you hav
 from the web so far, and the exact list of search phrases you have already tried on each tool. \
 Decide ONE of three things:
 - next_action="reddit_search": you need more fan reaction text. Set next_query to a short \
-search phrase (not a full sentence) for what to search Reddit for.
+search phrase (not a full sentence) for what to search Reddit for. Leave next_url as an \
+empty string.
 - next_action="tavily_search": you need more general background/factual context. Look for \
 one specific unclear thing in <reddit_gathered> — a phrase, claim, or reference whose real \
 meaning can't be confirmed from the reaction text alone — and set next_query to search for \
-exactly that fact, not a generic topic search.
+exactly that fact, not a generic topic search. Leave next_url as an empty string.
 - next_action="firecrawl_extract": a specific structured fact (a stat, a numeric value) might \
 be sitting on a page you already found via tavily_search, but the search snippet didn't show \
 it. Set next_url to that page's exact URL (copy it exactly as it appeared in <web_gathered> — \
@@ -132,7 +133,7 @@ use quickly, without re-reading all the raw material.
 Produce a ContextSynthesis:
 - summary: 2-4 sentences covering what is actually going on with this topic and how the \
 audience is reacting to it. Concrete and specific, not vague.
-- key_moments: a short list of the most citable specific beats from the gathered material \
+- key_moments: 3-6 of the most citable specific beats from the gathered material \
 (e.g. "lead character dies at minute 42", "showrunner confirms no resurrection planned") — \
 things a writer could directly reference, not generic statements.
 - unresolved_facts: a list of specific things you (or an earlier search) tried to verify — \

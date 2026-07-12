@@ -117,7 +117,7 @@ _JUDGE_USER_TEMPLATE = """\
 {reaction_sample}
 </audience_reaction>
 
-Is this event worth producing as a high-quality rendered video?\
+Answer Q1 (fictional & recognisable), Q2 (mode), and the heat score for this event.\
 """
 
 

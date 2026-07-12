@@ -17,7 +17,7 @@ class QueryPlan(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    queries: list[str] = Field(min_length=1, max_length=5)
+    queries: list[str] = Field(min_length=3, max_length=5)
     target_description: str
 
 

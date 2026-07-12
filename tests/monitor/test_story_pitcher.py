@@ -178,7 +178,7 @@ def test_repitch_returns_single_pitch_and_carries_failure_notes() -> None:
 
 
 def test_estimate_pitch_credits_scales_with_beats() -> None:
-    assert estimate_pitch_credits(_pitch()) == 28.5  # 3 beats * (2 + 7.5)
+    assert estimate_pitch_credits(_pitch()) == 40.5  # 3 beats * 3s * 4.5 cr/s
     five = _pitch(
         beats=[
             _beat(BeatRole.hook, ShotSize.wide),
@@ -188,7 +188,7 @@ def test_estimate_pitch_credits_scales_with_beats() -> None:
             _beat(BeatRole.payoff, ShotSize.extreme_close_up, hero=True),
         ]
     )
-    assert estimate_pitch_credits(five) == 47.5  # 5 beats * 9.5
+    assert estimate_pitch_credits(five) == 67.5  # 5 beats * 3s * 4.5 cr/s
 
 
 def test_prompt_teaches_single_scene_and_no_narration() -> None:
