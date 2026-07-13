@@ -36,6 +36,11 @@
   2026-06-18) → keyframe escalation (`--start-image`/`--end-image`) or re-route to Hailuo.
 
 ### L2. Connect shots by CRAFT, never last-frame handoff (2026-06-18 fork-resolved)
+> **SCOPE NOTE (2026-07-06/07, motion-native spec):** in the v1 scene lane there is
+> only ONE generation — no shot-to-shot connection problem exists, so the craft
+> rules below scope-narrow to nothing in v1. The handoff BAN itself stands and
+> re-applies the moment any multi-generation path (extend-continuation, breakouts)
+> returns.
 - Feeding clip N's last frame into clip N+1 = photocopy-of-a-photocopy → grey mush.
   BANNED. (This killed the original morph-chain: `render_taste_test/_frames/`
   seg1 photoreal → seg3 grey-dot.)
@@ -82,7 +87,30 @@
 ### L7. Cost discipline (ADR-0007 / project render rule)
 - State credit cost BEFORE any paid render, always. No silent spends.
 - Kling-cheap-first; escalate to Seedance (~72cr) only when the look demands it
-  (06-27 spec §5).
+  (06-27 spec §5). [Scene lane: Seedance IS the lane — the rule's routing half is
+  legacy; the state-cost-first half is eternal.]
+- **MEASURED rates (billing ledger `higgsfield account transactions`, 2026-07-06/07
+  — billing beats session notes AND the cost subcommand):**
+  - Seedance 2.0: **linear 4.5cr/s @720p** (22.5/45/67.5 for 5/10/15s, kept
+    charges); ~9cr/s @1080p inferred from refunded attempts (90/10s, 135/15s).
+  - GPT Image 2: **7cr/image** (6 sheet generations, 2026-07-07).
+  - nano_banana_2: 2cr/image. TTS text2speech_v2: 0.15cr/line.
+  - Failed/rejected jobs are REFUNDED (confirmed across bisect + validation runs).
+
+### L8. Motion-native scene lane — MEASURED CLI facts (2026-07-06 bisect + 07-07 validation)
+- **Duration ≤15s works via CLI** (15.07s outputs verified twice). The bisect's own
+  "15s fails always" verdict was DISPROVEN same-day by a clean probe — early
+  failures were confounded/transient. 10s = D1 v1 target, not a cap.
+- **Bracketed timestamps (`[0-3s]`) rejected** at any duration >5s; prose-chained
+  shots ("Then cut to: ...") cut internally — the load-bearing grammar.
+- **Reference binding is TEXTUAL-POSITIONAL** — prose must name "(imageN)" per
+  character; upload order defines N. Path convention refs/<slug>/ feeds it.
+- **≤9 image refs / ≤12 files total / ≤3000-char prompt** enforced as adapter
+  crash-loud guards; all three refused bad input live with 0cr wasted (2026-07-07).
+- **Pipeline validation verdict (user, 2026-07-07): the UNATTENDED lane's pitch-24
+  render is "better than the slideshow" — architecture VALIDATED.** Content quality
+  (story sizing, narration voice, hook copy) failed on layers outside the render
+  lane; workstreams tracked in PLAN.md 07-07 update + seedance_motion_test/FINDINGS.md.
 
 ---
 
@@ -101,6 +129,11 @@ carried by (a) the key-art reference into the still model and (b) a per-package
 `style_anchor` line appended to every still prompt.
 
 ### D-consistency. Cross-shot lock = Kling multi-shot-in-one-generation (primary)
+> **SUPERSEDED 2026-07-06 (motion-native spec D3) — Kling demoted to nothing in
+> v1.** The scene lane renders the whole package as ONE Seedance generation;
+> cross-shot consistency is solved by construction (single continuous model
+> context, validated by the 07-07 pitch-24 render). The spike evidence below
+> stays as Tier-1 history; the launch-mechanism decision it carried is dead.
 **Spike ran 2026-07-04 (`kling_multishot_spike/PLAN.md`, 50cr total, user-judged):
 PARTIAL-ACCEPT.** Split verdict:
 - **Now Tier-1 evidence (spike-proven mechanics):**
@@ -149,6 +182,10 @@ PARTIAL-ACCEPT.** Split verdict:
   `music_brief`; flat mix (BGM ~0.2 volume, 3s fade-out), no ducking in v1.
 
 ### D-text. "No on-screen text" constraint is scoped to the RENDERED FRAME
+> **SUPERSEDED 2026-07-07 (native-quality-v2 spec) — no on-screen text AT ALL.**
+> The hook card is deleted, not deferred to assembly: the video is pure picture +
+> native sound, `hook_text` is forced None at the writer level, and the drawtext
+> branch goes dormant. The evie-spike drawtext proof below stays as history only.
 - `global_constraints.always_append` keeps suppressing baked-in text/subtitles/
   watermarks inside the render. The hook card is burned at ASSEMBLY (ffmpeg
   drawtext, proven in the evie spike) — no conflict with `hook_text`.

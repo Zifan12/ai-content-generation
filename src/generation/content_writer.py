@@ -53,11 +53,38 @@ WRITER_MAX_TOKENS = 16384
 # locally invented, not Seedance-derived. Seedance tolerates ~4000 chars/shot,
 # and the docs' own worked examples carrying our exact content mix (camera +
 # action + space + dialogue + audio) run 55-65 words — right where the LLM kept
-# landing, so 60 was false-failing normal lines. 90 catches a genuine runaway
-# while leaving headroom under the measured 3000-char TOTAL-prompt adapter cap
-# (~5 shots x ~100 words). See ai_video_resources/lanshu .../02-进阶公式.md:108-110,
+# landing, so 60 was false-failing normal lines. 90 catches a genuine runaway.
+# NOTE (2026-07-12): 90/line is per-shot only — it does NOT guarantee the
+# composed TOTAL fits the adapter's max_prompt_chars ceiling (5 x 90 words +
+# overhead ≈ 3600 chars > 3000; the 07-11 recalibration silently dropped the
+# global guarantee the old 60 cap gave by accident, and pitch-43 blew the
+# adapter guard the next day). The global budget is enforced separately below
+# via _scene_body_budget + one bounded retry.
+# See ai_video_resources/lanshu .../02-进阶公式.md:108-110,
 # video_model_system_guide.md:138-148, render_taste_test/DECISIONS_LOCKED.md:108.
 _SCENE_LINE_MAX_WORDS = 90
+
+# Chars the adapter's composed scene prompt adds BEYOND the blocks this module
+# can measure exactly (style_anchor / anchors_block / world_anchor / quality
+# suffix / scene-line body): the style-preamble and constraint-tail literals
+# (~115), block-join newlines (~8), the per-character "(imageN)" binding
+# sentences (~40 + ~8/ref, ≤9 refs), and the setting-binding sentence (~35).
+# ponytail: constant reserve, re-measure if adapter._scene_prompt's composition
+# ever changes shape. Pitch-43 measured total overhead 971 = 482 package-known
+# + 489 covered here; 500 clears that measurement with margin (450 undershot it).
+_COMPOSED_OVERHEAD_RESERVE = 500
+
+# Combined style_anchor + anchors_block ceiling for the PLAN call. These are LLM
+# output too — the 2026-07-12 pitch-43 retry run emitted 715 combined chars
+# (vs the render-proven 387 the day before), starving the scene-line budget to
+# <50 words/shot, below the corpus's own 55-65-word examples. 420 admits the
+# proven shape and rejects the bloated one while keeping the body budget ≥
+# ~1800 chars (~58 words/shot x 5).
+_PLAN_BLOCKS_MAX_CHARS = 420
+
+# Each LLM call gets ONE bounded repair on a blown budget (same convention as
+# the craft gate's repair re-pitch, scripts/pitch_angles.py) — then fail loud.
+_SCENE_BUDGET_ATTEMPTS = 2
 
 PLAN_SYSTEM_PROMPT = """\
 <role>
@@ -92,17 +119,24 @@ a 10-15 second vertical video with cuts happening inside the generation.
   diegetic sounds of the moment (name actual sounds, never "ambient sounds").
   No music. No style or palette words. Describe the CHARACTER ONLY BY NAME or
   role — do NOT write identity descriptions (hair, outfit); identity is bound to
-  reference images by the system. Between adjacent shots, author a MATCH CUT:
-  end this shot on a shape or motion the next shot opens on.
+  reference images by the system. Between adjacent shots, chain the action:
+  this shot's END STATE is the next shot's START STATE (if this shot ends with
+  her hand on the door, the next opens from that hand on that door), and where
+  possible author it as a MATCH CUT — end on a shape or motion the next shot
+  opens on.
 - motion_tag: classify what the shot NEEDS rendered — fluid/water physics
   (fluid_motion), physically impossible held states (impossible_physics),
   melt/morph/grow (transformation), epic scale spectacle (spectacle), or ordinary
   character action where cross-shot identity matters most (character_consistency —
   the default for character beats). This is metadata for analytics; it does not
   change how the shot renders.
-- duration_seconds: integer 2-8 per shot, total 10-15. This is an INTERNAL pacing
-  estimate used for narration budgets — it never appears in any prompt. Give the
-  payoff beat the most air; keep the hook tightest.
+- duration_seconds: integer 3-8 per shot, total 10-15. This is an INTERNAL pacing
+  estimate used for narration budgets — it never appears in any prompt. Never
+  plan a shot under 3 seconds: an action needs that long to physically read on
+  screen. Allocate air deliberately across the arc — the hook can open wide and
+  brisk, the build carries the middle, and the payoff beat gets the MOST air of
+  any shot (framing tightens as the story peaks: wide early, closest at the
+  payoff).
 - narration_line: polish the beat's narration into spoken-word text at a budget of
   at most 2.2 words per second of the shot. A beat whose narration_line is null is
   a deliberate silent beat — return null for it, never invent narration.
@@ -115,10 +149,13 @@ a 10-15 second vertical video with cuts happening inside the generation.
 - style_anchor: ONE line naming the source work's visual register concretely (for
   an anime: its animation style, line quality, palette family, broadcast grade;
   for a game/live-action register: its cinematography). The system composes it
-  into the final prompt once, so it must be true for every shot.
+  into the final prompt once, so it must be true for every shot. Keep it under
+  ~25 words — it shares a hard prompt budget with the scene text.
 - anchors_block: one identity sentence per character who appears on screen — name,
   hair, outfit category + primary color, and one recognition trait, matched to the
-  supplied reference art era. The system composes it into the final prompt once.
+  supplied reference art era. Nothing else — no backstory, no mood, no second
+  outfit detail; every extra word here is stolen from the scene text's budget.
+  The system composes it into the final prompt once.
 - caption: native creator voice for the fandom, may seed a comment-driving question.
 - hashtags: a small mix — one or two broad tags plus a couple of fandom tags.
 - music_brief: one line describing the score that fits the mode and source (or
@@ -159,7 +196,10 @@ Each shot line must contain, in this order:
    planned; never repeat the previous shot's framing.
 2. SUBJECT + ACTION — who is on screen and ONE concrete action they perform,
    present tense, as countable physical beats ("turns and looks back", "pulls a
-   worn plush doll from inside his coat"). One action verb chain per shot. Show
+   worn plush doll from inside his coat"). Give the action internal ACCELERATION
+   where the story has it — a beat-timed build ("three slow steps, then she
+   spins on the final step") animates; a single sustained gentle verb held for
+   the whole shot reads stiff. One action verb chain per shot. Show
    emotion only through the body: hands, eyes, breath, posture — never name a
    feeling ("sad", "moved") and never explain intent. Refer to each character by
    the EXACT same name in every shot line — never swap to a pronoun or a generic
@@ -180,8 +220,13 @@ Each shot line must contain, in this order:
 4. CAMERA — one camera behavior for the shot, written separately from the
    subject's action so the model never confuses who moves ("Camera: slow
    push-in", "Camera: static, shallow depth of field", "Camera: slow tilt from
-   their joined hands up to her face"). ONE move only; qualify speed (slow/
-   gentle/smooth). Never stack pan+zoom+dolly.
+   their joined hands up to her face"). ONE move only; always qualify speed.
+   VARY the speed tier across the scene — a scene where every shot is slow or
+   static reads stiff and puppet-like. Calm beats take slow/gentle/smooth; the
+   scene's most kinetic beat (a catch, a fall, an impact) takes "swift" or
+   "quick" — ALWAYS bound to its one named moving element ("the glove snaps
+   shut around the ball in one swift motion"), never as a bare mood word. Never write
+   unqualified "fast"; never stack pan+zoom+dolly.
 5. AUDIO EVENT — one concrete diegetic sound tied to what happens on screen
    ("soft crunch of snow underfoot", "the faint ring of steel"). Name the exact
    sound, never "sound effects" or "ambient sounds". Bind the sound to the action
@@ -270,6 +315,42 @@ def _build_scene_envelope(plan: ShotPlanDraft, pitch: StoryPitch) -> str:
     return "\n".join(lines)
 
 
+def _scene_body_budget(plan: ShotPlanDraft, rules: RenderRules, world_anchor: str) -> int:
+    """Char budget available to the joined scene lines (the prompt's body).
+
+    The adapter composes the final scene prompt as fixed blocks + body and
+    crash-louds over the model's max_prompt_chars — but only AFTER the LLM
+    spend. This mirrors that arithmetic writer-side so an over-budget body is
+    caught (and retried) at the producer. Exact where possible: the package's
+    own blocks and the yaml quality suffix are measured directly; the adapter's
+    literals and binding sentences are covered by _COMPOSED_OVERHEAD_RESERVE
+    (deliberately conservative — the adapter's ceiling stays as the backstop).
+
+    Returns:
+        Max chars the "Then cut to:"-joined scene lines may occupy.
+    """
+    model_block = rules.model(rules.scene_model())
+    quality_suffix = " ".join(model_block["dialect"]["quality_suffix"].split())
+    return (
+        int(model_block["limits"]["max_prompt_chars"])
+        - len(plan.style_anchor)
+        - len(plan.anchors_block)
+        - len(world_anchor)
+        - len(quality_suffix)
+        - _COMPOSED_OVERHEAD_RESERVE
+    )
+
+
+def _scene_body_chars(scene_lines: list[str]) -> int:
+    """Length of the scene-line body exactly as the adapter joins it."""
+    return len(
+        " ".join(
+            line if i == 0 else f"Then cut to: {line}"
+            for i, line in enumerate(scene_lines)
+        )
+    )
+
+
 class ContentWriter:
     """Turns a judged StoryPitch into a validated MultiShotPackage.
 
@@ -321,53 +402,130 @@ class ContentWriter:
         Raises:
             ValueError: if the plan's shot count differs from the pitch's beat
                 count; if the scene call returns a line count that differs from
-                the plan (fail loud over mis-assignment); or if any returned line
+                the plan (fail loud over mis-assignment); if any returned line
                 leaks the anchors_block or style_anchor text (identity/style are
                 composed in code — a leaked copy would fight the composed one and
-                trigger drift).
+                trigger drift); or if the joined scene lines still exceed the
+                composed-prompt char budget after the bounded repair re-call
+                (the adapter's max_prompt_chars guard would reject the package
+                anyway — failing here saves the spend).
         """
-        plan = self.llm.parse(
-            _build_plan_envelope(pitch, rules),
-            ShotPlanDraft,
-            system=PLAN_SYSTEM_PROMPT,
-            max_tokens=WRITER_MAX_TOKENS,
-        )
-        if len(plan.shots) != len(pitch.beats):
+        # PLAN call — its style_anchor/anchors_block are LLM output too, and fat
+        # blocks starve the scene-line budget downstream, so they get the same
+        # bounded budget-repair treatment as the scene call below.
+        plan_envelope = _build_plan_envelope(pitch, rules)
+        plan = None
+        for attempt in range(_SCENE_BUDGET_ATTEMPTS):
+            candidate_plan = self.llm.parse(
+                plan_envelope,
+                ShotPlanDraft,
+                system=PLAN_SYSTEM_PROMPT,
+                max_tokens=WRITER_MAX_TOKENS,
+            )
+            if len(candidate_plan.shots) != len(pitch.beats):
+                raise ValueError(
+                    f"plan produced {len(candidate_plan.shots)} shots for "
+                    f"{len(pitch.beats)} beats — one shot per beat is the contract"
+                )
+            blocks_chars = len(candidate_plan.style_anchor) + len(
+                candidate_plan.anchors_block
+            )
+            if blocks_chars <= _PLAN_BLOCKS_MAX_CHARS:
+                plan = candidate_plan
+                break
+            logger.warning(
+                "plan style_anchor+anchors_block %s chars over the %s cap "
+                "(attempt %s/%s) — retrying",
+                blocks_chars,
+                _PLAN_BLOCKS_MAX_CHARS,
+                attempt + 1,
+                _SCENE_BUDGET_ATTEMPTS,
+            )
+            plan_envelope = (
+                f"{_build_plan_envelope(pitch, rules)}\n\n"
+                f"REWRITE: your previous style_anchor and anchors_block totaled "
+                f"{blocks_chars} characters; together they must fit "
+                f"{_PLAN_BLOCKS_MAX_CHARS} characters. Keep style_anchor to one "
+                "tight line and each character's anchor sentence to name, hair, "
+                "outfit category + primary color, one recognition trait — nothing "
+                "else. Keep every other field as good as before."
+            )
+        if plan is None:
             raise ValueError(
-                f"plan produced {len(plan.shots)} shots for {len(pitch.beats)} "
-                "beats — one shot per beat is the contract"
+                f"plan style_anchor+anchors_block still over the "
+                f"{_PLAN_BLOCKS_MAX_CHARS}-char cap after "
+                f"{_SCENE_BUDGET_ATTEMPTS} attempts ({blocks_chars} chars) — fat "
+                "identity blocks starve the scene-line budget"
             )
 
         # ONE scene call — the whole plan in, one prose line per shot out (D3).
-        conversion = self.llm.parse(
-            _build_scene_envelope(plan, pitch),
-            SceneLines,
-            system=SCENE_LINE_SYSTEM_PROMPT,
-            max_tokens=WRITER_MAX_TOKENS,
-        )
-        if len(conversion.scene_lines) != len(plan.shots):
-            raise ValueError(
-                f"scene call returned {len(conversion.scene_lines)} lines for "
-                f"{len(plan.shots)} shots"
+        # A blown GLOBAL char budget gets one bounded repair re-call with the
+        # overage fed back (regenerate-with-feedback, never truncate — cutting
+        # prose mid-sentence is a worse formatting failure than the one being
+        # fixed). Structural failures (count mismatch, runaway line, anchor
+        # leak) stay immediate fail-loud: they signal a broken conversion, not
+        # ordinary verbosity variance.
+        body_budget = _scene_body_budget(plan, rules, world_anchor)
+        envelope = _build_scene_envelope(plan, pitch)
+        conversion = None
+        for attempt in range(_SCENE_BUDGET_ATTEMPTS):
+            candidate = self.llm.parse(
+                envelope,
+                SceneLines,
+                system=SCENE_LINE_SYSTEM_PROMPT,
+                max_tokens=WRITER_MAX_TOKENS,
             )
-        for index, line in enumerate(conversion.scene_lines):
-            word_count = len(line.split())
-            if word_count > _SCENE_LINE_MAX_WORDS:
+            if len(candidate.scene_lines) != len(plan.shots):
                 raise ValueError(
-                    f"scene line {index} is {word_count} words (hard cap "
-                    f"{_SCENE_LINE_MAX_WORDS}) — the prompt's soft budget is 65; "
-                    "this line ran away and must be rejected, not silently trimmed"
+                    f"scene call returned {len(candidate.scene_lines)} lines for "
+                    f"{len(plan.shots)} shots"
                 )
-        for index, line in enumerate(conversion.scene_lines):
-            for label, anchor in (
-                ("anchors_block", plan.anchors_block),
-                ("style_anchor", plan.style_anchor),
-            ):
-                if anchor and anchor in line:
+            for index, line in enumerate(candidate.scene_lines):
+                word_count = len(line.split())
+                if word_count > _SCENE_LINE_MAX_WORDS:
                     raise ValueError(
-                        f"scene line {index} leaked {label} text — identity/style "
-                        "are composed in code, never written by the LLM"
+                        f"scene line {index} is {word_count} words (hard cap "
+                        f"{_SCENE_LINE_MAX_WORDS}) — the prompt's soft budget is 65; "
+                        "this line ran away and must be rejected, not silently trimmed"
                     )
+            for index, line in enumerate(candidate.scene_lines):
+                for label, anchor in (
+                    ("anchors_block", plan.anchors_block),
+                    ("style_anchor", plan.style_anchor),
+                ):
+                    if anchor and anchor in line:
+                        raise ValueError(
+                            f"scene line {index} leaked {label} text — identity/style "
+                            "are composed in code, never written by the LLM"
+                        )
+            body_chars = _scene_body_chars(candidate.scene_lines)
+            if body_chars <= body_budget:
+                conversion = candidate
+                break
+            words_per_line = body_budget // max(len(plan.shots), 1) // 6
+            logger.warning(
+                "scene body %s chars over its %s budget (attempt %s/%s) — retrying",
+                body_chars,
+                body_budget,
+                attempt + 1,
+                _SCENE_BUDGET_ATTEMPTS,
+            )
+            envelope = (
+                f"{_build_scene_envelope(plan, pitch)}\n\n"
+                f"REWRITE: your previous scene lines totaled {body_chars} characters, "
+                f"but all lines together must fit {body_budget} characters "
+                f"(roughly {words_per_line} words per line). Rewrite ALL "
+                f"{len(plan.shots)} lines tighter — same shots, same order, same "
+                "dialogue — cut decorative detail first, never the action, framing, "
+                "camera, or audio clauses."
+            )
+        if conversion is None:
+            raise ValueError(
+                f"scene lines still over the composed-prompt budget after "
+                f"{_SCENE_BUDGET_ATTEMPTS} attempts ({body_chars} chars for a "
+                f"{body_budget}-char body budget) — refusing to hand the adapter "
+                "a prompt that will blow max_prompt_chars"
+            )
 
         scene_model = rules.scene_model()
         logger.info(

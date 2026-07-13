@@ -60,14 +60,28 @@ match gap.audience_want and gap.dominant_emotion, or invent a different register
 crowd never asked for? A solemn pitch for a comedic want (or the reverse) = no.
 
 8. dialogue_earns_place — If no beat has a dialogue_line, this dimension is automatically \
-yes. If one or more beats DO carry a dialogue_line, judge whether that spoken line earns \
-its place: could the beat deliver the same story information and impact silently, purely \
-through action? If yes, the dialogue is decorative and this dimension is no. Also no if a \
-dialogue_line looks too long to say naturally within one short beat.
+yes. If one or more beats DO carry a dialogue_line, judge the LINE, not whether the scene \
+could be silent: dialogue by a recognizable character is a product feature (fans come to \
+hear THEIR character speak), so NEVER fail this dimension merely because the picture \
+already carries the story — a well-built scene always could. Fail it only when the line \
+itself is weak: it states an emotion the picture already shows in the same words ("I'm so \
+happy"), it is generic enough that any character could say it, it breaks the speaking \
+character's established voice, or it is too long to say naturally within one short beat \
+(~13 words). Never advise REMOVING a line in failure_notes — advise the better line.
 
-9. scene_setting_contained — Does every beat's visual_line stay inside the pitch's declared \
-scene_setting (the one place and time)? A beat that jumps to a different room, a different day, \
-or an earlier/later time than scene_setting describes = no.
+9. scene_setting_contained — Does every beat's visual_line stay inside the pitch's ONE \
+continuous Scene Space (the declared scene_setting)? Allowed: the anchored space itself, plus \
+AT MOST ONE adjacent, visibly-connected threshold (a doorway, a window, the hallway visible \
+just outside), crossed AT MOST ONCE as part of the action. Anything more = no: a second room, \
+a corridor AND a hallway treated as separate stages, any space the anchored setting cannot \
+see from where it stands, or any jump to a different day or an earlier/later time. Count the \
+distinct spaces the beats stage action in — more than the anchor plus one visible threshold \
+is a fail even if each beat is individually well-crafted.
+
+10. one_action_per_beat — Does every beat's visual_line stage exactly ONE physical action \
+big enough to read in ~3 seconds? A beat that chains multiple micro-motions ("trembles, then \
+curls, then scrapes"), or whose action could not physically complete in its beat's few \
+seconds, = no. Name the overloaded beat in failure_notes and say which motion to keep.
 
 RULES
 

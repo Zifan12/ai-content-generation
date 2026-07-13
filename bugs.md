@@ -888,3 +888,59 @@ Track every shipped feature that fails, what was tried, and what fixed it.
   live-verified detail. Status left "open" above reflects this entry's original diagnosis; the fix
   itself is tracked and closed in that plan's own commits, not by editing this entry's Status line
   retroactively.
+
+
+### BUG-026 - context_agent's planner had no way to detect exhausted/repetitive reddit_search results, looped 16x on one topic
+- Date opened: 2026-07-08 (live-tested the BUG-025 fix again on event 8's exact topic)
+- Status: fixed 2026-07-08 (commit 0087078)
+- Feature: `ContextAgent`'s plan/act loop (`src/monitor/context_agent.py`) — the planner LLM
+  decides each turn whether to call reddit_search/tavily_search/firecrawl_extract or stop.
+- Error/behavior: live run on a real, small/niche subreddit (r/Wistoria) — the planner called
+  reddit_search 16 times, each with a differently-worded query, before the cost ceiling stopped
+  it. Real spend $2.115, confirmed against the actual Apify dashboard: 17 real actor runs (16
+  reddit_search + 1 one-time community lookup, both hit the same `harshmaur/reddit-scraper`
+  actor). Root cause: BUG-023's fix (2026-07-07) stopped the planner repeating an *identical*
+  query string, but did nothing to detect when *differently-worded* queries return substantially
+  the *same* underlying posts — a small subreddit's results converge on the same ~15-20 threads
+  regardless of phrasing (confirmed: several exact URLs recurred 5-6+ times across the run's
+  combined reference list), and the planner, reading an ever-growing wall of accumulated text,
+  couldn't reliably tell "genuinely new" from "same content, reworded."
+- Fix: added `consecutive_stale_reddit_calls` to `ContextAgentState`, computed in code (set
+  difference of `result.urls` against `state.urls`, never LLM judgment) in `_act_reddit`.
+  `decide_next_step` gained a third hard override, same pattern as the pre-existing call-count
+  and cost-ceiling checks: after 3 reddit_search calls in a row returning zero new URLs, force
+  stop (3 chosen deliberately patient-over-eager, user call — no formula for the "right" number).
+  Also tightened `_DEFAULT_MAX_RUN_APIFY_COST` $2.00 -> $1.50 -> $1.00 over the course of this
+  session as the actual failure mode became clear. 23 pre-existing tests updated for the new
+  required state field/kwarg (mechanical); 3 new regression tests added covering reset-on-new-
+  url, increment-on-stale, and the stop override itself.
+- Known residual gap, not fixed (low priority, theoretical): the new stale-streak override skips
+  straight to finalize, same as the other two hard overrides, even if tavily_search/
+  firecrawl_extract were never tried once — unlike the cost/call ceilings (genuine resource
+  exhaustion), Reddit going stale doesn't necessarily mean the run is out of budget, so arguably
+  it should redirect to try the untried tool once before giving up. Not yet observed to cause a
+  real problem in a real run — parked, not scheduled.
+
+
+### BUG-027 - Path A (auto-scraped events) never gets the same research depth as Path B (manual topic), even after narrowing to survivors
+- Date opened: 2026-07-08 (spotted reading `event`/`bundle` output structure from the BUG-026 live test)
+- Status: open — explicitly out of scope for now (user call, 2026-07-08: "let's only deal with
+  Path B"). Logged so the asymmetry is a documented, deliberate scope boundary, not a silent gap.
+- Feature: `scripts/pitch_angles.py`'s `run_pitch_pipeline`, comparing Path A (`scraper.fetch()` +
+  `EventExtractor.extract()`) against Path B (`ContextAgent.gather(topic)`).
+- Behavior: Path A scans several subreddits (`ApifyRedditScraper`, ~7 subs x ~4 posts), builds
+  each `TrendingEvent.reaction_sample` directly from the top 8 real comments per post at scrape
+  time — no research loop, no `ContextBundle`, `bundle=None` for every Path A event, always.
+  `EventExtractor` then picks the best `top_n` (default 3) via one LLM call, and those survivors
+  go straight to `gap_agent`/`story_pitcher` with no bundle — no summary, no key_moments, no
+  background-fact resolution, no unresolved-facts check. Path B's `ContextAgent.gather()` runs
+  the full iterative research loop (reddit_search/tavily_search/firecrawl_extract, multiple
+  rounds) on its ONE given topic and always produces a bundle.
+- Why this isn't (yet) called a defect: Path A scans dozens of candidate posts before narrowing
+  down — running the full multi-tool ContextAgent loop on every scraped post before knowing which
+  ones survive `idea_fit_gate` would be far more expensive than the current one-shot scrape. The
+  asymmetry only becomes questionable AFTER narrowing to `top_n` survivors (cheap to research
+  further at that point) — nothing currently sends those survivors through the same deep-research
+  step Path B topics get.
+- Decision: not being fixed now. Session scope is Path B only; Path A's research-depth parity is
+  a real, legitimate design question for later, not an active work item.

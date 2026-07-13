@@ -43,12 +43,13 @@ def _verdict(
     register_match: bool = True,
     dialogue_earns_place: bool = True,
     scene_setting_contained: bool = True,
+    one_action_per_beat: bool = True,
     would_watch: bool = True,
 ) -> StoryCraftVerdict:
-    """Build a verdict with all nine craft dims + would_watch set as asked.
+    """Build a verdict with all ten craft dims + would_watch set as asked.
 
     Note we NEVER pass ``passes`` — it is a computed property on the schema,
-    derived from these ten booleans.  Whatever these are set to, ``passes``
+    derived from these eleven booleans.  Whatever these are set to, ``passes``
     follows automatically.  That is the exact behaviour the pass/fail tests
     below pin down.
     """
@@ -62,6 +63,7 @@ def _verdict(
         register_match=register_match,
         dialogue_earns_place=dialogue_earns_place,
         scene_setting_contained=scene_setting_contained,
+        one_action_per_beat=one_action_per_beat,
         notes="canned verdict for testing",
         failure_notes=None,
         would_watch=would_watch,
@@ -132,7 +134,7 @@ def test_bad_tableau_fixture_still_validates():
     assert len(BAD_TABLEAU_PITCH.beats) == 3
 
 
-def test_prompt_carries_all_nine_dimensions():
+def test_prompt_carries_all_ten_dimensions():
     for label in (
         "clear_desire",
         "visible_turn",
@@ -143,6 +145,7 @@ def test_prompt_carries_all_nine_dimensions():
         "register_match",
         "dialogue_earns_place",
         "scene_setting_contained",
+        "one_action_per_beat",
     ):
         assert label in STORY_CRAFT_SYSTEM_PROMPT
 

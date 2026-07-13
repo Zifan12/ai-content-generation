@@ -244,7 +244,8 @@ class StoryCraftVerdict(BaseModel):
     kinetic_payoff: bool  # the peak beat is physical and camera-visible, not a held pose
     register_match: bool  # comedic/earnest/satirical register matches gap.audience_want
     dialogue_earns_place: bool  # any dialogue_line pulls its weight; true if there is none
-    scene_setting_contained: bool  # every beat stays inside the declared scene_setting
+    scene_setting_contained: bool  # every beat stays inside ONE Scene Space (+ <=1 threshold)
+    one_action_per_beat: bool  # each beat stages exactly one ~3s-readable physical action
     notes: str
     failure_notes: str | None  # what to fix on a repair re-pitch; None if it passes
     would_watch: bool
@@ -263,6 +264,7 @@ class StoryCraftVerdict(BaseModel):
             and self.register_match
             and self.dialogue_earns_place
             and self.scene_setting_contained
+            and self.one_action_per_beat
             and self.would_watch
         )
 

@@ -112,9 +112,17 @@ def _plan(shots: list[ShotDraft]) -> ShotPlanDraft:
 
 
 class FakeLLM:
-    def __init__(self, plan: ShotPlanDraft, conversion_prompts: list[str] | None = None):
+    def __init__(
+        self,
+        plan: ShotPlanDraft,
+        conversion_prompts: list[str] | None = None,
+        conversion_queue: list[list[str]] | None = None,
+        plan_queue: list[ShotPlanDraft] | None = None,
+    ):
         self._plan = plan
         self._forced_conversion = conversion_prompts
+        self._conversion_queue = conversion_queue  # one entry per scene call (retries)
+        self._plan_queue = plan_queue  # one entry per plan call (budget retries)
         self.calls: list[dict] = []
 
     def parse(self, prompt, response_model, system=None, max_tokens=1024):
@@ -127,8 +135,12 @@ class FakeLLM:
             }
         )
         if response_model is ShotPlanDraft:
+            if self._plan_queue:
+                return self._plan_queue.pop(0)
             return self._plan
         if response_model is SceneLines:
+            if self._conversion_queue:
+                return SceneLines(scene_lines=self._conversion_queue.pop(0))
             if self._forced_conversion is not None:
                 return SceneLines(scene_lines=self._forced_conversion)
             n = prompt.count("motion_intent:")
@@ -240,6 +252,76 @@ def test_scene_line_at_65_words_is_accepted(rules):
     )
     package = _write(_pitch(3), fake, rules)  # no raise
     assert package.shots[0].scene_line.startswith("word")
+
+
+# --- plan-block budget: one bounded repair (pitch-43 second regression) ------------
+
+
+def _fat_plan(shots: list[ShotDraft]) -> ShotPlanDraft:
+    # 715 combined chars was the measured 2026-07-12 failure; reproduce the shape.
+    plan = _plan(shots)
+    return plan.model_copy(
+        update={"anchors_block": "A" * 500, "style_anchor": "S" * 215}
+    )
+
+
+def test_fat_plan_blocks_retried_once_with_feedback(rules):
+    fake = FakeLLM(
+        _plan(_draft_shots(3)),
+        plan_queue=[_fat_plan(_draft_shots(3)), _plan(_draft_shots(3))],
+    )
+    package = _write(_pitch(3), fake, rules)
+    assert len(fake.calls) == 3  # fat plan + ONE repair plan call + scene call
+    retry_call = fake.calls[1]
+    assert retry_call["prompt"].startswith("Story pitch:")  # same data, plus feedback
+    assert "REWRITE:" in retry_call["prompt"]
+    assert package.anchors_block == ANCHOR_TEXT  # slim plan won
+
+
+def test_fat_plan_blocks_still_fat_after_repair_raises(rules):
+    fat = _fat_plan(_draft_shots(3))
+    fake = FakeLLM(_plan(_draft_shots(3)), plan_queue=[fat, fat])
+    with pytest.raises(ValueError, match="starve the scene-line budget"):
+        _write(_pitch(3), fake, rules)
+    assert len(fake.calls) == 2  # two plan attempts, scene call never reached
+
+
+# --- composed-prompt budget: one bounded repair (pitch-43 regression) --------------
+
+# ≤90 words each (passes the per-line cap) but char-fat: the exact failure shape
+# that blew the adapter's 3000-char guard on pitch-43 — every line legal, sum over.
+_FAT_LINES = ["wordwordword " * 85] * 3
+_SLIM_LINES = [f"SLIM[{i}]. Audio: rain." for i in range(3)]
+
+
+def test_scene_budget_blown_retries_once_with_feedback(rules):
+    fake = FakeLLM(
+        _plan(_draft_shots(3)),
+        conversion_queue=[list(_FAT_LINES), list(_SLIM_LINES)],
+    )
+    package = _write(_pitch(3), fake, rules)
+    assert len(fake.calls) == 3  # plan + first scene call + ONE repair re-call
+    retry_call = fake.calls[2]
+    assert retry_call["prompt"].startswith("<plan>")  # same data, plus feedback
+    assert "REWRITE:" in retry_call["prompt"]
+    assert "characters" in retry_call["prompt"]
+    assert [shot.scene_line for shot in package.shots] == _SLIM_LINES
+
+
+def test_scene_budget_still_blown_after_repair_raises(rules):
+    fake = FakeLLM(
+        _plan(_draft_shots(3)),
+        conversion_queue=[list(_FAT_LINES), list(_FAT_LINES)],
+    )
+    with pytest.raises(ValueError, match="composed-prompt budget"):
+        _write(_pitch(3), fake, rules)
+    assert len(fake.calls) == 3  # plan + 2 scene attempts, no third
+
+
+def test_scene_budget_fit_first_try_makes_no_retry(rules):
+    fake = FakeLLM(_plan(_draft_shots(3)))
+    _write(_pitch(3), fake, rules)
+    assert len(fake.calls) == 2  # unchanged happy path (D3: one scene call)
 
 
 def test_provenance_code_set(rules):

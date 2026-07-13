@@ -167,6 +167,7 @@ def _verdict(**overrides: object) -> StoryCraftVerdict:
         register_match=True,
         dialogue_earns_place=True,
         scene_setting_contained=True,
+        one_action_per_beat=True,
         notes="ok",
         failure_notes=None,
         would_watch=True,
@@ -185,6 +186,7 @@ def test_verdict_fails_when_any_new_dim_false() -> None:
     assert _verdict(register_match=False).passes is False
     assert _verdict(dialogue_earns_place=False).passes is False
     assert _verdict(scene_setting_contained=False).passes is False
+    assert _verdict(one_action_per_beat=False).passes is False
 
 
 def test_character_ref_defaults_needs_reference_true() -> None:

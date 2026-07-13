@@ -66,12 +66,23 @@ _STORYPITCH_FIELD_SPEC = """For each StoryPitch produce:
 - desired_moment: the exact thing the reaction wants to see, in one line.
 - scene_setting: ONE sentence naming the single place and time every beat happens
     in (e.g. "the academy's east corridor, just after the bell, dusk light").
-    The whole story lives inside this one place/time — no cuts to a different
-    room, day, or year. Longer history may be IMPLIED by what characters say or
-    carry; it is never SHOWN as its own beat.
+    The whole story lives inside this ONE CONTINUOUS SPACE — no cuts to a
+    different room, day, or year. At most ONE adjacent, visibly-connected
+    threshold (a doorway, a window, the hallway visible just outside) may
+    appear, and the action may cross it AT MOST ONCE; nothing beyond that
+    threshold's sightline exists in the story. A story that visits a second
+    room, a corridor AND a hallway, or any space the anchored setting cannot
+    see, is a failed pitch — the render model cannot hold an unseen space
+    consistent. Longer history may be IMPLIED by what characters say or carry;
+    it is never SHOWN as its own beat.
 - beats: 3-5 ordered StoryBeats. Each beat has:
     role: its function in the arc (hook, establish, build, turn, escalate, reveal, payoff, tag).
     visual_line: what the camera SEES this beat — concrete, shootable, render-facing.
+        ONE action per beat: a single physical thing happens, big enough to read in
+        ~3 seconds (never three micro-motions crammed into one beat — split them
+        across beats or cut them). Each beat's action BEGINS where the previous
+        beat's action ENDED (end-state = start-state chaining): if beat 2 ends
+        with her hand on the door, beat 3 opens from that hand on that door.
     narration_line: an optional voiceover/caption line, or null — LEAVE THIS NULL. The
         product has no voiceover or on-screen text; narration_line is retired.
     dialogue_line: an optional SPOKEN line one character says on screen this beat, or

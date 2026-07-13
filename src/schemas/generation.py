@@ -90,9 +90,12 @@ class ShotSpec(BaseModel):
         one subject action (separated) + a concrete "Audio:" event. Carries NO
         anchors, NO style words, NO seconds/timestamps (D2) — the adapter chains
         lines with "Then cut to" and composes identity/style/constraints in code.
-      duration_seconds: 2–8s INTERNAL estimate (narration word-budget math only);
+      duration_seconds: 3–8s INTERNAL estimate (narration word-budget math only);
         NEVER enters prompt text — duration reaches the model exclusively as the
-        CLI --duration parameter (D2).
+        CLI --duration parameter (D2). Floor raised 2→3 (2026-07-12, sequence-craft
+        plan): a 2s shot cannot fit a readable action — pitch-43's 2s/3-action
+        hook rendered smeared; corpus pacing evidence in render_rules.yaml
+        sequence_craft.
       narration_line: TTS narration text for this shot, or None for a silent beat
         (passthrough from StoryBeat.narration_line). Budget ≤ 2.2 words × duration.
       characters_in_frame: Copied from the source StoryBeat.
@@ -105,7 +108,7 @@ class ShotSpec(BaseModel):
     beat_role: BeatRole
     motion_tag: MotionTag
     scene_line: str
-    duration_seconds: int = Field(ge=2, le=8)
+    duration_seconds: int = Field(ge=3, le=8)
     narration_line: str | None
     dialogue_line: str | None = None  # spoken line, copied from the source StoryBeat
     speaker: str | None = None  # who says it, copied from the source StoryBeat
@@ -127,7 +130,7 @@ class ShotDraft(BaseModel):
     beat_role: BeatRole
     motion_tag: MotionTag
     motion_intent: str
-    duration_seconds: int = Field(ge=2, le=8)
+    duration_seconds: int = Field(ge=3, le=8)
     narration_line: str | None
     characters_in_frame: list[str]
 

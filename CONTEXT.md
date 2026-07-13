@@ -66,6 +66,26 @@ One of 2-3 distinct creative takes the Story Pitcher proposes per gap (`StoryPit
 
 _Avoid_: "Angle Pitch" / `AnglePitch` / `render_backend` / `estimated_cost_credits` — the routing-era model, removed in the Task 7 orchestration swap. Current term is Story Pitch.
 
+## Scene Space (one-space rule)
+
+The single continuous physical space a Story Pitch's ENTIRE story happens in —
+what `scene_setting` names (locked 2026-07-12, corpus-derived: every worked
+multi-shot example in `ai_video_resources` stays in one space; scene-to-scene
+consistency is measurably harder for the render model than face consistency).
+A Scene Space is **one anchored location, optionally plus ONE adjacent,
+visibly-connected threshold** (a door, window, the hallway just outside),
+crossed **at most once as part of the action** — never via a cut that teleports
+past the threshold's sightline. Nothing beyond the threshold's sightline exists
+in the story.
+
+Legal: bedroom + its doorway, crossed once during the drag-back-inside beat.
+Illegal: bedroom shots intercut with a far corridor and a separate hallway
+(the pitch-43 failure, 2026-07-12: 4 spaces in 15s read as incoherent).
+
+_Avoid_: "location" unqualified — ambiguous between Scene Space (this, the
+story-level constraint) and the location REFERENCE (`location_slug` +
+`world_anchor`, the render-grounding asset for the anchored location).
+
 ## Web-research Fridge
 
 The store of **raw web-research text** the Context Agent gathered (tavily_search + firecrawl_extract combined — the `web_text` state field) but *discarded* when it compressed everything into the `ContextBundle`. The Fridge re-captures that raw material — chunk → BGE-M3 embed → pgvector (`WebResearchChunk` table) — so a downstream stage can `retrieve()` a specific gathered-but-summarized-out fact on demand (`src/monitor/fridge.py`). v1 = **within-run, web-text only**; reddit already travels the chain uncompressed in `ContextBundle.reaction_sample`, so the Fridge does not re-store it. Populated **Path B only** (Path A gathers no web research).
@@ -81,6 +101,20 @@ The check that asks whether a Story Pitch **contradicts the source's canon** —
 **The load-bearing rule: fail ONLY on CONTRADICTION, never on absence.** Canon silent on something = PASS (that is the invention, by design); canon that directly clashes with an assumed premise = FAIL. Conservative ceiling: can only catch a contradiction whose contradicting fact is actually in the retrieved canon. Implemented as a fixed 2-call RAG pipeline (derive assumed-canon queries → retrieve → judge contradiction-only → `{coheres, conflicts}`), deliberately **not** an agent (`src/monitor/pitch_grounding.py`).
 
 _Avoid_: "faithfulness check" / "unsupported-claims check" / "fact-check" — all the dead earlier framing; the invented moment is not an unsupported claim, it is the point. Do NOT search the web on a conflict in v1 (deferred agentic upgrade).
+
+## Voice Profile
+
+A **standing per-character asset** describing *how a character speaks* — the writer's counterpart to the character's key-art (which fixes how they *look*) and to a location's `world_anchor` (which fixes a *place*). Lives beside the image refs at `refs/<char_slug>/voice_profile.md`. Built ONCE per character at onboarding (manual `gen_voice_profile` script), grounded in the character's fetched canon (Fandom **Personality** section + a few real **Quotes**) which an LLM **compresses** — never recalls from training memory — into three light markdown sections:
+
+- **Fingerprint** — the constant texture: diction, sentence shape, verbal tics, how they address people.
+- **Modulation** — how the voice *flexes* by emotion (angry / tender / triumphant) — resolves "nobody speaks one fixed way".
+- **Anti-patterns** — 2-3 `WRONG → RIGHT` pairs, each forced through the **wrongability test** (a line that could describe 100 characters is too vague).
+
+Consumed at **pitch time**: the pipeline loads the profile for each named character (via `_slug`) and injects the ones that exist into the Story Pitcher, which authors the beat's `dialogue_line` in-character. A character that *has* a profile is a **profiled character**; only profiled characters may be given dialogue (an unprofiled character stays silent rather than speaking generically). The **cast** is the de-facto set of onboarded characters — there is no registry table; `refs/` folders ARE the cast.
+
+Scope (locked 2026-07-11): **verbal identity only** — the *words + delivery* a character uses. It does NOT lock the heard audio **timbre**; Seedance 2.0 has no cross-render voice lock, so timbre drifts render-to-render (voice-clone continuity is a deferred follow-up feature).
+
+_Avoid_: "voice" without qualifier — ambiguous between **verbal identity** (this, buildable now) and **audio timbre** (deferred, not controllable across Seedance renders). Not a personality bible / SOUL.md (that is a 2000-word human digital-twin doc; this is a ~200-word spoken-line profile).
 
 ## Executor
 

@@ -187,7 +187,7 @@ models:
 scene_lane:
   model: seedance_2_0          # D7 swap point — the ONLY place the lane's model is named
   defaults:
-    duration_seconds: 10       # v1 target (spec D1 envelope 10-25s). NOT a CLI cap — 15s measured working 2026-07-06 (67.5cr vs 45cr at 720p); bump here if the 15s default is ratified
+    duration_seconds: 15       # ratified 2026-07-10: 5-cut pitches need ~3s/cut (convergent pacing floor, FINDINGS.md 3-shot/10s=3.3s/cut not-slideshow); 10s crushes 5 cuts to 2s/cut. 15s measured working (67.5cr vs 45cr at 720p). Seedance CLI max=15 (limits block). NOTE: this is the EXECUTOR's CLI --duration; the writer's per-shot duration_seconds (PLAN prompt "total 10-15") is an INTERNAL pacing/narration budget that never reaches the CLI (D2) — the two are related but not the same number.
     resolution: 720p           # dev default — see retake_ladder
     aspect_ratio: "9:16"
     genre: auto                # 1080p + genre 'drama' untested in isolation (FINDINGS.md) — leave auto until a clean retest
@@ -258,6 +258,24 @@ motion_craft:
   action_as_beats: "Express the action as countable beats ('four steps to the window, pause, pull the curtain in the final second'), not vague verbs ('walks across the room') — vague action makes the model guess pace and drift."   # 03 L14-16
   emotion_is_visible: "Carry mood through lighting/palette/micro-performance (eye-line, breath, posture, tight jaw), NOT the words 'sad'/'epic'. Every emotional word must pair with something the camera can see."   # 03 §color-script L91
   anti_intensifiers: ["stunning", "breathtaking", "ultra-detailed", "masterpiece", "best quality", "8K"]   # 04 L94 + 05 L9 — wasted words across all modern models
+
+# ---------------------------------------------------------------------------
+# SEQUENCE CRAFT — cross-shot rules for the ONE multi-shot scene generation
+# (locked 2026-07-12, sequence-craft plan; grilled decisions Q1-Q3). Sources:
+# every worked multi-shot example in the corpus stays in one space
+# (03-分镜时序 L46-58, 02-进阶公式 L105-117, 15-masterclass L28-52,
+# 18-kling L1001-1009/1120-1130); scene consistency harder than face
+# consistency (19-round3 L164-169); pacing (video_model_system_guide
+# L480-503, image-video-director/03 L13-21). Enforced upstream: pitcher spec
+# (story_pitcher.py) + craft-gate dims 9/10 (story_craft_gate.py) + ShotDraft
+# duration floor (src/schemas/generation.py). This block is the evidence
+# record + single place a future stage reads the numbers from.
+# ---------------------------------------------------------------------------
+sequence_craft:
+  one_scene_space: "ENTIRE story in ONE continuous space + at most ONE adjacent visible threshold (doorway/window/hallway-in-sightline), crossed at most once as part of the action. Multi-location turns need splicing, which the single-generation lane does not do."   # CONTEXT.md 'Scene Space'
+  min_seconds_per_shot: 3        # 2s shot cannot fit a readable action (pitch-43 measured failure); Seedance examples run 3-5s/shot
+  end_start_chain: "Each shot's action BEGINS where the previous shot's action ENDED (end-state = start-state)."   # 18-kling L191-194, model-generic craft
+  payoff_gets_most_air: "The payoff/hero beat gets the longest duration of any shot; framing tightens across the arc (wide early, closest at the payoff)."   # guide L480-493 proportions (bracket syntax NOT transferable)
 
 # ---------------------------------------------------------------------------
 # GLOBAL CONSTRAINTS — append to a prompt unless the shot needs the excluded
