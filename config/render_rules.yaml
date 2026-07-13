@@ -131,6 +131,7 @@ models:
         per_second_720p: 4.5        # 22.5cr/5s, 45cr/10s, 67.5cr/15s — three measured points
         per_second_1080p: 9.0       # inferred from two FAILED (refunded) attempts: 90cr/10s, 135cr/15s — confirm on first kept 1080p render
     dialect:
+      prompt_language: zh   # D-language 2026-07-13 (spec docs/superpowers/specs/2026-07-13-chinese-prompt-translation.md): scene prompt translated EN->ZH at the post-adapter stage; absent/en = stage no-op. Higgsfield-unverified — first live ZH render is the gate.
       style: "Directorial thinking — the whole package is ONE generation, shots chained as prose. Subject first, one active verb per shot, camera after action, style anchor at the end, constraints last (five-part spine, methodology/19 §7)."
       prose_chain_grammar: "Open with shot 1's framing + action, then each subsequent shot as 'Then cut to [framing]: [subject action]. [camera]. Audio: [event].' The model cuts internally on the prose boundaries — MEASURED working on Higgsfield (FINDINGS.md); one camera move + one subject action per shot line (image-video-director/03 L9-16)."
       bracket_ban: "NEVER emit '[0-3s]'-style timestamp brackets or any per-shot second counts in prompt text — Higgsfield rejects bracketed timelines at any duration >5s (backend multi_shots/multi_prompt fields exist but are not CLI-exposed; MEASURED, FINDINGS.md). Duration is a CLI param only; seconds never appear in the prompt (spec D2). Overrides methodology/15 L81-88 and 19 §7 timeline syntax — those are native-platform dialects."
@@ -294,11 +295,68 @@ sequence_craft_candidates:
   per_scene_clip_splice: "CANDIDATE ARCHITECTURE (not locked — conflicts with motion-native D3 single-lane; supersession decision pending fresh-pitch validation): 6-8s per generation, one clip per scene, hard-cut splice in post. Quality degrades past 6-8s inside long generations; 5 shots/15s single-gen produced mid-generation garbage at 6-9s. Frame-trim fix at jumpy seams: 6 frames off earlier clip's tail, 1 off later clip's head."   # guide L420+L516-527, 19 L113-116, 08 L63-76; measured pitch-47 take_1
   measured_soul_id_facts: "Soul UUIDs REJECTED as seedance_2_0 image-references (job fails, uncharged). Training 25cr flat, 5-20 images, every image needs a detectable face (back view -> face_not_found, refunded). Souls usable only via --soul-id on Soul image models (text2image_soul_v2, soul_cinematic); trained souls live in refs/<slug>/soul_id.txt."   # measured 2026-07-13, billing-verified
   voice_persistence: "Native dialogue voice is re-invented per generation (no cross-render lock). Persistence path: ~15s voice sample as --audio-references + 'use the vocal qualities of audio1'; keep the sample per character in refs/<slug>/. Extension (upload prior clip) claims voice carry-forward; cross-independent-clip voice consistency is an undocumented gap."   # 19 L54, 15 L346-350, 08 Q12
+  # --- Harvested 2026-07-13 from ai_video_resources/Dan Kieft Cinematic Seedance
+  # Updated.md (OpenArt dialect — @image tags, native Seedance UI). Higgsfield CLI
+  # transfer UNVERIFIED for each unless noted; Higgsfield binds refs positionally
+  # ('image1'), not @-tags (FINDINGS.md). Treat as candidates pending our own render.
+  header_24fps: "Scene header carries an explicit '24fps' (24帧每秒) line every prompt — Dan reports it reduces laggy/stuttery motion. Cheap lever against our open motion-smoothness problem."   # Dan-Kieft L52, L592
+  chinese_prompt_body: "ADOPTED (user decision 2026-07-13, Tier 2 design-locked, NO A/B run — validation = first live Chinese render; Higgsfield failed jobs uncharged so downside bounded): Seedance prompt body written in CHINESE via translate-at-adapter seam (pipeline stays English end-to-end; translation happens at render-job build; dialogue stays English in quotes; English mirror stored alongside for review). Fallback to English prompt on translation failure or repeated Chinese-prompt job rejection."   # Dan-Kieft L43; lanshu Chinese-first corpus; OpenArt-verified, Higgsfield-unverified
+  ref_tag_by_shot_size: "Select refs per shot size: face ref tagged EVERY shot the character appears; body/turnaround sheet only on wide/full/medium (drop on close-ups — small odd-angle faces on a sheet confuse the model); detail/texture sheet on close-ups and texture-visible mediums."   # Dan-Kieft L106-117
+  retag_every_shot: "Each shot in a multi-shot prompt is effectively a cold generation — re-introduce every reference at first mention per shot with an identity noun ('the cavewoman image1'), then pronouns within the shot; never rely on shot 1's binding carrying to shot 2."   # Dan-Kieft L99-101
+  no_backandforth_actions: "Seedance honors only the FIRST move of a back-and-forth (look back -> front -> back again). Write one sustained move held long instead ('turns her head back, holds the look several seconds, then snaps front')."   # Dan-Kieft L432
+  background_lock_clause: "When the background must not drift/morph across a shot, say it explicitly ('background stays completely unchanged, no fog, no changes') — omission is not suppression."   # Dan-Kieft L442; kin to our 'no music' suppression convention
+  object_turnaround_sheets: "CONFLICTS WITH D9 (no engineered refs beyond characters — re-litigation is a user call): Dan gives every RECURRING prop/vehicle/creature its own turnaround sheet and tags it per shot; his measured failure (TV vanishing mid-scene) came precisely from an untagged recurring object."   # Dan-Kieft L476-505 + video 8:38-9:52
+
+# ---------------------------------------------------------------------------
+# CAMERA GRAMMAR candidates — emotion -> camera-move decision table (harvested
+# 2026-07-13; grilled Q1-Q3 user-ratified; spec docs/superpowers/specs/
+# 2026-07-13-camera-grammar-harvest-design.md). Source: Dan Kieft camera-
+# movements video + aicameramovements.com 46-card bank (examples generated on
+# Higgsfield Seedance+Kling — our platform; full verbatim cards + per-move
+# verdicts: ai_video_resources/Dan Kieft Camera Movements.md).
+# UNWIRED (true candidates): the writer envelope injects ONLY
+# rules.data['motion_craft'] (_build_plan_envelope, content_writer.py) — this
+# separate top-level key is never injected. PROMOTION (after the fresh-pitch
+# validation batch shared with sequence_craft_candidates above): move surviving
+# rows INTO motion_craft (auto-injected, zero code) AND touch
+# PLAN_SYSTEM_PROMPT twice — <inputs> §2 parenthetical (name the camera
+# grammar) + <per_shot_rules> motion_intent bullet (instruct: choose the move
+# by the beat's emotion) — data flows without the prompt edit, reliable
+# APPLICATION does not (enforcement-gap class, 2026-07-12 audit).
+# CAVEATS: all source examples are PHOTOREAL — anime-lane transfer unvalidated
+# (anime clips sit below the motion bar, memory 2026-07-13). Fragments are
+# deliberately <=10 words: scene lines budget 55-65 words TOTAL; site cards are
+# 40-50 words of camera alone and must never be embedded whole.
+# ---------------------------------------------------------------------------
+camera_grammar_candidates:
+  selection_rule: "Choose each shot's camera move by the beat's EMOTION via the rows below — a move is an emotional statement, not decoration. Menu is GUIDANCE, not a whitelist: a pitch that genuinely needs an unlisted move may use it (full 46-move vocabulary in the corpus doc). One move per shot, speed always qualified — motion_craft.one_move_one_action still governs."
+  zoom_vs_dolly: "Zoom changes the LENS (camera stands still) = detached observation; dolly physically MOVES the camera = participation. Dolly-out reads as LEAVING the character behind (intimate abandonment); zoom-out reads as DISASSOCIATING (clinical, world grows). Pick by what the beat means. (05-运镜词典 conflates the two in one row — this is the correction.)"
+  tension_dread: "Slow push-in toward the face or object ('Camera: slow push-in toward her face') — or a deliberately locked static frame; stillness IS a choice for dread and deadpan, one beat max, never the whole scene."   # cards: slow zoom in / dolly in / static; video 2:41-2:55, 4:39-4:46
+  suspense_approach: "Follow close behind the subject's shoulder into the unknown ('Camera: follows behind his shoulder, matching pace')."   # card: follow/OTS; video 7:52-8:09 basement-stairs
+  comedic_snap: "Crash zoom in WITH landing phrase ('Camera: crash zoom in, lands sharp on his face') for shock/realization/punchline; whip pan WITH landing phrase ('Camera: whip pan to the door, lands sharp') for a snap redirect between two subjects [EXPERIMENTAL — smear risk; landing phrase is the anti-smear lever]."   # cards: crash zoom in / whip pan; video 3:42-3:59
+  comedic_absurd_reveal: "Crash zoom out, lands wide on the absurd whole scene ('Camera: crash zoom out, lands wide')."   # card: crash zoom out; video 3:59-4:16 casual-Friday gag
+  defeat_isolation: "Slow dolly out, subject left small in frame ('Camera: slow dolly out, she stays small in the empty room') — or slow zoom out when the beat means disassociation, not abandonment (zoom_vs_dolly)."   # cards: dolly out / slow zoom out; video 4:46-5:01
+  intimacy_tenderness: "Static close-up with shallow depth, or slow tilt between two emotional anchors ('Camera: slow tilt from their joined hands up to her face')."   # cards: static / tilt; matches existing SCENE_LINE example
+  panic_chaos: "Handheld with subtle sway ('Camera: handheld, subtle sway') for raw discomfort; snorricam for full hysteria ('Camera: locked to his torso, background whirling around him') [EXPERIMENTAL — background-whirl on anime unvalidated; NEVER co-emit with a background-lock clause in the same shot line]."   # cards: handheld / snorricam; video 9:32-10:52
+  attention_redirect_calm: "Slow pan from A to B ('Camera: slow pan from the desk to the doorway') — scan or reveal without alarm."   # card: pan; video 1:36-1:54
+  kinetic_action: "Side-track parallel to the motion ('Camera: tracks sideways matching his sprint'); reverse-track when the FACE carries the beat ('Camera: moves backward in front of her, face locked centered')."   # cards: side tracking / reverse tracking; video 8:17-8:43
+  scale_power_shift: "Tilt up or down between power positions ('Camera: slow tilt up from boots to face') — looking up reads small/weak, height reads power."   # card: tilt; video 1:54-2:08
+  threshold_cross: "Pass-through or push-past the ONE Scene-Space threshold ('Camera: pushes past the doorframe into the hallway') — the camera language for sequence_craft.one_scene_space's single crossing."   # cards: pass-through / push past; site-only move
 
 # ---------------------------------------------------------------------------
 # GLOBAL CONSTRAINTS — append to a prompt unless the shot needs the excluded
 # element. source: methodology/06-约束词清单. Phrase as positive/'do' for models
 # without negative fields (most Higgsfield video models).
+#
+# ⚠️ STATUS (2026-07-13): NOT LIVE in the scene lane. rules.global_constraints()
+# has had no caller since the still-first lane deletion (2026-07-07) — the
+# adapter's scene tail hardcodes ONLY the no-text line + 'No music' + the model
+# quality_suffix (adapter.py _scene_prompt). Kept for a future multi-model /
+# still-first revival. BEFORE any re-wire: resolve 'locked camera, fixed
+# position, no shake, no sudden zoom' below against camera_grammar_candidates —
+# co-emitting it with a deliberate camera move cancels both (see contradictions
+# block). That rule was anti-drift craft for the STILL-FIRST i2v era, not a
+# motion-native scene rule.
 #
 # Each bucket declares `kinds:` — which prompt type(s) it applies to — so the
 # accessor returns the right SUBSET per prompt kind (still vs motion). This

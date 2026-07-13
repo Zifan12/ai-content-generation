@@ -86,6 +86,29 @@ _Avoid_: "location" unqualified — ambiguous between Scene Space (this, the
 story-level constraint) and the location REFERENCE (`location_slug` +
 `world_anchor`, the render-grounding asset for the anchored location).
 
+## Camera Grammar
+
+The **emotion → camera-move decision table** the writer consults when planning
+each shot's camera behavior (harvested 2026-07-13 from the Dan Kieft 46-card
+bank; currently `camera_grammar_candidates` in `config/render_rules.yaml`,
+promoting into `motion_craft` after fresh-pitch validation). Each row maps a
+beat emotion to 1-3 moves with a ready camera-clause fragment ("defeat →
+slow dolly out, subject left small in frame"). A camera move is treated as an
+**emotional statement, not decoration** — and the table is **guidance, not a
+whitelist**: no code validates moves; the writer may exceed the menu when a
+pitch demands (full 46-move vocabulary: `ai_video_resources/Dan Kieft Camera
+Movements.md`).
+
+Three neighbors it must not be confused with: **`shot_size`** (StoryBeat field
+— framing distance, pitched upstream); **`motion_intent`** (ShotDraft field —
+the whole per-shot action/camera/timing/audio prose the grammar INFORMS);
+**`MotionTag`** (shot-CONTENT classification enum — P4 analytics metadata,
+nothing to do with camera moves despite the name).
+
+_Avoid_: "camera angle" when a MOVE is meant (angle = static framing position;
+move = how the camera travels); "camera grammar" for the lanshu 运镜词典
+vocabulary list (that is a term dictionary — no emotion mapping).
+
 ## Web-research Fridge
 
 The store of **raw web-research text** the Context Agent gathered (tavily_search + firecrawl_extract combined — the `web_text` state field) but *discarded* when it compressed everything into the `ContextBundle`. The Fridge re-captures that raw material — chunk → BGE-M3 embed → pgvector (`WebResearchChunk` table) — so a downstream stage can `retrieve()` a specific gathered-but-summarized-out fact on demand (`src/monitor/fridge.py`). v1 = **within-run, web-text only**; reddit already travels the chain uncompressed in `ContextBundle.reaction_sample`, so the Fridge does not re-store it. Populated **Path B only** (Path A gathers no web research).
@@ -115,6 +138,22 @@ Consumed at **pitch time**: the pipeline loads the profile for each named charac
 Scope (locked 2026-07-11): **verbal identity only** — the *words + delivery* a character uses. It does NOT lock the heard audio **timbre**; Seedance 2.0 has no cross-render voice lock, so timbre drifts render-to-render (voice-clone continuity is a deferred follow-up feature).
 
 _Avoid_: "voice" without qualifier — ambiguous between **verbal identity** (this, buildable now) and **audio timbre** (deferred, not controllable across Seedance renders). Not a personality bible / SOUL.md (that is a 2000-word human digital-twin doc; this is a ~200-word spoken-line profile).
+
+## Prompt Translation (stage)
+
+The post-adapter transform that turns the **scene prompt** (the adapter's final
+composed English string — D-compose keeps its composition deterministic) into
+Chinese for ByteDance models, per the **dialect leaf** `prompt_language` in
+`config/render_rules.yaml` (absent/`en` = stage is a no-op). The pre-translation
+English text survives as the **prompt mirror** (`prompt_english`) beside the
+sent prompt. A **translation fallback** is the loud, mechanical-check-triggered
+reversion to sending the English prompt (never silent; recorded in a
+translation-status field). The **first live Chinese render** is the feature's
+validation gate (D-language, `render_taste_test/DECISIONS_LOCKED.md`).
+
+_Avoid_: "translate the prompt" without saying WHICH text — scene prompt only
+(still/image prompts and all upstream pipeline text stay English); calling the
+fallback a "retry" (there is none — one call, checks, English on failure).
 
 ## Executor
 

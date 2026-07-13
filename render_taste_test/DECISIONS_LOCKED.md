@@ -214,6 +214,25 @@ PARTIAL-ACCEPT.** Split verdict:
   deterministically by the adapter. The LLM is never trusted to repeat an anchor
   verbatim.
 
+### D-language. Seedance prompt body = CHINESE via translate-at-adapter (2026-07-13)
+- **User decision 2026-07-13 (chat, no spec doc; user explicitly waived the 480p
+  A/B — "trust that Chinese wins").** Basis: Dan Kieft doc L43 hard rule
+  (OpenArt-verified), lanshu Chinese-first corpus for ByteDance models.
+  **Higgsfield-CLI transfer UNVERIFIED — the named validation gate is the FIRST
+  live Chinese render** (failed jobs refunded per L7, so the gate risks 0cr on
+  rejection, full price only on a kept-but-bad render).
+- Design: pipeline stays English end-to-end (writer, craft gate, grounding,
+  dialogue floor unchanged); ONE translation step at render-job build time.
+  Dialogue lines stay English inside quotes; refs stay positional "(imageN)"
+  Latin. English mirror stored alongside the Chinese prompt for review/debug.
+- Config: per-model dialect leaf (`prompt_language`) in `render_rules.yaml` —
+  yaml-leaf pattern, so kling3_0/2.5 can flip later without code.
+- Fallback: translation failure OR repeated Chinese-prompt job rejection → send
+  the English prompt unchanged (loud log, not silent).
+- Interaction note: sensitive-word filter behavior on Chinese text is unmeasured;
+  if a Chinese prompt gets filter-killed, retest the same prompt in English
+  before blaming content.
+
 ---
 
 *Change policy: Tier 1 changes require a paid-render counter-evidence note (date +
