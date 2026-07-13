@@ -278,6 +278,24 @@ sequence_craft:
   payoff_gets_most_air: "The payoff/hero beat gets the longest duration of any shot; framing tightens across the arc (wide early, closest at the payoff)."   # guide L480-493 proportions (bracket syntax NOT transferable)
 
 # ---------------------------------------------------------------------------
+# CANDIDATE rules from the anime-tutorial-lane experiment (2026-07-13, pitch 47
+# only — validated on ONE pitch; promote into sequence_craft/motion_craft after
+# a fresh-pitch run confirms they generalize). Evidence: gitignored
+# docs/superpowers/plans/2026-07-12-anime-tutorial-lane.md VERDICT section +
+# three video-researcher corpus sweeps (2026-07-13 session), citations inline.
+# NOT wired into any stage yet — documentation of harvested rules only.
+# ---------------------------------------------------------------------------
+sequence_craft_candidates:
+  action_as_counted_beats: "Write actions as countable beats ('claws forward three times', 'four steady steps'), never bare verbs ('drags', 'walks') — vague verbs under-specify motion and render near-static."   # image-video-director/03 L13-16
+  explicit_orientation_per_shot: "State facing/direction for every subject and the camera ('he faces the door and crawls toward it') — spatial staging is prompt-only; no storyboard-lock mechanism exists."   # 03-分镜时序 L25-30
+  location_geography_line: "Every location carries a written floor plan (window wall / bed side / door wall) repeated verbatim per shot — a screencap alone does not pin left/right; the model invents a floor plan per generation."   # measured: pitch-47 clip A bed-left; extends refs/_location world_anchor convention
+  limb_accounting_contact_shots: "Two-character contact shots enumerate every hand/arm and its position ('her right arm across his chest... both his hands in his lap') — the amalgamation glitch invents extra limbs otherwise. Contact shots remain a re-roll lottery; budget 2-4 takes."   # guide L442 amalgamation + L444 hand-anchoring; measured pitch-47 clip C 3-arm frame
+  facial_beats_sync_anchored: "Expressive dialogue shots script the face as ordered micro-beats and bind the turn to a word ('as she says X, her smirk deepens'); add 'maintain sharp facial features'. Expression never as adjectives."   # 04-情绪外化表 L3-18, image-video-director/03 L67-70 sync anchors, guide L443 face-softening
+  per_scene_clip_splice: "CANDIDATE ARCHITECTURE (not locked — conflicts with motion-native D3 single-lane; supersession decision pending fresh-pitch validation): 6-8s per generation, one clip per scene, hard-cut splice in post. Quality degrades past 6-8s inside long generations; 5 shots/15s single-gen produced mid-generation garbage at 6-9s. Frame-trim fix at jumpy seams: 6 frames off earlier clip's tail, 1 off later clip's head."   # guide L420+L516-527, 19 L113-116, 08 L63-76; measured pitch-47 take_1
+  measured_soul_id_facts: "Soul UUIDs REJECTED as seedance_2_0 image-references (job fails, uncharged). Training 25cr flat, 5-20 images, every image needs a detectable face (back view -> face_not_found, refunded). Souls usable only via --soul-id on Soul image models (text2image_soul_v2, soul_cinematic); trained souls live in refs/<slug>/soul_id.txt."   # measured 2026-07-13, billing-verified
+  voice_persistence: "Native dialogue voice is re-invented per generation (no cross-render lock). Persistence path: ~15s voice sample as --audio-references + 'use the vocal qualities of audio1'; keep the sample per character in refs/<slug>/. Extension (upload prior clip) claims voice carry-forward; cross-independent-clip voice consistency is an undocumented gap."   # 19 L54, 15 L346-350, 08 Q12
+
+# ---------------------------------------------------------------------------
 # GLOBAL CONSTRAINTS — append to a prompt unless the shot needs the excluded
 # element. source: methodology/06-约束词清单. Phrase as positive/'do' for models
 # without negative fields (most Higgsfield video models).

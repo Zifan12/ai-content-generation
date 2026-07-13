@@ -111,6 +111,18 @@
   render is "better than the slideshow" — architecture VALIDATED.** Content quality
   (story sizing, narration voice, hook copy) failed on layers outside the render
   lane; workstreams tracked in PLAN.md 07-07 update + seedance_motion_test/FINDINGS.md.
+- **Anime-tutorial-lane measured facts (2026-07-13, billing-verified, branch
+  feat/anime-tutorial-lane):** soul-id UUIDs are REJECTED as seedance_2_0
+  `--image-references` (job fails uncharged; same job minus souls succeeded —
+  `render_taste_test/anime_tutorial_lane/take_1.mp4`); soul training = 25cr flat,
+  requires a detectable face in EVERY image (back view → `face_not_found`,
+  refunded); a 15s/5-shot single generation produced transition garbage at ~6-9s
+  (matches guide L420 degradation warning) while 7-8s per-scene clips + hard-cut
+  splice cleared it (user: "better but" — still below motion bar). Per-scene-clip
+  architecture is COUNTER-EVIDENCE against D3's single-lane at ≥5-shot density,
+  NOT yet a supersession — pending fresh-pitch validation. Harvested prompt rules:
+  `config/render_rules.yaml` `sequence_craft_candidates` block. Verdict detail:
+  plans/2026-07-12-anime-tutorial-lane.md.
 
 ---
 
