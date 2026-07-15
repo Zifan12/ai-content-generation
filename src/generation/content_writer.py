@@ -20,10 +20,13 @@ with narration_line=None stays silent even if the draft invents a line), dialogu
 rules.scene_model() (never the LLM), hook_text is always None (no-text product),
 and provenance (pitch_id / reference_image_paths) is code-set.
 
-anchors_block and style_anchor are package-level fields composed into the scene
-prompt by the ADAPTER — both calls are explicitly instructed to keep them OUT of
-per-shot text, and the adapter appends them deterministically so the identity
-block is byte-identical however many takes render.
+style_anchor is a package-level field composed into the scene prompt by the
+ADAPTER — both calls are explicitly instructed to keep it OUT of per-shot text,
+and the adapter appends it deterministically so the style block is
+byte-identical however many takes render. Character identity is never
+described in the prompt at all (key-art owns how a character looks); the
+adapter composes only positional ref bindings ("(imageN)"), never text
+describing anyone's appearance.
 """
 
 import json
@@ -70,8 +73,8 @@ WRITER_MAX_TOKENS = 32768
 _SCENE_LINE_MAX_WORDS = 90
 
 # Chars the adapter's composed scene prompt adds BEYOND the blocks this module
-# can measure exactly (style_anchor / anchors_block / world_anchor / quality
-# suffix / scene-line body): the style-preamble and constraint-tail literals
+# can measure exactly (style_anchor / world_anchor / quality suffix /
+# scene-line body): the style-preamble and constraint-tail literals
 # (~115), block-join newlines (~8), the per-character "(imageN)" binding
 # sentences (~40 + ~8/ref, ≤9 refs), and the setting-binding sentence (~35).
 # ponytail: constant reserve, re-measure if adapter._scene_prompt's composition
@@ -80,10 +83,12 @@ _SCENE_LINE_MAX_WORDS = 90
 # +10 (2026-07-13): adapter preamble gained the "24fps. " header (7 chars).
 _COMPOSED_OVERHEAD_RESERVE = 510
 
-# Combined style_anchor + anchors_block ceiling for the PLAN call. These are LLM
-# output too — the 2026-07-12 pitch-43 retry run emitted 715 combined chars
-# (vs the render-proven 387 the day before), starving the scene-line budget to
-# <50 words/shot, below the corpus's own 55-65-word examples. 420 admits the
+# style_anchor ceiling for the PLAN call (2026-07-14: previously a COMBINED
+# style_anchor + anchors_block ceiling before anchors_block was deleted — the
+# value is unchanged, it now caps style_anchor alone). This is LLM output too —
+# the 2026-07-12 pitch-43 retry run emitted 715 combined chars (vs the
+# render-proven 387 the day before), starving the scene-line budget to <50
+# words/shot, below the corpus's own 55-65-word examples. 420 admits the
 # proven shape and rejects the bloated one while keeping the body budget ≥
 # ~1800 chars (~58 words/shot x 5).
 _PLAN_BLOCKS_MAX_CHARS = 420
@@ -166,11 +171,6 @@ a 10-15 second vertical video with cuts happening inside the generation.
   system composes it into the final prompt once, so it must be true for every
   shot. Keep it under ~25 words — it shares a hard prompt budget with the scene
   text.
-- anchors_block: one identity sentence per character who appears on screen — name,
-  hair, outfit category + primary color, and one recognition trait, matched to the
-  supplied reference art era. Nothing else — no backstory, no mood, no second
-  outfit detail; every extra word here is stolen from the scene text's budget.
-  The system composes it into the final prompt once.
 - caption: native creator voice for the fandom, may seed a comment-driving question.
 - hashtags: a small mix — one or two broad tags plus a couple of fandom tags.
 - music_brief: one line describing the score that fits the mode and source (or
@@ -355,7 +355,6 @@ def _scene_body_budget(plan: ShotPlanDraft, rules: RenderRules, world_anchor: st
     return (
         int(model_block["limits"]["max_prompt_chars"])
         - len(plan.style_anchor)
-        - len(plan.anchors_block)
         - len(world_anchor)
         - len(quality_suffix)
         - _COMPOSED_OVERHEAD_RESERVE
@@ -424,16 +423,16 @@ class ContentWriter:
             ValueError: if the plan's shot count differs from the pitch's beat
                 count; if the scene call returns a line count that differs from
                 the plan (fail loud over mis-assignment); if any returned line
-                leaks the anchors_block or style_anchor text (identity/style are
-                composed in code — a leaked copy would fight the composed one and
-                trigger drift); or if the joined scene lines still exceed the
-                composed-prompt char budget after the bounded repair re-call
-                (the adapter's max_prompt_chars guard would reject the package
-                anyway — failing here saves the spend).
+                leaks the style_anchor text (style is composed in code — a
+                leaked copy would fight the composed one and trigger drift); or
+                if the joined scene lines still exceed the composed-prompt char
+                budget after the bounded repair re-call (the adapter's
+                max_prompt_chars guard would reject the package anyway —
+                failing here saves the spend).
         """
-        # PLAN call — its style_anchor/anchors_block are LLM output too, and fat
-        # blocks starve the scene-line budget downstream, so they get the same
-        # bounded budget-repair treatment as the scene call below.
+        # PLAN call — its style_anchor is LLM output too, and a fat block starves
+        # the scene-line budget downstream, so it gets the same bounded
+        # budget-repair treatment as the scene call below.
         plan_envelope = _build_plan_envelope(pitch, rules)
         plan = None
         for attempt in range(_SCENE_BUDGET_ATTEMPTS):
@@ -448,14 +447,12 @@ class ContentWriter:
                     f"plan produced {len(candidate_plan.shots)} shots for "
                     f"{len(pitch.beats)} beats — one shot per beat is the contract"
                 )
-            blocks_chars = len(candidate_plan.style_anchor) + len(
-                candidate_plan.anchors_block
-            )
+            blocks_chars = len(candidate_plan.style_anchor)
             if blocks_chars <= _PLAN_BLOCKS_MAX_CHARS:
                 plan = candidate_plan
                 break
             logger.warning(
-                "plan style_anchor+anchors_block %s chars over the %s cap "
+                "plan style_anchor %s chars over the %s cap "
                 "(attempt %s/%s) — retrying",
                 blocks_chars,
                 _PLAN_BLOCKS_MAX_CHARS,
@@ -464,19 +461,17 @@ class ContentWriter:
             )
             plan_envelope = (
                 f"{_build_plan_envelope(pitch, rules)}\n\n"
-                f"REWRITE: your previous style_anchor and anchors_block totaled "
-                f"{blocks_chars} characters; together they must fit "
-                f"{_PLAN_BLOCKS_MAX_CHARS} characters. Keep style_anchor to one "
-                "tight line and each character's anchor sentence to name, hair, "
-                "outfit category + primary color, one recognition trait — nothing "
-                "else. Keep every other field as good as before."
+                f"REWRITE: your previous style_anchor was {blocks_chars} "
+                f"characters; it must fit {_PLAN_BLOCKS_MAX_CHARS} characters. "
+                "Keep it to one tight line. Keep every other field as good as "
+                "before."
             )
         if plan is None:
             raise ValueError(
-                f"plan style_anchor+anchors_block still over the "
+                f"plan style_anchor still over the "
                 f"{_PLAN_BLOCKS_MAX_CHARS}-char cap after "
-                f"{_SCENE_BUDGET_ATTEMPTS} attempts ({blocks_chars} chars) — fat "
-                "identity blocks starve the scene-line budget"
+                f"{_SCENE_BUDGET_ATTEMPTS} attempts ({blocks_chars} chars) — a "
+                "fat style_anchor would starve the scene-line budget"
             )
 
         # ONE scene call — the whole plan in, one prose line per shot out (D3).
@@ -510,10 +505,7 @@ class ContentWriter:
                         "this line ran away and must be rejected, not silently trimmed"
                     )
             for index, line in enumerate(candidate.scene_lines):
-                for label, anchor in (
-                    ("anchors_block", plan.anchors_block),
-                    ("style_anchor", plan.style_anchor),
-                ):
+                for label, anchor in (("style_anchor", plan.style_anchor),):
                     if anchor and anchor in line:
                         raise ValueError(
                             f"scene line {index} leaked {label} text — identity/style "
@@ -577,7 +569,6 @@ class ContentWriter:
         return MultiShotPackage(
             shots=shots,
             style_anchor=plan.style_anchor,
-            anchors_block=plan.anchors_block,
             hook_text=None,  # no-text product (spec V3)
             caption=plan.caption,
             hashtags=plan.hashtags,

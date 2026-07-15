@@ -21,10 +21,12 @@ PARADIGM (motion-native scene lane, spec 2026-07-06, supersedes the still-first
   No per-shot model routing, no breakout shots, no Kling fallback (D3) — MotionTag
   survives as shot metadata only (a free labeled feature for P4).
 
-  The writer's output is render-agnostic TEXT. anchors_block and style_anchor are
-  package-level and composed into the scene prompt BY THE ADAPTER in code — shot
-  scene lines must NOT contain them (an LLM asked to repeat an anchor verbatim
-  across six lines eventually paraphrases, which is the identity-drift trigger).
+  The writer's output is render-agnostic TEXT. style_anchor is package-level and
+  composed into the scene prompt BY THE ADAPTER in code — shot scene lines must
+  NOT contain it (an LLM asked to repeat an anchor verbatim across six lines
+  eventually paraphrases, which is the identity-drift trigger). Character identity
+  is NEVER described in the prompt at all — key-art owns how a character looks;
+  the adapter binds refs positionally by name only (CONTEXT.md:130).
 
   Per-shot seconds are an INTERNAL estimate (narration word-budget math only) and
   NEVER appear in prompt text (D2 — bracketed timestamps are rejected by the
@@ -148,7 +150,6 @@ class ShotPlanDraft(BaseModel):
 
     shots: list[ShotDraft] = Field(min_length=3, max_length=5)
     style_anchor: str
-    anchors_block: str
     hook_text: str | None
     caption: str
     hashtags: list[str]
@@ -181,9 +182,6 @@ class MultiShotPackage(BaseModel):
         attribute (pydantic UserWarning on every import).
       style_anchor: ONE line naming the source's visual register; the adapter
         composes it into the scene prompt's style preamble in code.
-      anchors_block: One identity sentence per character (name, hair, outfit category
-        + primary color, recognition trait); the adapter composes it into the scene
-        prompt's identity block in code, binding refs positionally ("(imageN)").
       hook_text: Hook card text (from StoryPitch.hook_line), burned at assembly via
         drawtext (D9); None = deliberately textless.
       caption: TikTok caption posted with the video.
@@ -212,7 +210,6 @@ class MultiShotPackage(BaseModel):
     shots: list[ShotSpec] = Field(min_length=3, max_length=5)
     visual_register: Register = Register.source_style   # "register" bare shadows a BaseModel attr
     style_anchor: str
-    anchors_block: str
     hook_text: str | None
     caption: str
     hashtags: list[str]

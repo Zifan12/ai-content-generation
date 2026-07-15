@@ -724,6 +724,15 @@ Track every shipped feature that fails, what was tried, and what fixed it.
   descriptions, not LLM-invented (the blind writer swapped Will/Zeo hair on pitch 24; hand-patched for
   that render only via a pitch_id==24 override in scripts/smoke_content_writer.py — remove when real fix lands).
 - Attempted fixes: (none — pitch-24 used a temporary hardcoded anchors override, not a real fix)
+- FIXED 2026-07-14: neither design fork above was taken — a third option won. anchors_block is deleted
+  ENTIRELY (schema, writer, adapter), so there is no more per-shot-vs-global question: the prompt never
+  describes appearance at all, key-art alone carries it, and the adapter composes only positional ref
+  bindings ("X is the character shown in imageN"). The pitch_id==24 hardcoded override this entry
+  references is also removed (scripts/smoke_content_writer.py). Note: the still-lane this entry's
+  Feature/Found-by lines describe (per-shot stills, adapter L46 `parts=[...]`) was already retired
+  2026-07-07 by the motion-native scene-lane rewrite, before this fix — this FIXED note applies to the
+  CURRENT scene-lane adapter's `_identity_block`, which inherited the same global-anchors defect.
+- Status: FIXED
 
 ### BUG-022 - StoryPitch mode="other" would KeyError the craft gate (unguarded playbook lookup)
 - Date opened: 2026-07-07 (surfaced tracing the `mode` field after demoting the idea-fit gate's payoff check)

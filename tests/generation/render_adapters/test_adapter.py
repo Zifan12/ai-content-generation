@@ -13,7 +13,6 @@ from src.generation.render_adapters.rules import RenderRules
 from src.monitor.schemas import BeatRole
 from src.schemas.generation import MotionTag, MultiShotPackage, ShotSpec
 
-ANCHORS = "ANCHORS: Eve — short tousled dark-brown hair, pure-white armored bodysuit."
 STYLE = "STYLE: cel-shaded TV anime, thick clean line art."
 
 
@@ -49,7 +48,6 @@ def _scene_package(
             _scene_shot(2, ["Adam"]),
         ],
         style_anchor=STYLE,
-        anchors_block=ANCHORS,
         hook_text=None,
         caption="c",
         hashtags=[],
@@ -92,10 +90,10 @@ def test_scene_refs_ordered_cast_first_appearance_then_filename(rules):
 def test_scene_prompt_composition_order_and_single_tail(rules):
     job = render_jobs(_scene_package(), rules)[0]
     prompt = job.prompt
-    # A3 order: style preamble -> identity (anchors + bindings) -> body -> tail
+    # A3 order: style preamble -> identity (binding sentences) -> body -> tail
     positions = [
         prompt.index("Exactly matching the art style"),
-        prompt.index(ANCHORS),
+        prompt.index("Eve is the character shown in image1."),
         prompt.index("LINE[0]"),
         prompt.index("No music."),
     ]
@@ -104,8 +102,27 @@ def test_scene_prompt_composition_order_and_single_tail(rules):
     assert prompt.count("Then cut to:") == 2
     assert prompt.count("No music.") == 1
     assert prompt.count("Generate the video without subtitles.") == 1  # quality suffix
-    # anchors travel via composition, not via the LLM's lines
-    assert prompt.count(ANCHORS) == 1
+    # bindings travel via composition once, not repeated or echoed by the LLM's lines
+    assert prompt.count("Eve is the character shown in image1.") == 1
+
+
+def test_scene_prompt_carries_no_invented_identity_text(rules):
+    """REGRESSION (2026-07-14): the prompt must not describe what the refs carry.
+
+    Key-art owns how a character looks (CONTEXT.md:130). The prompt names the
+    character and binds the refs positionally — nothing else. A description the
+    writer invented blind (it never sees the images) contradicts them, and a
+    prompt-vs-reference contradiction blends or alternates per shot rather than
+    resolving either way (reference-material-playbook.md:112-114).
+    """
+    job = render_jobs(_scene_package(), rules)[0]
+    identity = job.prompt.split("LINE[0]")[0]
+    # the binding sentences STAY — Dan's identity-noun pattern (Dan Kieft:101)
+    assert "Eve is the character shown in image1." in identity
+    assert "Adam is the character shown in image2, image3." in identity
+    # ...but nothing describing them
+    for invented in ("hair", "tousled", "bodysuit", "armored", "wearing", "eyes"):
+        assert invented not in identity.lower(), f"identity block describes refs: {invented!r}"
 
 
 def test_scene_char_cap_violation_raises(rules):
@@ -174,9 +191,9 @@ def test_location_setting_block_sits_after_identity_before_body(rules):
     pkg.location_reference_paths = ["refs/_location/elfie_bedroom/room.jpg"]
     prompt = render_jobs(pkg, rules)[0].prompt
     positions = [
-        prompt.index(ANCHORS),                       # identity
-        prompt.index("A grand ice-tower chamber."),  # setting
-        prompt.index("LINE[0]"),                     # body
+        prompt.index("Eve is the character shown in image1."),  # identity
+        prompt.index("A grand ice-tower chamber."),             # setting
+        prompt.index("LINE[0]"),                                # body
     ]
     assert positions == sorted(positions)
 

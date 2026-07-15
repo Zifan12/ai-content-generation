@@ -1,9 +1,9 @@
 """Render adapter: turn a MultiShotPackage into its composed scene RenderJob(s).
 
-This is where prompts become FINAL — the composition seam: anchors_block,
-style_anchor, ref bindings, and the constraint tail are assembled HERE, in
-code, so identity text is byte-identical on every take and no LLM is ever
-trusted to repeat itself verbatim.
+This is where prompts become FINAL — the composition seam: style_anchor, ref
+bindings, and the constraint tail are assembled HERE, in code, so identity
+text is byte-identical on every take and no LLM is ever trusted to repeat
+itself verbatim.
 
 TWO LANES, selected by ``scene_lane.mode`` in the yaml (2026-07-14 grill Q1);
 ``render_jobs`` dispatches and callers stay lane-agnostic:
@@ -19,11 +19,11 @@ TWO LANES, selected by ``scene_lane.mode`` in the yaml (2026-07-14 grill Q1);
 The scene prompt is composed deterministically:
 
   style preamble ("exactly matching the art style of the reference images"
-  + style_anchor)  ->  identity block (anchors_block verbatim + one binding
-  sentence per character naming its positional "(imageN)" refs — binding is
-  TEXTUAL; the model never infers identity from upload position alone,
-  methodology/19 §1)  ->  shot scene_lines joined with "Then cut to:"  ->
-  constraint tail (no-text line + "no music" (D5) + the yaml quality suffix).
+  + style_anchor)  ->  identity block (one binding sentence per character
+  naming its positional "(imageN)" refs — binding is TEXTUAL; the model never
+  infers identity from upload position alone, methodology/19 §1)  ->  shot
+  scene_lines joined with "Then cut to:"  ->  constraint tail (no-text line +
+  "no music" (D5) + the yaml quality suffix).
 
 Character refs resolve by PATH CONVENTION (locked 2026-07-06): a ref's parent
 folder name is the character slug (``refs/<slug>/*.png`` — the layout
@@ -99,23 +99,28 @@ def _ordered_refs_by_character(package: MultiShotPackage) -> list[tuple[str, str
 
 
 def _identity_block(package: MultiShotPackage, ordered: list[tuple[str, str]]) -> str:
-    """Compose the identity block: anchors verbatim + positional ref bindings.
+    """Compose the identity block: one positional ref binding per character.
 
-    anchors_block (one identity sentence per character, written once by call 1)
-    goes in verbatim; then one binding sentence per character names its refs by
-    upload position — "(imageN)" — because binding is textual on the Higgsfield
-    CLI (FINDINGS.md; methodology/19 §1), never inferred from order alone.
+    Binding is TEXTUAL on the Higgsfield CLI (FINDINGS.md; methodology/19 §1) —
+    the model never infers identity from upload position alone, so each character
+    names its "(imageN)" slots in prose.
+
+    The prompt says NOTHING about how a character looks: key-art owns that
+    (CONTEXT.md:130), and a prompt that contradicts its own refs blends or
+    alternates per shot rather than resolving either way
+    (reference-material-playbook.md:112-114). The writer never sees the images,
+    so any description it wrote was invented — measured 2026-07-14: it called a
+    teal-haired character "silver-white" by bleeding the other cast member's hair.
     """
     positions: dict[str, list[int]] = {}
     for index, (name, _ref) in enumerate(ordered, start=1):
         positions.setdefault(name, []).append(index)
-    bindings = [
+    return " ".join(
         f"{name} is the character shown in "
         + ", ".join(f"image{i}" for i in indices)
         + "."
         for name, indices in positions.items()
-    ]
-    return " ".join([package.anchors_block, *bindings])
+    )
 
 
 def _setting_block(package: MultiShotPackage, start_position: int) -> str:

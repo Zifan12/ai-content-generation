@@ -32,7 +32,6 @@ from src.schemas.generation import (
     ShotPlanDraft,
 )
 
-ANCHOR_TEXT = "ANCHOR_SENTINEL Eve short tousled dark-brown hair pure-white bodysuit"
 STYLE_TEXT = "STYLE_SENTINEL cel-shaded TV anime thick line art"
 
 _SIZES = [
@@ -102,7 +101,6 @@ def _plan(shots: list[ShotDraft]) -> ShotPlanDraft:
     return ShotPlanDraft(
         shots=shots,
         style_anchor=STYLE_TEXT,
-        anchors_block=ANCHOR_TEXT,
         hook_text="DRAFT HOOK — must lose to pitch.hook_line",
         caption="they finally rendered it",
         hashtags=["stellarblade", "fyp"],
@@ -258,11 +256,11 @@ def test_scene_line_at_65_words_is_accepted(rules):
 
 
 def _fat_plan(shots: list[ShotDraft]) -> ShotPlanDraft:
-    # 715 combined chars was the measured 2026-07-12 failure; reproduce the shape.
+    # 2026-07-14: the budget check now caps style_anchor ALONE (anchors_block
+    # deleted) — inflate style_anchor past _PLAN_BLOCKS_MAX_CHARS (420) to
+    # trigger the same retry path the 2026-07-12 pitch-43 failure exercised.
     plan = _plan(shots)
-    return plan.model_copy(
-        update={"anchors_block": "A" * 500, "style_anchor": "S" * 215}
-    )
+    return plan.model_copy(update={"style_anchor": "S" * 500})
 
 
 def test_fat_plan_blocks_retried_once_with_feedback(rules):
@@ -275,7 +273,7 @@ def test_fat_plan_blocks_retried_once_with_feedback(rules):
     retry_call = fake.calls[1]
     assert retry_call["prompt"].startswith("Story pitch:")  # same data, plus feedback
     assert "REWRITE:" in retry_call["prompt"]
-    assert package.anchors_block == ANCHOR_TEXT  # slim plan won
+    assert package.style_anchor == STYLE_TEXT  # slim plan won
 
 
 def test_fat_plan_blocks_still_fat_after_repair_raises(rules):
@@ -352,15 +350,13 @@ def test_location_grounding_defaults_empty_when_absent(rules):
     assert package.location_reference_paths == []
 
 
-# --- anchors/style exclusion (spec §7 Stage-2 criterion 6) ------------------------
+# --- style exclusion (spec §7 Stage-2 criterion 6) ---------------------------------
 
 
-def test_no_shot_prompt_contains_anchor_or_style_text(rules):
+def test_no_shot_prompt_contains_style_text(rules):
     package = _write(_pitch(3), FakeLLM(_plan(_draft_shots(3))), rules)
     for shot in package.shots:
-        assert ANCHOR_TEXT not in shot.scene_line
         assert STYLE_TEXT not in shot.scene_line
-    assert package.anchors_block == ANCHOR_TEXT
     assert package.style_anchor == STYLE_TEXT
 
 
@@ -410,14 +406,14 @@ def test_scene_line_count_mismatch_raises(rules):
         _write(_pitch(3), fake, rules)
 
 
-def test_scene_line_anchor_leak_raises(rules):
+def test_scene_line_style_leak_raises(rules):
     leaked = [
         "Medium shot. CONVERTED[0]. Audio: rain.",
-        f"Wide shot. {ANCHOR_TEXT} walks away. Audio: rain.",  # identity leak
+        f"Wide shot. {STYLE_TEXT} walks away. Audio: rain.",  # style leak
         "Close-up. CONVERTED[2]. Audio: rain.",
     ]
     fake = FakeLLM(_plan(_draft_shots(3)), conversion_prompts=leaked)
-    with pytest.raises(ValueError, match="leaked anchors_block"):
+    with pytest.raises(ValueError, match="leaked style_anchor"):
         _write(_pitch(3), fake, rules)
 
 

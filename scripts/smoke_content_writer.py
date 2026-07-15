@@ -324,26 +324,8 @@ def main() -> None:
             location_reference_paths=manifest.location_reference_paths,
         )
 
-        # TEMP (pitch 24 manual render): the blind text-only writer wrote
-        # ref-conflicting identities (swapped Will/Zeo hair, wrong Elfie costume).
-        # Override anchors_block to match the supplied Wistoria key-art so the
-        # multi-character stills label each ref correctly. Remove once the writer
-        # gets ref-accurate anchors (vision describe-step). See render_taste_test/
-        # wistoria_refs/.
-        if pitch_id == 24:
-            package.anchors_block = (
-                "Will has teal-blue messy hair with one upward strand, round "
-                "glasses, violet eyes, a dark caped uniform with gold epaulettes. "
-                "Elfie has long ice-blue hair, blue eyes, a white-and-gold "
-                "off-shoulder dress with a blue chest gem. "
-                "Zeo has spiky white-silver hair, tan skin, teal eyes, a "
-                "sleeveless white vest and grey cloak."
-            )
-            print("[TEMP] pitch 24: anchors_block overridden to match refs")
-
         print("=" * 70)
         print(f"STYLE ANCHOR:  {package.style_anchor}")
-        print(f"ANCHORS:       {package.anchors_block}")
         print(f"REFS:          {package.reference_image_paths}")
         if package.location_reference_paths:
             print(f"LOCATION REFS: {package.location_reference_paths}")
