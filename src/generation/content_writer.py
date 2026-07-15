@@ -46,7 +46,12 @@ logger = logging.getLogger(__name__)
 # 8192 -> 16384 (2026-07-05): deepseek-v4-pro's ShotPlanDraft for a 5-beat pitch
 # overflowed 8192 on one roll of the pitch-29 render (nondeterministic verbosity;
 # two prior rolls of the SAME pitch fit under it). 4th max_tokens bite project-wide.
-WRITER_MAX_TOKENS = 16384
+# 16384 -> 32768 (2026-07-14, BUG-019 recurrence): the SCENE call's budget-repair
+# RETRY (candidate over the char cap, model asked to rewrite tighter) hit
+# TruncatedResponseError at 16384 on pitch-47's dry run — likely deepseek-v4-pro
+# reasoning tokens counted against max_tokens while it worked the tighter ask.
+# Stopgap per BUG-019 (bugs.md:654), root design fork still unresolved.
+WRITER_MAX_TOKENS = 32768
 
 # Hard code-level reject for a runaway scene line. Recalibrated 2026-07-11 from
 # 60 -> 90 on video-researcher evidence: the old 40-soft/60-hard numbers were
@@ -72,7 +77,8 @@ _SCENE_LINE_MAX_WORDS = 90
 # ponytail: constant reserve, re-measure if adapter._scene_prompt's composition
 # ever changes shape. Pitch-43 measured total overhead 971 = 482 package-known
 # + 489 covered here; 500 clears that measurement with margin (450 undershot it).
-_COMPOSED_OVERHEAD_RESERVE = 500
+# +10 (2026-07-13): adapter preamble gained the "24fps. " header (7 chars).
+_COMPOSED_OVERHEAD_RESERVE = 510
 
 # Combined style_anchor + anchors_block ceiling for the PLAN call. These are LLM
 # output too — the 2026-07-12 pitch-43 retry run emitted 715 combined chars
@@ -90,8 +96,10 @@ PLAN_SYSTEM_PROMPT = """\
 <role>
 You are the story-to-screen developer for a channel that renders the scene a
 fandom is currently begging to see. The finished video must read as a DELETED
-SCENE OR OFFICIAL CLIP from the source work itself — matched to that work's own
-visual register — not as "an AI video of the character in our world."
+SCENE from a PHOTOREAL LIVE-ACTION ADAPTATION of the source work — the register
+of a prestige streaming-service remake (real actors, real sets, cinematic
+grade) — never anime, cel, or illustration style, and not "an AI video of the
+character in our world."
 </role>
 
 <inputs>
@@ -102,7 +110,9 @@ You receive:
    camera sees), an optional narration_line, a shot_size, and characters_in_frame.
    Develop THIS story. Never substitute your own.
 2. A MOTION CRAFT block — universal motion-prompt rules (one move + one action,
-   countable beats, emotion as visible physical tells, banned dead words).
+   countable beats, emotion as visible physical tells, banned dead words) plus a
+   camera_grammar table mapping each beat's EMOTION to proven camera moves with
+   ready-made phrasing.
 </inputs>
 
 <task>
@@ -117,7 +127,9 @@ a 10-15 second vertical video with cuts happening inside the generation.
   the framing (honor the beat's shot_size), ONE camera move + ONE subject action
   expressed as countable beats with timing, where it happens, plus the concrete
   diegetic sounds of the moment (name actual sounds, never "ambient sounds").
-  No music. No style or palette words. Describe the CHARACTER ONLY BY NAME or
+  Pick the camera move from the camera_grammar table by the beat's EMOTION and
+  reuse its phrasing; go outside the table only when the beat genuinely needs
+  an unlisted move. No music. No style or palette words. Describe the CHARACTER ONLY BY NAME or
   role — do NOT write identity descriptions (hair, outfit); identity is bound to
   reference images by the system. Between adjacent shots, chain the action:
   this shot's END STATE is the next shot's START STATE (if this shot ends with
@@ -146,11 +158,14 @@ a 10-15 second vertical video with cuts happening inside the generation.
 </per_shot_rules>
 
 <package_rules>
-- style_anchor: ONE line naming the source work's visual register concretely (for
-  an anime: its animation style, line quality, palette family, broadcast grade;
-  for a game/live-action register: its cinematography). The system composes it
-  into the final prompt once, so it must be true for every shot. Keep it under
-  ~25 words — it shares a hard prompt budget with the scene text.
+- style_anchor: ONE line naming the PHOTOREAL LIVE-ACTION register concretely —
+  the cinematography of a prestige live-action adaptation of the source (lens
+  feel, lighting, color grade, production texture). NEVER animation words: no
+  "anime", "cel", "animation style", line quality, or illustration vocabulary —
+  the reference images are photoreal and the prompt must not fight them. The
+  system composes it into the final prompt once, so it must be true for every
+  shot. Keep it under ~25 words — it shares a hard prompt budget with the scene
+  text.
 - anchors_block: one identity sentence per character who appears on screen — name,
   hair, outfit category + primary color, and one recognition trait, matched to the
   supplied reference art era. Nothing else — no backstory, no mood, no second
@@ -199,7 +214,10 @@ Each shot line must contain, in this order:
    worn plush doll from inside his coat"). Give the action internal ACCELERATION
    where the story has it — a beat-timed build ("three slow steps, then she
    spins on the final step") animates; a single sustained gentle verb held for
-   the whole shot reads stiff. One action verb chain per shot. Show
+   the whole shot reads stiff. One action verb chain per shot. Never write a
+   back-and-forth action (turn away then turn back, look up then down again) —
+   the model performs only the FIRST move and drops the return; write one
+   sustained move held instead ("turns her head back and holds the look"). Show
    emotion only through the body: hands, eyes, breath, posture — never name a
    feeling ("sad", "moved") and never explain intent. Refer to each character by
    the EXACT same name in every shot line — never swap to a pronoun or a generic
@@ -216,7 +234,10 @@ Each shot line must contain, in this order:
    Light stays steady ("steady warm light", "diffuse lamplight"). Name the
    actual physical light SOURCE causing the scene's light (a bedside lamp,
    sunlight through blinds, a phone screen's glow, overhead fluorescents) — never
-   a bare mood adjective with no visible source behind it.
+   a bare mood adjective with no visible source behind it. When nothing in the
+   story changes the background this shot, add "background stays unchanged" to
+   this clause — omitting it invites background drift; SKIP it on shots that
+   legitimately change the space (a door opens, a threshold is crossed).
 4. CAMERA — one camera behavior for the shot, written separately from the
    subject's action so the model never confuses who moves ("Camera: slow
    push-in", "Camera: static, shallow depth of field", "Camera: slow tilt from

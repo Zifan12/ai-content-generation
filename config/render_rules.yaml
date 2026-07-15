@@ -120,7 +120,7 @@ models:
     # ------------------------------------------------------------------
     limits:
       max_duration_seconds: 15      # MEASURED 2026-07-06 22:36 probe: 15s WORKS via CLI (15.07s output verified, 67.5cr). Earlier same-day bisect wrote "15s fails always" from confounded/transient early failures — corrected in FINDINGS.md. Vendor page also states 15s/shot.
-      max_prompt_chars: 3000        # methodology/15 L364-366: Seedance ≤4000 chars, Higgsfield ≤3000-3500 — enforce the conservative floor as a hard validation ceiling
+      max_prompt_chars: 3200        # methodology/15 L364-366: Seedance ≤4000 chars, Higgsfield ≤3000-3500 — 3200 uses documented headroom (was 3000 floor); bumped 2026-07-14 after camera_grammar + Dan rules pushed mandatory scene-body content past the old floor (pitch-47 dry-run: 1900 chars vs 1708 budget)
       max_characters_in_scene: 3    # methodology/15 L136-139: >3 characters error-prone (misplacement/fusion); 2-3 main characters per shot recommended
       max_image_references: 9       # `higgsfield model get seedance_2_0` 2026-07-06 — counts start_image AND end_image
       max_reference_files_total: 12 # same source — images + videos + audios combined
@@ -259,6 +259,32 @@ motion_craft:
   action_as_beats: "Express the action as countable beats ('four steps to the window, pause, pull the curtain in the final second'), not vague verbs ('walks across the room') — vague action makes the model guess pace and drift."   # 03 L14-16
   emotion_is_visible: "Carry mood through lighting/palette/micro-performance (eye-line, breath, posture, tight jaw), NOT the words 'sad'/'epic'. Every emotional word must pair with something the camera can see."   # 03 §color-script L91
   anti_intensifiers: ["stunning", "breathtaking", "ultra-detailed", "masterpiece", "best quality", "8K"]   # 04 L94 + 05 L9 — wasted words across all modern models
+  no_backandforth_actions: "Seedance honors only the FIRST move of a back-and-forth (look back -> front -> back again drops the return). Write one sustained move held long instead ('turns her head back, holds the look several seconds, then snaps front')."   # Dan-Kieft L432; PROMOTED from sequence_craft_candidates 2026-07-13; also enforced in SCENE_LINE_SYSTEM_PROMPT action rules
+  # camera_grammar: emotion -> camera-move decision table. PROMOTED same-day
+  # 2026-07-13 from camera_grammar_candidates (user call: corpus-first — implement
+  # library levers before the next paid render; the photoreal pivot matches the
+  # source examples' register, dissolving the anime-transfer caveat). Source: Dan
+  # Kieft camera-movements video + aicameramovements.com 46-card bank, examples
+  # generated on Higgsfield Seedance+Kling; full verbatim cards + per-move
+  # verdicts: ai_video_resources/Dan Kieft Camera Movements.md. Spec:
+  # docs/superpowers/specs/2026-07-13-camera-grammar-harvest-design.md.
+  # VALIDATION PENDING: judged by eyeball on the next full multi-shot render —
+  # do deliberate moves render, does the clip feel directed. Demote rows that fail.
+  # Fragments deliberately <=10 words: scene lines budget 55-65 words TOTAL.
+  camera_grammar:
+    selection_rule: "Choose each shot's camera move by the beat's EMOTION via the rows below — a move is an emotional statement, not decoration. Menu is GUIDANCE, not a whitelist: a pitch that genuinely needs an unlisted move may use it (full 46-move vocabulary in the corpus doc). One move per shot, speed always qualified — one_move_one_action still governs."
+    zoom_vs_dolly: "Zoom changes the LENS (camera stands still) = detached observation; dolly physically MOVES the camera = participation. Dolly-out reads as LEAVING the character behind (intimate abandonment); zoom-out reads as DISASSOCIATING (clinical, world grows). Pick by what the beat means. (05-运镜词典 conflates the two in one row — this is the correction.)"
+    tension_dread: "Slow push-in toward the face or object ('Camera: slow push-in toward her face') — or a deliberately locked static frame; stillness IS a choice for dread and deadpan, one beat max, never the whole scene."   # cards: slow zoom in / dolly in / static; video 2:41-2:55, 4:39-4:46
+    suspense_approach: "Follow close behind the subject's shoulder into the unknown ('Camera: follows behind his shoulder, matching pace')."   # card: follow/OTS; video 7:52-8:09 basement-stairs
+    comedic_snap: "Crash zoom in WITH landing phrase ('Camera: crash zoom in, lands sharp on his face') for shock/realization/punchline; whip pan WITH landing phrase ('Camera: whip pan to the door, lands sharp') for a snap redirect between two subjects [EXPERIMENTAL — smear risk; landing phrase is the anti-smear lever]."   # cards: crash zoom in / whip pan; video 3:42-3:59
+    comedic_absurd_reveal: "Crash zoom out, lands wide on the absurd whole scene ('Camera: crash zoom out, lands wide')."   # card: crash zoom out; video 3:59-4:16 casual-Friday gag
+    defeat_isolation: "Slow dolly out, subject left small in frame ('Camera: slow dolly out, she stays small in the empty room') — or slow zoom out when the beat means disassociation, not abandonment (zoom_vs_dolly)."   # cards: dolly out / slow zoom out; video 4:46-5:01
+    intimacy_tenderness: "Static close-up with shallow depth, or slow tilt between two emotional anchors ('Camera: slow tilt from their joined hands up to her face')."   # cards: static / tilt; matches existing SCENE_LINE example
+    panic_chaos: "Handheld with subtle sway ('Camera: handheld, subtle sway') for raw discomfort; snorricam for full hysteria ('Camera: locked to his torso, background whirling around him') [EXPERIMENTAL — unvalidated in our pipeline; NEVER co-emit with a background-lock clause in the same shot line]."   # cards: handheld / snorricam; video 9:32-10:52
+    attention_redirect_calm: "Slow pan from A to B ('Camera: slow pan from the desk to the doorway') — scan or reveal without alarm."   # card: pan; video 1:36-1:54
+    kinetic_action: "Side-track parallel to the motion ('Camera: tracks sideways matching his sprint'); reverse-track when the FACE carries the beat ('Camera: moves backward in front of her, face locked centered')."   # cards: side tracking / reverse tracking; video 8:17-8:43
+    scale_power_shift: "Tilt up or down between power positions ('Camera: slow tilt up from boots to face') — looking up reads small/weak, height reads power."   # card: tilt; video 1:54-2:08
+    threshold_cross: "Pass-through or push-past the ONE Scene-Space threshold ('Camera: pushes past the doorframe into the hallway') — the camera language for sequence_craft.one_scene_space's single crossing."   # cards: pass-through / push past; site-only move
 
 # ---------------------------------------------------------------------------
 # SEQUENCE CRAFT — cross-shot rules for the ONE multi-shot scene generation
@@ -299,49 +325,18 @@ sequence_craft_candidates:
   # Updated.md (OpenArt dialect — @image tags, native Seedance UI). Higgsfield CLI
   # transfer UNVERIFIED for each unless noted; Higgsfield binds refs positionally
   # ('image1'), not @-tags (FINDINGS.md). Treat as candidates pending our own render.
-  header_24fps: "Scene header carries an explicit '24fps' (24帧每秒) line every prompt — Dan reports it reduces laggy/stuttery motion. Cheap lever against our open motion-smoothness problem."   # Dan-Kieft L52, L592
+  # header_24fps PROMOTED 2026-07-13 -> adapter.py _scene_prompt preamble ("24fps. " opens every composed scene prompt).
+  # no_backandforth_actions PROMOTED 2026-07-13 -> motion_craft (writer call 1) + SCENE_LINE_SYSTEM_PROMPT action rules (call 2).
+  # background_lock_clause PROMOTED 2026-07-13 -> SCENE_LINE_SYSTEM_PROMPT SPACE rules (conditional per shot: locked when the story doesn't change the space, skipped on threshold-cross shots).
   chinese_prompt_body: "ADOPTED (user decision 2026-07-13, Tier 2 design-locked, NO A/B run — validation = first live Chinese render; Higgsfield failed jobs uncharged so downside bounded): Seedance prompt body written in CHINESE via translate-at-adapter seam (pipeline stays English end-to-end; translation happens at render-job build; dialogue stays English in quotes; English mirror stored alongside for review). Fallback to English prompt on translation failure or repeated Chinese-prompt job rejection."   # Dan-Kieft L43; lanshu Chinese-first corpus; OpenArt-verified, Higgsfield-unverified
   ref_tag_by_shot_size: "Select refs per shot size: face ref tagged EVERY shot the character appears; body/turnaround sheet only on wide/full/medium (drop on close-ups — small odd-angle faces on a sheet confuse the model); detail/texture sheet on close-ups and texture-visible mediums."   # Dan-Kieft L106-117
   retag_every_shot: "Each shot in a multi-shot prompt is effectively a cold generation — re-introduce every reference at first mention per shot with an identity noun ('the cavewoman image1'), then pronouns within the shot; never rely on shot 1's binding carrying to shot 2."   # Dan-Kieft L99-101
-  no_backandforth_actions: "Seedance honors only the FIRST move of a back-and-forth (look back -> front -> back again). Write one sustained move held long instead ('turns her head back, holds the look several seconds, then snaps front')."   # Dan-Kieft L432
-  background_lock_clause: "When the background must not drift/morph across a shot, say it explicitly ('background stays completely unchanged, no fog, no changes') — omission is not suppression."   # Dan-Kieft L442; kin to our 'no music' suppression convention
   object_turnaround_sheets: "CONFLICTS WITH D9 (no engineered refs beyond characters — re-litigation is a user call): Dan gives every RECURRING prop/vehicle/creature its own turnaround sheet and tags it per shot; his measured failure (TV vanishing mid-scene) came precisely from an untagged recurring object."   # Dan-Kieft L476-505 + video 8:38-9:52
 
-# ---------------------------------------------------------------------------
-# CAMERA GRAMMAR candidates — emotion -> camera-move decision table (harvested
-# 2026-07-13; grilled Q1-Q3 user-ratified; spec docs/superpowers/specs/
-# 2026-07-13-camera-grammar-harvest-design.md). Source: Dan Kieft camera-
-# movements video + aicameramovements.com 46-card bank (examples generated on
-# Higgsfield Seedance+Kling — our platform; full verbatim cards + per-move
-# verdicts: ai_video_resources/Dan Kieft Camera Movements.md).
-# UNWIRED (true candidates): the writer envelope injects ONLY
-# rules.data['motion_craft'] (_build_plan_envelope, content_writer.py) — this
-# separate top-level key is never injected. PROMOTION (after the fresh-pitch
-# validation batch shared with sequence_craft_candidates above): move surviving
-# rows INTO motion_craft (auto-injected, zero code) AND touch
-# PLAN_SYSTEM_PROMPT twice — <inputs> §2 parenthetical (name the camera
-# grammar) + <per_shot_rules> motion_intent bullet (instruct: choose the move
-# by the beat's emotion) — data flows without the prompt edit, reliable
-# APPLICATION does not (enforcement-gap class, 2026-07-12 audit).
-# CAVEATS: all source examples are PHOTOREAL — anime-lane transfer unvalidated
-# (anime clips sit below the motion bar, memory 2026-07-13). Fragments are
-# deliberately <=10 words: scene lines budget 55-65 words TOTAL; site cards are
-# 40-50 words of camera alone and must never be embedded whole.
-# ---------------------------------------------------------------------------
-camera_grammar_candidates:
-  selection_rule: "Choose each shot's camera move by the beat's EMOTION via the rows below — a move is an emotional statement, not decoration. Menu is GUIDANCE, not a whitelist: a pitch that genuinely needs an unlisted move may use it (full 46-move vocabulary in the corpus doc). One move per shot, speed always qualified — motion_craft.one_move_one_action still governs."
-  zoom_vs_dolly: "Zoom changes the LENS (camera stands still) = detached observation; dolly physically MOVES the camera = participation. Dolly-out reads as LEAVING the character behind (intimate abandonment); zoom-out reads as DISASSOCIATING (clinical, world grows). Pick by what the beat means. (05-运镜词典 conflates the two in one row — this is the correction.)"
-  tension_dread: "Slow push-in toward the face or object ('Camera: slow push-in toward her face') — or a deliberately locked static frame; stillness IS a choice for dread and deadpan, one beat max, never the whole scene."   # cards: slow zoom in / dolly in / static; video 2:41-2:55, 4:39-4:46
-  suspense_approach: "Follow close behind the subject's shoulder into the unknown ('Camera: follows behind his shoulder, matching pace')."   # card: follow/OTS; video 7:52-8:09 basement-stairs
-  comedic_snap: "Crash zoom in WITH landing phrase ('Camera: crash zoom in, lands sharp on his face') for shock/realization/punchline; whip pan WITH landing phrase ('Camera: whip pan to the door, lands sharp') for a snap redirect between two subjects [EXPERIMENTAL — smear risk; landing phrase is the anti-smear lever]."   # cards: crash zoom in / whip pan; video 3:42-3:59
-  comedic_absurd_reveal: "Crash zoom out, lands wide on the absurd whole scene ('Camera: crash zoom out, lands wide')."   # card: crash zoom out; video 3:59-4:16 casual-Friday gag
-  defeat_isolation: "Slow dolly out, subject left small in frame ('Camera: slow dolly out, she stays small in the empty room') — or slow zoom out when the beat means disassociation, not abandonment (zoom_vs_dolly)."   # cards: dolly out / slow zoom out; video 4:46-5:01
-  intimacy_tenderness: "Static close-up with shallow depth, or slow tilt between two emotional anchors ('Camera: slow tilt from their joined hands up to her face')."   # cards: static / tilt; matches existing SCENE_LINE example
-  panic_chaos: "Handheld with subtle sway ('Camera: handheld, subtle sway') for raw discomfort; snorricam for full hysteria ('Camera: locked to his torso, background whirling around him') [EXPERIMENTAL — background-whirl on anime unvalidated; NEVER co-emit with a background-lock clause in the same shot line]."   # cards: handheld / snorricam; video 9:32-10:52
-  attention_redirect_calm: "Slow pan from A to B ('Camera: slow pan from the desk to the doorway') — scan or reveal without alarm."   # card: pan; video 1:36-1:54
-  kinetic_action: "Side-track parallel to the motion ('Camera: tracks sideways matching his sprint'); reverse-track when the FACE carries the beat ('Camera: moves backward in front of her, face locked centered')."   # cards: side tracking / reverse tracking; video 8:17-8:43
-  scale_power_shift: "Tilt up or down between power positions ('Camera: slow tilt up from boots to face') — looking up reads small/weak, height reads power."   # card: tilt; video 1:54-2:08
-  threshold_cross: "Pass-through or push-past the ONE Scene-Space threshold ('Camera: pushes past the doorframe into the hallway') — the camera language for sequence_craft.one_scene_space's single crossing."   # cards: pass-through / push past; site-only move
+# (camera_grammar_candidates PROMOTED 2026-07-13 into motion_craft.camera_grammar
+# above — same-day promotion, user call, corpus-first rationale in that block's
+# header. History: this block existed here for ~10 hours; original harvest
+# provenance preserved in the promoted block's per-row citations.)
 
 # ---------------------------------------------------------------------------
 # GLOBAL CONSTRAINTS — append to a prompt unless the shot needs the excluded
@@ -353,10 +348,10 @@ camera_grammar_candidates:
 # adapter's scene tail hardcodes ONLY the no-text line + 'No music' + the model
 # quality_suffix (adapter.py _scene_prompt). Kept for a future multi-model /
 # still-first revival. BEFORE any re-wire: resolve 'locked camera, fixed
-# position, no shake, no sudden zoom' below against camera_grammar_candidates —
-# co-emitting it with a deliberate camera move cancels both (see contradictions
-# block). That rule was anti-drift craft for the STILL-FIRST i2v era, not a
-# motion-native scene rule.
+# position, no shake, no sudden zoom' below against motion_craft.camera_grammar
+# (LIVE as of 2026-07-13) — co-emitting it with a deliberate camera move cancels
+# both (see contradictions block). That rule was anti-drift craft for the
+# STILL-FIRST i2v era, not a motion-native scene rule.
 #
 # Each bucket declares `kinds:` — which prompt type(s) it applies to — so the
 # accessor returns the right SUBSET per prompt kind (still vs motion). This
