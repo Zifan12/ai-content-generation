@@ -33,7 +33,6 @@ class FakeLLM:
                     )
                     for i in range(3)
                 ],
-                style_anchor="cel-shaded anime register",
                 hook_text=None,
                 caption="caption",
                 hashtags=["tag"],

@@ -187,6 +187,19 @@ models:
 # ---------------------------------------------------------------------------
 scene_lane:
   mode: single_gen             # single_gen (default, D3) | per_scene_splice (Way 2, 2026-07-14 grill Q1) — config-selectable second lane, NOT a replacement; single_gen stays the default/fallback
+  # The channel's photographic register — FIXED, every render, never LLM-written
+  # (2026-07-14 reference-ownership spec). Corpus: 18-kling-masterclass.md:92-107
+  # "Style Bible Line" — one fixed sentence for 整个项目 (the whole project),
+  # copy-pasted into every shot; its worked example is exactly this shape
+  # ("Shot on ARRI Alexa, 2.39:1 anamorphic, filmic grain, warm desaturated
+  # tones, practical lighting only, cinematic depth of field").
+  # Carries: lens, stock, grain, grade, lighting PHILOSOPHY.
+  # Never: a specific practical light, or this scene's mood — the location ref
+  # owns the room and the scene line owns which lamp is on (spec ownership table).
+  # Was LLM-written per pitch until 2026-07-14: two runs ten minutes apart on the
+  # same show gave "anamorphic / cool blue tones" vs "35mm / amber color grade",
+  # so the account's look changed at random per post.
+  style_anchor: "Photoreal live-action, shot on 35mm with a fast prime, shallow depth of field, fine natural film grain, practical lighting only, neutral filmic grade."
   model: seedance_2_0          # D7 swap point — the ONLY place the lane's model is named
   defaults:
     duration_seconds: 15       # ratified 2026-07-10: 5-cut pitches need ~3s/cut (convergent pacing floor, FINDINGS.md 3-shot/10s=3.3s/cut not-slideshow); 10s crushes 5 cuts to 2s/cut. 15s measured working (67.5cr vs 45cr at 720p). Seedance CLI max=15 (limits block). NOTE: this is the EXECUTOR's CLI --duration; the writer's per-shot duration_seconds (PLAN prompt "total 10-15") is an INTERNAL pacing/narration budget that never reaches the CLI (D2) — the two are related but not the same number.

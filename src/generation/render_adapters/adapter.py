@@ -176,7 +176,7 @@ def _scene_prompt(package: MultiShotPackage, rules: RenderRules) -> str:
         # (numerals + Latin tags stay untranslated per the translation stage).
         "24fps. "
         "Exactly matching the art style of the reference images. "
-        f"{package.style_anchor}"
+        f"{rules.data['scene_lane']['style_anchor']}"
     )
     identity = _identity_block(package, ordered)
     setting = _setting_block(package, start_position=len(ordered) + 1)

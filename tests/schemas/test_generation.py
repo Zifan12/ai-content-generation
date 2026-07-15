@@ -41,7 +41,6 @@ def _shot_spec(duration: int = 5, role: BeatRole = BeatRole.hook) -> ShotSpec:
 def _package(durations: list[int]) -> MultiShotPackage:
     return MultiShotPackage(
         shots=[_shot_spec(duration=d) for d in durations],
-        style_anchor="Cel-shaded TV anime, thick clean line art, muted broadcast palette.",
         hook_text="the scene they cut",
         caption="they owed us this scene",
         hashtags=["anime", "fyp"],
@@ -63,7 +62,6 @@ def _draft(duration: int = 5) -> ShotDraft:
 def _plan(durations: list[int]) -> ShotPlanDraft:
     return ShotPlanDraft(
         shots=[_draft(duration=d) for d in durations],
-        style_anchor="Cel-shaded TV anime, thick clean line art.",
         hook_text="the scene they cut",
         caption="caption",
         hashtags=["tag"],
@@ -190,7 +188,6 @@ def test_package_rejects_unknown_field():
     with pytest.raises(ValidationError):
         MultiShotPackage(
             shots=[_shot_spec(), _shot_spec(), _shot_spec()],
-            style_anchor="s",
             hook_text=None,
             caption="c",
             hashtags=[],
@@ -203,7 +200,6 @@ def test_plan_draft_rejects_unknown_field():
     with pytest.raises(ValidationError):
         ShotPlanDraft(
             shots=[_draft(), _draft(), _draft()],
-            style_anchor="s",
             hook_text=None,
             caption="c",
             hashtags=[],

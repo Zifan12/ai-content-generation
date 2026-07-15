@@ -32,8 +32,6 @@ from src.schemas.generation import (
     ShotPlanDraft,
 )
 
-STYLE_TEXT = "STYLE_SENTINEL cel-shaded TV anime thick line art"
-
 _SIZES = [
     ShotSize.establishing,
     ShotSize.medium,
@@ -100,7 +98,6 @@ def _draft_shots(
 def _plan(shots: list[ShotDraft]) -> ShotPlanDraft:
     return ShotPlanDraft(
         shots=shots,
-        style_anchor=STYLE_TEXT,
         hook_text="DRAFT HOOK — must lose to pitch.hook_line",
         caption="they finally rendered it",
         hashtags=["stellarblade", "fyp"],
@@ -115,12 +112,10 @@ class FakeLLM:
         plan: ShotPlanDraft,
         conversion_prompts: list[str] | None = None,
         conversion_queue: list[list[str]] | None = None,
-        plan_queue: list[ShotPlanDraft] | None = None,
     ):
         self._plan = plan
         self._forced_conversion = conversion_prompts
         self._conversion_queue = conversion_queue  # one entry per scene call (retries)
-        self._plan_queue = plan_queue  # one entry per plan call (budget retries)
         self.calls: list[dict] = []
 
     def parse(self, prompt, response_model, system=None, max_tokens=1024):
@@ -133,8 +128,6 @@ class FakeLLM:
             }
         )
         if response_model is ShotPlanDraft:
-            if self._plan_queue:
-                return self._plan_queue.pop(0)
             return self._plan
         if response_model is SceneLines:
             if self._conversion_queue:
@@ -252,38 +245,6 @@ def test_scene_line_at_65_words_is_accepted(rules):
     assert package.shots[0].scene_line.startswith("word")
 
 
-# --- plan-block budget: one bounded repair (pitch-43 second regression) ------------
-
-
-def _fat_plan(shots: list[ShotDraft]) -> ShotPlanDraft:
-    # 2026-07-14: the budget check now caps style_anchor ALONE (anchors_block
-    # deleted) — inflate style_anchor past _PLAN_BLOCKS_MAX_CHARS (420) to
-    # trigger the same retry path the 2026-07-12 pitch-43 failure exercised.
-    plan = _plan(shots)
-    return plan.model_copy(update={"style_anchor": "S" * 500})
-
-
-def test_fat_plan_blocks_retried_once_with_feedback(rules):
-    fake = FakeLLM(
-        _plan(_draft_shots(3)),
-        plan_queue=[_fat_plan(_draft_shots(3)), _plan(_draft_shots(3))],
-    )
-    package = _write(_pitch(3), fake, rules)
-    assert len(fake.calls) == 3  # fat plan + ONE repair plan call + scene call
-    retry_call = fake.calls[1]
-    assert retry_call["prompt"].startswith("Story pitch:")  # same data, plus feedback
-    assert "REWRITE:" in retry_call["prompt"]
-    assert package.style_anchor == STYLE_TEXT  # slim plan won
-
-
-def test_fat_plan_blocks_still_fat_after_repair_raises(rules):
-    fat = _fat_plan(_draft_shots(3))
-    fake = FakeLLM(_plan(_draft_shots(3)), plan_queue=[fat, fat])
-    with pytest.raises(ValueError, match="starve the scene-line budget"):
-        _write(_pitch(3), fake, rules)
-    assert len(fake.calls) == 2  # two plan attempts, scene call never reached
-
-
 # --- composed-prompt budget: one bounded repair (pitch-43 regression) --------------
 
 # ≤90 words each (passes the per-line cap) but char-fat: the exact failure shape
@@ -350,16 +311,6 @@ def test_location_grounding_defaults_empty_when_absent(rules):
     assert package.location_reference_paths == []
 
 
-# --- style exclusion (spec §7 Stage-2 criterion 6) ---------------------------------
-
-
-def test_no_shot_prompt_contains_style_text(rules):
-    package = _write(_pitch(3), FakeLLM(_plan(_draft_shots(3))), rules)
-    for shot in package.shots:
-        assert STYLE_TEXT not in shot.scene_line
-    assert package.style_anchor == STYLE_TEXT
-
-
 # --- call mechanics ---------------------------------------------------------------
 
 
@@ -403,17 +354,6 @@ def test_mixed_motion_tags_still_one_scene_call(rules):
 def test_scene_line_count_mismatch_raises(rules):
     fake = FakeLLM(_plan(_draft_shots(3)), conversion_prompts=["only one"])
     with pytest.raises(ValueError, match="returned 1 lines for 3 shots"):
-        _write(_pitch(3), fake, rules)
-
-
-def test_scene_line_style_leak_raises(rules):
-    leaked = [
-        "Medium shot. CONVERTED[0]. Audio: rain.",
-        f"Wide shot. {STYLE_TEXT} walks away. Audio: rain.",  # style leak
-        "Close-up. CONVERTED[2]. Audio: rain.",
-    ]
-    fake = FakeLLM(_plan(_draft_shots(3)), conversion_prompts=leaked)
-    with pytest.raises(ValueError, match="leaked style_anchor"):
         _write(_pitch(3), fake, rules)
 
 

@@ -325,7 +325,7 @@ def main() -> None:
         )
 
         print("=" * 70)
-        print(f"STYLE ANCHOR:  {package.style_anchor}")
+        print(f"STYLE ANCHOR:  {rules.data['scene_lane']['style_anchor']}")
         print(f"REFS:          {package.reference_image_paths}")
         if package.location_reference_paths:
             print(f"LOCATION REFS: {package.location_reference_paths}")

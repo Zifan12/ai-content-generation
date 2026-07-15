@@ -35,7 +35,6 @@ def _package(narrations=("A line.", None, "Third line.")) -> MultiShotPackage:
     ]
     return MultiShotPackage(
         shots=shots,
-        style_anchor="style",
         hook_text="the scene they cut",
         caption="c",
         hashtags=[],

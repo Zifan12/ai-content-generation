@@ -13,8 +13,6 @@ from src.generation.render_adapters.rules import RenderRules
 from src.monitor.schemas import BeatRole
 from src.schemas.generation import MotionTag, MultiShotPackage, ShotSpec
 
-STYLE = "STYLE: cel-shaded TV anime, thick clean line art."
-
 
 @pytest.fixture(scope="module")
 def rules():
@@ -47,7 +45,6 @@ def _scene_package(
             _scene_shot(1, ["Eve", "Adam"]),
             _scene_shot(2, ["Adam"]),
         ],
-        style_anchor=STYLE,
         hook_text=None,
         caption="c",
         hashtags=[],
@@ -123,6 +120,21 @@ def test_scene_prompt_carries_no_invented_identity_text(rules):
     # ...but nothing describing them
     for invented in ("hair", "tousled", "bodysuit", "armored", "wearing", "eyes"):
         assert invented not in identity.lower(), f"identity block describes refs: {invented!r}"
+
+
+def test_style_anchor_is_constant_across_packages(rules):
+    """The channel's photographic register is a FIXED project-wide line, not an
+    LLM decision re-rolled per video (18-kling-masterclass.md:92-107 Style Bible
+    Line: "一句描述整个项目视觉风格的固定句子"). Measured 2026-07-14: two runs ten
+    minutes apart produced "anamorphic / cool blue tones" and "35mm / amber color
+    grade" for the same show and room."""
+    a = render_jobs(_scene_package(), rules)[0].prompt
+    b = render_jobs(_single_char_package(["refs/eve/front.png"]), rules)[0].prompt
+    constant = str(rules.data["scene_lane"]["style_anchor"])
+    assert constant in a and constant in b
+    # a fixed grade + lighting PHILOSOPHY, never a specific practical light
+    assert "candlelight" not in constant.lower()
+    assert "torch" not in constant.lower()
 
 
 def test_scene_char_cap_violation_raises(rules):
