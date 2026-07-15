@@ -88,9 +88,16 @@ def test_narration_offsets_bgm_and_hook_in_final_command(tmp_path):
     bgm = tmp_path / "bgm.mp3"
     bgm.write_bytes(b"fake-bgm")
 
+    # probe_duration answers per PATH: narration audio is 3s (under its 4s shot,
+    # so no overrun warning), the concatenated video is 12s. Keyed on extension,
+    # not a name substring — pytest's tmp_path is built from the test name, which
+    # contains "narr", so a substring check matches the video path too.
+    def probe(path):
+        return 3.0 if path.endswith((".mp3", ".wav")) else 12.0
+
     out = assemble(
         _result(tmp_path), _package(), str(tmp_path / "final.mp4"),
-        tts=tts, bgm_path=str(bgm), run_ffmpeg=ff, probe_duration=lambda p: 3.0,
+        tts=tts, bgm_path=str(bgm), run_ffmpeg=ff, probe_duration=probe,
     )
 
     assert out.endswith("final.mp4")
@@ -101,9 +108,11 @@ def test_narration_offsets_bgm_and_hook_in_final_command(tmp_path):
     # narration delays: shot 0 at 0ms, shot 2 at 8000ms (4s + 4s authored)
     assert "adelay=0|0" in graph
     assert "adelay=8000|8000" in graph
-    # BGM at 0.2 volume with a fade ending at total duration (12s)
+    # BGM at 0.2 volume with a fade ending at the real 12s runtime. Float, not
+    # int: the runtime is now probed off the concatenated file rather than summed
+    # from the authored ints (ffmpeg accepts either form).
     assert "volume=0.2" in graph
-    assert "afade=t=out:st=9:d=3" in graph
+    assert "afade=t=out:st=9.0:d=3" in graph
     # hook card burned for the first 2.5s
     assert "drawtext" in graph and "between(t,0,2.5)" in graph
     # native audio + 2 narrations + bgm mixed
@@ -133,6 +142,46 @@ def test_no_hook_no_bgm_minimal_graph(tmp_path):
     assert "amix=inputs=1" in graph  # native audio only
     assert "[amixed]afade=t=out" in graph  # D5 tail-fade applies even bare
     assert "0:v" in final  # un-drawn video mapped directly
+
+
+def test_tail_fade_keys_off_real_runtime_not_authored_estimate(tmp_path):
+    """REGRESSION (2026-07-14): fade timing must use the REAL concatenated
+    runtime, never the writer's authored per-shot estimates.
+
+    Those estimates are a narration word-budget (ShotSpec.duration_seconds) and
+    match the render length in neither lane. per_scene_splice is the extreme
+    case: 3 shots x 7s renders 21s while the authored sum says 12s. Keying the
+    fade off 12s faded ALL audio to silence at 12s of a 21s video — 9 silent
+    seconds, no error, no warning. single_gen drifts the same way (15s CLI
+    render vs a 10-25s estimate), just less visibly.
+    """
+    ff = FakeFFmpeg()
+    package = _package(narrations=(None, None, None))  # authored: 3 x 4s = 12s
+    package = package.model_copy(update={"hook_text": None})
+
+    assemble(
+        _result(tmp_path, n_clips=3), package, str(tmp_path / "final.mp4"),
+        tts=FakeTTS(), run_ffmpeg=ff,
+        probe_duration=lambda p: 21.0,  # real splice runtime: 3 clips x 7s
+    )
+    graph = ff.commands[-1][ff.commands[-1].index("-filter_complex") + 1]
+    assert "afade=t=out:st=20.5" in graph  # 21.0 real - 0.5 tail
+    assert "afade=t=out:st=11.5" not in graph  # NOT 12 authored - 0.5
+
+
+def test_tail_fade_falls_back_to_authored_sum_when_probe_fails(tmp_path):
+    """A failed probe returns 0.0 — fall back to the authored sum rather than
+    emit afade at st=0, which would mute the entire track."""
+    ff = FakeFFmpeg()
+    package = _package(narrations=(None, None, None))
+    package = package.model_copy(update={"hook_text": None})
+
+    assemble(
+        _result(tmp_path, n_clips=3), package, str(tmp_path / "final.mp4"),
+        tts=FakeTTS(), run_ffmpeg=ff, probe_duration=lambda p: 0.0,
+    )
+    graph = ff.commands[-1][ff.commands[-1].index("-filter_complex") + 1]
+    assert "afade=t=out:st=11.5" in graph  # authored 12s - 0.5, not st=0
 
 
 def test_normalize_then_concat_then_mix_order(tmp_path):

@@ -172,7 +172,18 @@ def assemble(
         narrations.append((narr_path, offsets[i]))
 
     # 4. MIX + HOOK in one filter_complex pass.
-    total_seconds = sum(shot.duration_seconds for shot in package.shots)
+    # Fade/BGM timing must key off the REAL concatenated runtime, never the
+    # writer's authored per-shot estimates. Those estimates are a narration
+    # word-budget (schemas/generation.py ShotSpec.duration_seconds); the actual
+    # length is whatever the CLI --duration produced. They diverge in BOTH lanes:
+    # single_gen renders scene_lane.defaults.duration_seconds (15s) against a
+    # 10-25s estimate, and per_scene_splice renders N x splice_defaults (e.g.
+    # 5x7=35s) against the same 10-25s estimate. Keying the tail-fade off the
+    # estimate faded a 35s splice to silence at 20s — 15 silent seconds, no
+    # error. Probe fails soft (0.0), so fall back to the old estimate rather
+    # than emit an afade at st=0 that would mute the whole track.
+    real_seconds = probe_duration(concat_path)
+    total_seconds = real_seconds or sum(shot.duration_seconds for shot in package.shots)
     inputs = ["-i", concat_path]
     filters: list[str] = []
     mix_labels = ["[0:a]"]
