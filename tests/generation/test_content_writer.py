@@ -311,6 +311,37 @@ def test_location_grounding_defaults_empty_when_absent(rules):
     assert package.location_reference_paths == []
 
 
+def test_writer_calls_receive_the_world_anchor(rules):
+    """The writer invented rooms because it had never seen one: neither envelope
+    carried world_anchor (it was only subtracted from the char budget). Measured
+    2026-07-14 pitch 47 — the scene line said "a dim stone chamber lit by a single
+    torch" while world_anchor in the SAME prompt said "ornate white marble bedroom,
+    tall windows". Both calls need it: the plan call writes "where it happens" into
+    motion_intent, which the scene call then echoes."""
+    seen = []
+
+    class CapturingLLM:
+        def __init__(self, delegate):
+            self._delegate = delegate
+
+        def parse(self, prompt, response_model, system=None, max_tokens=1024):
+            seen.append(prompt)
+            return self._delegate.parse(prompt, response_model, system, max_tokens)
+
+    ContentWriter(llm=CapturingLLM(FakeLLM(_plan(_draft_shots(3))))).write(
+        _pitch(3),
+        rules=rules,
+        reference_image_paths=["refs/eve/front.png"],
+        world_anchor="A grand ice-tower chamber, pale marble floor.",
+    )
+    # >= 2, not == 2: the SCENE call has its own budget-repair retry loop that
+    # re-calls on an over-budget candidate (observed live 2026-07-14: "scene body
+    # 1882 chars over its 1812 budget (attempt 1/2) — retrying"). Pinning an exact
+    # count would make this test fail on a legitimate repair.
+    assert len(seen) >= 2  # plan call + scene call, plus any budget repair
+    assert all("A grand ice-tower chamber" in p for p in seen)
+
+
 # --- call mechanics ---------------------------------------------------------------
 
 

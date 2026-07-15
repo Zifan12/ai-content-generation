@@ -123,8 +123,10 @@ a 10-15 second vertical video with cuts happening inside the generation.
 <per_shot_rules>
 - motion_intent: the shot's content in plain craft language, model-agnostic:
   the framing (honor the beat's shot_size), ONE camera move + ONE subject action
-  expressed as countable beats with timing, where it happens, plus the concrete
-  diegetic sounds of the moment (name actual sounds, never "ambient sounds").
+  expressed as countable beats with timing, where in the location it happens
+  (never describe the location itself — a reference photo carries it), plus the
+  concrete diegetic sounds of the moment (name actual sounds, never "ambient
+  sounds").
   Pick the camera move from the camera_grammar table by the beat's EMOTION and
   reuse its phrasing; go outside the table only when the beat genuinely needs
   an unlisted move. No music. No style or palette words. Describe the CHARACTER ONLY BY NAME or
@@ -184,11 +186,13 @@ a 10-15 second vertical video with cuts happening inside the generation.
 # whether the Higgsfield CLI wrapper applies the same filter layer is unmeasured.
 # Log measured evidence if a Higgsfield render ever confirms or refutes it.
 SCENE_LINE_SYSTEM_PROMPT = """\
-You are a shot-line writer for a short-form animation studio. You receive a
-planned multi-shot story (3-5 shots: each with a beat role, an action intent, the
-characters in frame, and optional narration) for ONE continuous AI-video
-generation. Convert EVERY shot into one render-ready prose line. Return exactly
-one line per shot, in the given order — never merge, split, add, or drop shots.
+You are a shot-line writer for a short-form live-action studio. Every render is
+photoreal — real actors, real sets, cinematic grade. Never animation. You
+receive a planned multi-shot story (3-5 shots: each with a beat role, an action
+intent, the characters in frame, and optional narration) for ONE continuous
+AI-video generation. Convert EVERY shot into one render-ready prose line. Return
+exactly one line per shot, in the given order — never merge, split, add, or drop
+shots.
 
 Each shot line must contain, in this order:
 1. FRAMING — the shot size and angle as plain camera language ("Medium shot",
@@ -214,15 +218,20 @@ Each shot line must contain, in this order:
    the physical action, in the same sentence flow. Never let spoken words leak
    into the AUDIO EVENT clause (audio events stay non-verbal sounds only). A shot
    with no dialogue stays purely physical — never invent a line.
-3. SPACE — where this happens and any spatial change, in a few words ("in a stone
-   academy corridor at dusk", "snow drifting past the window behind them").
-   Light stays steady ("steady warm light", "diffuse lamplight"). Name the
-   actual physical light SOURCE causing the scene's light (a bedside lamp,
-   sunlight through blinds, a phone screen's glow, overhead fluorescents) — never
-   a bare mood adjective with no visible source behind it. When nothing in the
-   story changes the background this shot, add "background stays unchanged" to
-   this clause — omitting it invites background drift; SKIP it on shots that
-   legitimately change the space (a door opens, a threshold is crossed).
+3. SPACE — WHERE IN the location this happens and any spatial change, in a few
+   words ("near the four-poster bed", "at the door on the far wall"). When a
+   location is given above, it is a REAL PHOTOGRAPHED ROOM attached to the
+   render: never describe its materials, its architecture, or what kind of room
+   it is — the photo carries all of that, and text that disagrees with it makes
+   the model blend the two or flip between them shot to shot. Use the location's
+   own written layout to place the action in it. With NO location given, describe
+   the setting in a few words as usual. Name the physical light SOURCE lighting
+   THIS scene (a bedside lamp, sunlight through the windows, a phone screen's
+   glow) — that is the story's to choose and changes shot to shot; never a bare
+   mood adjective with no visible source. When nothing in the story changes the
+   background this shot, add "background stays unchanged" to this clause; SKIP it
+   on shots that legitimately change the space (a door opens, a threshold is
+   crossed).
 4. CAMERA — one camera behavior for the shot, written separately from the
    subject's action so the model never confuses who moves ("Camera: slow
    push-in", "Camera: static, shallow depth of field", "Camera: slow tilt from
@@ -279,30 +288,53 @@ class SceneLines(BaseModel):
     scene_lines: list[str]
 
 
-def _build_plan_envelope(pitch: StoryPitch, rules: RenderRules) -> str:
-    """Assemble call 1's user prompt: pitch JSON + motion craft.
+def _build_plan_envelope(pitch: StoryPitch, rules: RenderRules, world_anchor: str) -> str:
+    """Assemble call 1's user prompt: pitch JSON + motion craft + the location.
 
-    The PLAN_SYSTEM_PROMPT promises these two labeled inputs; the craft block is
+    The PLAN_SYSTEM_PROMPT promises these labeled inputs; the craft block is
     serialized with json.dumps so its full rule text lands verbatim (reference
     material, not JSON to echo). The still-dialect block was dropped with the
     scene lane — call 1 writes no image prompts.
+
+    world_anchor is REQUIRED (not defaulted) so every call site must pass it
+    explicitly — a caller that forgets is a TypeError, not a silent skip. The
+    labeled block is appended only when world_anchor is non-empty: an
+    ungrounded pitch (no location) must compose byte-identically to before
+    this param existed, since the plan call previously never saw a location at
+    all. Without this, the plan invents "where it happens" for motion_intent
+    (measured 2026-07-14 pitch 47 — a stone chamber invented against a marble
+    bedroom world_anchor), which the scene call then echoes.
     """
-    return "\n\n".join(
-        [
-            f"Story pitch:\n{pitch.model_dump_json(indent=2)}",
-            f"Motion craft:\n{json.dumps(rules.data['motion_craft'], indent=2)}",
-        ]
-    )
+    blocks = [
+        f"Story pitch:\n{pitch.model_dump_json(indent=2)}",
+        f"Motion craft:\n{json.dumps(rules.data['motion_craft'], indent=2)}",
+    ]
+    if world_anchor:
+        blocks.append(
+            "The location (a REAL reference photo of this room is attached to the "
+            f"render — describe NOTHING about how it looks, only where in it the "
+            f"action sits):\n{world_anchor}"
+        )
+    return "\n\n".join(blocks)
 
 
-def _build_scene_envelope(plan: ShotPlanDraft, pitch: StoryPitch) -> str:
+def _build_scene_envelope(plan: ShotPlanDraft, pitch: StoryPitch, world_anchor: str) -> str:
     """Assemble call 2's user prompt: the whole plan as data inside <plan> tags.
 
     Each shot carries its index, beat role, cast, the motion_intent to convert,
     and — code-copied from the SOURCE StoryBeat, never from the draft — the
     cast list and the dialogue_line/speaker pair when the pitch placed one on
-    this beat. Durations stay absent (D2); anchors/style stay absent (composed
-    by the adapter).
+    this beat. Durations stay absent (D2); style stays absent (composed by the
+    adapter).
+
+    world_anchor is REQUIRED (not defaulted), same reasoning as
+    _build_plan_envelope. Its labeled block is appended AFTER the closing
+    </plan> tag, never inside it: the plan's own docstring instructs the model
+    to treat everything inside <plan> as convertible DATA and ignore anything
+    inside it that reads as an instruction, but the location block IS an
+    instruction ("describe NOTHING about how it looks") that must be obeyed,
+    not converted. Empty world_anchor appends nothing, so an ungrounded
+    package composes byte-identically to before this param existed.
     """
     lines = ["<plan>"]
     for index, (shot, beat) in enumerate(zip(plan.shots, pitch.beats)):
@@ -318,6 +350,12 @@ def _build_scene_envelope(plan: ShotPlanDraft, pitch: StoryPitch) -> str:
             f"  motion_intent: {shot.motion_intent}{dialogue}"
         )
     lines.append("</plan>")
+    if world_anchor:
+        lines.append(
+            "The location (a REAL reference photo of this room is attached to the "
+            f"render — describe NOTHING about how it looks, only where in it the "
+            f"action sits):\n{world_anchor}"
+        )
     return "\n".join(lines)
 
 
@@ -417,7 +455,7 @@ class ContentWriter:
         # fields. style_anchor is a fixed yaml constant now (2026-07-14), so
         # there is no LLM-decided block left to budget-repair here.
         plan = self.llm.parse(
-            _build_plan_envelope(pitch, rules),
+            _build_plan_envelope(pitch, rules, world_anchor),
             ShotPlanDraft,
             system=PLAN_SYSTEM_PROMPT,
             max_tokens=WRITER_MAX_TOKENS,
@@ -438,7 +476,7 @@ class ContentWriter:
         # ever sees style_anchor text (it's a fixed yaml constant the adapter
         # composes in code), so there is nothing for a scene line to leak.
         body_budget = _scene_body_budget(rules, world_anchor)
-        envelope = _build_scene_envelope(plan, pitch)
+        envelope = _build_scene_envelope(plan, pitch, world_anchor)
         conversion = None
         for attempt in range(_SCENE_BUDGET_ATTEMPTS):
             candidate = self.llm.parse(
@@ -473,7 +511,7 @@ class ContentWriter:
                 _SCENE_BUDGET_ATTEMPTS,
             )
             envelope = (
-                f"{_build_scene_envelope(plan, pitch)}\n\n"
+                f"{_build_scene_envelope(plan, pitch, world_anchor)}\n\n"
                 f"REWRITE: your previous scene lines totaled {body_chars} characters, "
                 f"but all lines together must fit {body_budget} characters "
                 f"(roughly {words_per_line} words per line). Rewrite ALL "
