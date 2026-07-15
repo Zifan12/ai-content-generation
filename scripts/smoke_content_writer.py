@@ -2,19 +2,32 @@
 End-to-end smoke for the motion-native scene lane (pitch → write → scene job → cost).
 
 Loads an approved AnglePitchRecord's FULL story (story_json → StoryPitch), runs
-the two-call writer, composes the ONE scene job (spec 2026-07-06 A3), prints the
-COMPOSED SCENE PROMPT plus the takes×rate credit estimate. Reference paths are
-REQUIRED and must follow the path convention refs/<character_slug>/... (crash
-loud otherwise; grounding is mandatory, DECISIONS_LOCKED L3).
+the two-call writer, composes the scene job(s), prints every COMPOSED SCENE
+PROMPT plus the credit estimate. Reference paths are REQUIRED and must follow
+the path convention refs/<character_slug>/... (crash loud otherwise; grounding
+is mandatory, DECISIONS_LOCKED L3).
+
+WHICH LANE RUNS is config, not a flag — config/render_rules.yaml scene_lane.mode
+(2026-07-14 grill Q1):
+
+  single_gen (default)      ONE multi_shot generation covering every shot.
+                            --takes renders it N times, human picks a winner
+                            (D6 ladder); assembly is skipped when --takes > 1.
+  per_scene_splice          One generation PER SHOT, each rendered exactly once
+                            at scene_lane.splice_defaults.duration_seconds, then
+                            all concatenated into the final cut. --takes and
+                            --duration are rejected here (single_gen-only flags);
+                            re-roll one bad shot by deleting its scene_shot_<i>
+                            entry from the run's render_manifest.json and
+                            re-running — the rest resume free.
 
 By default runs dry_run (prompt + cost only, ZERO CLI calls, nothing spent).
---real requires an interactive 'yes', renders --takes generations (failed takes
-are uncharged and reported), then — single take only — synthesizes narration and
-assembles the final mp4. With --takes > 1 assembly is deliberately skipped: the
-user picks the best take first (D6 ladder), then re-runs assembly on it.
+--real requires an interactive 'yes', renders, then synthesizes narration and
+assembles the final mp4.
 
-RETAKE LADDER (D6): --resolution 480p to sanity-test a new prompt → 720p
-default single take → 1080p --takes 2-3 for finals.
+RETAKE LADDER (D6, single_gen): --resolution 480p to sanity-test a new prompt →
+720p default single take → 1080p --takes 2-3 for finals. --resolution applies to
+both lanes.
 
 USAGE:
   uv run python scripts/smoke_content_writer.py --pitch-id 24 --refs refs/will/*.png refs/elfie/*.png
@@ -58,7 +71,7 @@ from src.generation.reference_check import (  # noqa: E402
     check_references,
     render_manifest,
 )
-from src.generation.executor import execute_scene  # noqa: E402
+from src.generation.executor import execute_scene, execute_splice  # noqa: E402
 from src.generation.prompt_translation import translate_job  # noqa: E402
 from src.providers.tts.higgsfield_tts import HiggsfieldTTS  # noqa: E402
 from src.generation.render_adapters.adapter import render_jobs  # noqa: E402
@@ -365,32 +378,68 @@ def main() -> None:
         # (job.translation_status carries the outcome into the JSON dump).
         if rules.model(rules.scene_model())["dialect"].get("prompt_language") == "zh":
             print("[translate] prompt_language=zh -> prompt_translator seat")
-            dialogue_lines = [
-                shot.dialogue_line for shot in package.shots if shot.dialogue_line
-            ]
+
+            def _dialogue_for(job) -> list[str]:
+                """The dialogue lines THIS job's prompt actually contains.
+
+                translate_job asserts every line it is given survives verbatim in
+                the Chinese output, so the lines must be scoped to the job. A
+                single_gen job covers every shot (so this is the whole package's
+                dialogue, exactly as before); a splice job covers ONE shot, and
+                handing it the whole package's dialogue would fail the
+                dialogue_missing check on every other shot's lines and silently
+                fall back to English.
+                """
+                indices = job.covers_shots or [job.shot_index]
+                return [
+                    package.shots[i].dialogue_line
+                    for i in indices
+                    if package.shots[i].dialogue_line
+                ]
+
             translator = llm_for_seat("prompt_translator")
-            jobs = [translate_job(job, dialogue_lines, rules, translator) for job in jobs]
+            jobs = [
+                translate_job(job, _dialogue_for(job), rules, translator) for job in jobs
+            ]
             for job in jobs:
                 print(f"[translate] status={job.translation_status}")
         flow["render_jobs"] = [job.model_dump(mode="json") for job in jobs]
         _dump_flow()
-        scene_job = jobs[0]  # scene lane: exactly ONE composed multi_shot job (A3/D3)
-        print("[scene job] composed prompt " + "=" * 46)
-        print(scene_job.prompt)
-        print("=" * 70)
-        print(
-            f"[scene job] model={scene_job.model_cli_id} shots={scene_job.covers_shots} "
-            f"duration={scene_job.duration}s refs={len(scene_job.reference_images)} "
-            f"prompt_chars={len(scene_job.prompt)}"
-        )
+        # Lane shape (scene_lane.mode, 2026-07-14 grill Q1): single_gen yields ONE
+        # multi_shot job covering every shot (A3/D3); per_scene_splice yields one
+        # scene_shot job per shot, rendered separately and concatenated at assembly.
+        splice = rules.data["scene_lane"].get("mode") == "per_scene_splice"
+        print(f"[lane] scene_lane.mode={rules.data['scene_lane'].get('mode')} -> {len(jobs)} job(s)")
+        for job in jobs:
+            print(f"[job {job.shot_index}] composed prompt " + "=" * 40)
+            print(job.prompt)
+            print("=" * 70)
+            print(
+                f"[job {job.shot_index}] model={job.model_cli_id} shots={job.covers_shots} "
+                f"duration={job.duration}s refs={len(job.reference_images)} "
+                f"prompt_chars={len(job.prompt)}"
+            )
 
         out_dir = str(Path("output/smoke_runs") / f"render_{ts}_{sha}")
         print("\n[execute] DRY RUN (yaml-rate estimate, zero CLI calls)")
-        estimate = execute_scene(
-            scene_job, out_dir,
-            takes=args.takes, duration=args.duration, resolution=args.resolution,
-            dry_run=True, rules=rules,
-        )
+        if splice:
+            # --takes/--duration are single_gen ladder flags: splice renders each
+            # shot exactly once (v1) at its job's splice_defaults duration.
+            if args.takes != 1 or args.duration is not None:
+                raise SystemExit(
+                    "--takes/--duration are single_gen-only flags; splice renders one "
+                    "generation per shot at scene_lane.splice_defaults.duration_seconds. "
+                    "Edit the yaml to retune, or drop the flags."
+                )
+            estimate = execute_splice(
+                jobs, out_dir, resolution=args.resolution, dry_run=True, rules=rules,
+            )
+        else:
+            estimate = execute_scene(
+                jobs[0], out_dir,
+                takes=args.takes, duration=args.duration, resolution=args.resolution,
+                dry_run=True, rules=rules,
+            )
         print(f"\n[result] credits_spent estimate: {estimate.credits_spent}")
         flow["cost_estimate"] = {
             "credits_total": estimate.credits_spent,
@@ -411,17 +460,25 @@ def main() -> None:
                 raise SystemExit("Aborted before any paid call — nothing spent.")
 
             print("\n[execute] REAL RENDER")
-            result = execute_scene(
-                scene_job, out_dir,
-                takes=args.takes, duration=args.duration, resolution=args.resolution,
-                rules=rules,
-            )
+            if splice:
+                result = execute_splice(
+                    jobs, out_dir, resolution=args.resolution, rules=rules,
+                )
+            else:
+                result = execute_scene(
+                    jobs[0], out_dir,
+                    takes=args.takes, duration=args.duration, resolution=args.resolution,
+                    rules=rules,
+                )
             for clip in result.clips:
-                print(f"  take shots={clip.shot_indices} audio={clip.has_audio} -> {clip.clip_path}")
+                print(f"  clip shots={clip.shot_indices} audio={clip.has_audio} -> {clip.clip_path}")
             flow["render_result"] = result.model_dump(mode="json")
             _dump_flow()
 
-            if len(result.clips) == 1:
+            # single_gen: >1 clip means >1 TAKE of the same video — the human picks a
+            # winner before assembly (D6). splice: every clip is a different SHOT and
+            # they all belong in the cut, so assembly always runs.
+            if splice or len(result.clips) == 1:
                 print("\n[assemble] narration + hook card + tail-fade")
                 final_path = assemble(
                     result,

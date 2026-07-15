@@ -186,6 +186,7 @@ models:
 # add a models block — zero code edits.
 # ---------------------------------------------------------------------------
 scene_lane:
+  mode: single_gen             # single_gen (default, D3) | per_scene_splice (Way 2, 2026-07-14 grill Q1) — config-selectable second lane, NOT a replacement; single_gen stays the default/fallback
   model: seedance_2_0          # D7 swap point — the ONLY place the lane's model is named
   defaults:
     duration_seconds: 15       # ratified 2026-07-10: 5-cut pitches need ~3s/cut (convergent pacing floor, FINDINGS.md 3-shot/10s=3.3s/cut not-slideshow); 10s crushes 5 cuts to 2s/cut. 15s measured working (67.5cr vs 45cr at 720p). Seedance CLI max=15 (limits block). NOTE: this is the EXECUTOR's CLI --duration; the writer's per-shot duration_seconds (PLAN prompt "total 10-15") is an INTERNAL pacing/narration budget that never reaches the CLI (D2) — the two are related but not the same number.
@@ -193,6 +194,8 @@ scene_lane:
     aspect_ratio: "9:16"
     genre: auto                # 1080p + genre 'drama' untested in isolation (FINDINGS.md) — leave auto until a clean retest
     takes: 1
+  splice_defaults:             # per_scene_splice lane ONLY (mode above); single_gen never reads this block
+    duration_seconds: 7        # TUNABLE, NOT Higgsfield-measured (grill Q2). Corpus suggests 6-8s/clip (video_model_system_guide.md L420, L516-520) — that is Seedance-NATIVE guidance, never measured on our CLI. The first splice render is what actually tests it; treat a bad result as "retune this number", not "the lane failed".
   retake_ladder: "480p sanity-pass for a brand-new prompt (cheapest possible failure) -> 720p default dev take -> 1080p finals x2-3 takes, user picks best. Source: methodology/15 L288-298 ('480p 测 prompt -> 720p 看质量 -> 1080p 出成品') + spec D6."
   reroll_vs_reword: "Opaque failure (job rejected with no diagnosable cause, or output random-bad) -> re-roll the SAME prompt: failures are uncharged on Higgsfield (FINDINGS.md) and may be sampling noise or a transient filter trip (methodology/19 L282-285). Diagnosable defect (a specific element visibly wrong) -> reword THAT element; don't re-roll and hope (methodology/15 iterative-fix). A failed render is a loud stop for a human call, never an automatic retry (spec D3)."
 

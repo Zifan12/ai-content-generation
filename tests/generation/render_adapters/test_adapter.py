@@ -8,7 +8,7 @@ guards (path convention, grounding, cast cap, char ceiling).
 
 import pytest
 
-from src.generation.render_adapters.adapter import render_jobs
+from src.generation.render_adapters.adapter import _shot_jobs, render_jobs
 from src.generation.render_adapters.rules import RenderRules
 from src.monitor.schemas import BeatRole
 from src.schemas.generation import MotionTag, MultiShotPackage, ShotSpec
@@ -221,3 +221,160 @@ def test_scene_prompt_over_char_ceiling_raises(rules):
     refs = ["refs/eve/front.png"]
     with pytest.raises(ValueError, match="max_prompt_chars"):
         render_jobs(_scene_package(shots=long_shots, refs=refs), rules)
+
+
+# --- PER-SCENE SPLICE LANE (_shot_jobs, Way 2, 2026-07-14 grill Q1-Q4) ------------
+# One standalone generation per shot, each scoped to that shot's OWN cast.
+# The default _scene_package() is the load-bearing fixture here: shot 0 is Eve-only
+# while the package also carries Adam's refs — the exact case that must NOT trip the
+# unattributed-ref guard once the package is sliced down to one shot.
+
+
+_FOUR_CAST_REFS = [
+    "refs/eve/f.png",
+    "refs/adam/f.png",
+    "refs/bea/f.png",
+    "refs/cal/f.png",
+]
+
+
+def _four_cast_split_across_shots_package() -> MultiShotPackage:
+    """4 characters package-wide, never more than 2 in any one shot (grill Q4).
+
+    Three shots because MultiShotPackage enforces min_length=3 (and a 10-25s
+    total) — the package the writer would really hand us always has 3-5.
+    """
+    return _scene_package(
+        shots=[
+            _scene_shot(0, ["Eve", "Adam"]),
+            _scene_shot(1, ["Bea", "Cal"]),
+            _scene_shot(2, ["Eve"]),
+        ],
+        refs=_FOUR_CAST_REFS,
+    )
+
+
+def _over_cap_single_shot_package() -> MultiShotPackage:
+    """Shot 0 alone holds 4 characters — over the cap even after per-shot scoping."""
+    return _scene_package(
+        shots=[
+            _scene_shot(0, ["Eve", "Adam", "Bea", "Cal"]),
+            _scene_shot(1, ["Eve"]),
+            _scene_shot(2, ["Adam"]),
+        ],
+        refs=_FOUR_CAST_REFS,
+    )
+
+
+def test_shot_jobs_returns_one_job_per_shot(rules):
+    package = _scene_package()
+    jobs = _shot_jobs(package, rules)
+    assert len(jobs) == len(package.shots)
+    for i, job in enumerate(jobs):
+        assert job.kind == "scene_shot"
+        assert job.covers_shots == [i]
+        assert job.shot_index == i
+        assert job.model_cli_id == rules.scene_model()
+
+
+def test_shot_jobs_scopes_refs_to_that_shots_cast_only(rules):
+    # default package: shot 0 = Eve, shot 1 = Eve + Adam, shot 2 = Adam (grill Q3)
+    jobs = _shot_jobs(_scene_package(), rules)
+    assert jobs[0].reference_images == ["refs/eve/front.png"]
+    assert jobs[1].reference_images == [
+        "refs/eve/front.png",
+        "refs/adam/a_front.png",
+        "refs/adam/b_profile.png",
+    ]
+    assert jobs[2].reference_images == ["refs/adam/a_front.png", "refs/adam/b_profile.png"]
+
+
+def test_shot_jobs_rebinds_image_slots_per_shot(rules):
+    """Slots renumber per generation: Adam is image2-3 in the 2-hander but
+    image1-2 in his solo shot — each shot is its own independent upload."""
+    jobs = _shot_jobs(_scene_package(), rules)
+    assert "Adam is the character shown in image2, image3." in jobs[1].prompt
+    assert "Adam is the character shown in image1, image2." in jobs[2].prompt
+    # a shot never names a character who is not in it
+    assert "Adam" not in jobs[0].prompt.split("LINE[0]")[0]
+
+
+def test_shot_jobs_body_has_no_cut_transition(rules):
+    """Each generation covers ONE shot, so nothing to cut to — the 'Then cut to:'
+    chaining belongs to the single_gen lane alone."""
+    for job in _shot_jobs(_scene_package(), rules):
+        assert "Then cut to:" not in job.prompt
+
+
+def test_shot_jobs_uses_splice_defaults_duration(rules):
+    """Duration comes from scene_lane.splice_defaults, NOT the package's
+    ShotSpec.duration_seconds narration estimate (grill Q2)."""
+    jobs = _shot_jobs(_scene_package(), rules)
+    expected = int(rules.data["scene_lane"]["splice_defaults"]["duration_seconds"])
+    assert expected != _scene_package().shots[0].duration_seconds  # guards the point
+    assert all(job.duration == expected for job in jobs)
+
+
+def test_shot_jobs_caps_cast_per_shot_not_whole_package(rules):
+    """4 characters package-wide but <=2 per shot -> splice passes where the
+    single_gen lane rejects the very same package (grill Q4)."""
+    package = _four_cast_split_across_shots_package()
+    jobs = _shot_jobs(package, rules)  # must NOT raise
+    assert len(jobs) == 3
+    with pytest.raises(ValueError, match="max_characters_in_scene"):
+        render_jobs(package, rules)  # single_gen (default mode) still rejects it
+
+
+def test_shot_jobs_rejects_over_cap_single_shot(rules):
+    """The cap did not disappear, it moved to per-shot — and the error names
+    which shot blew it."""
+    with pytest.raises(ValueError, match="shot 0:.*max_characters_in_scene"):
+        _shot_jobs(_over_cap_single_shot_package(), rules)
+
+
+def test_shot_jobs_unattributed_ref_still_crashes_loud(rules):
+    """Slicing refs to a shot's cast must not silently swallow a ref that
+    belongs to NO cast member (the path-convention guard, locked 2026-07-06) —
+    otherwise a typo'd ref path would render nothing and say nothing."""
+    refs = [
+        "refs/eve/front.png",
+        "refs/adam/front.png",
+        "render_taste_test/wistoria_refs/will_2_adult.png",  # flat legacy layout
+    ]
+    with pytest.raises(ValueError, match=r"matches no\s+cast member"):
+        _shot_jobs(_scene_package(refs=refs), rules)
+
+
+def test_shot_jobs_keeps_location_grounding_on_every_shot(rules):
+    """REGRESSION GUARD: a location is not a cast member — it must survive the
+    per-shot ref slice and be bound on EVERY shot's generation, or the splice
+    lane silently renders an ungrounded room (the exact confound that invalidated
+    the pitch-47 test; location grounding locked 2026-07-11)."""
+    pkg = _single_char_package(["refs/eve/front.png"])
+    pkg.world_anchor = "A grand ice-tower chamber, pale marble floor."
+    pkg.location_reference_paths = ["refs/_location/elfie_bedroom/room.jpg"]
+    jobs = _shot_jobs(pkg, rules)
+    assert len(jobs) == 3
+    for job in jobs:
+        # location ref uploads AFTER the shot's character refs, every shot
+        assert job.reference_images == [
+            "refs/eve/front.png",
+            "refs/_location/elfie_bedroom/room.jpg",
+        ]
+        assert "A grand ice-tower chamber" in job.prompt
+        assert "The setting is shown in image2." in job.prompt
+
+
+def test_render_jobs_branches_on_scene_lane_mode(rules, monkeypatch):
+    """render_jobs dispatches on scene_lane.mode without the caller knowing which
+    lane it got (grill Q1). monkeypatch.setitem restores the module-scoped rules
+    fixture afterwards — a bare assignment would leak splice mode into every test
+    that runs after this one."""
+    package = _scene_package()
+    assert rules.data["scene_lane"]["mode"] == "single_gen"  # yaml default (Q1)
+    assert len(render_jobs(package, rules)) == 1
+
+    monkeypatch.setitem(rules.data["scene_lane"], "mode", "per_scene_splice")
+    jobs = render_jobs(package, rules)
+    assert len(jobs) == len(package.shots)
+    assert all(job.kind == "scene_shot" for job in jobs)

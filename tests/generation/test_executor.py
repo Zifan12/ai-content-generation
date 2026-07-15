@@ -10,7 +10,7 @@ import subprocess
 
 import pytest
 
-from src.generation.executor import execute_scene
+from src.generation.executor import execute_scene, execute_splice
 from src.generation.render_adapters.rules import RenderRules
 from src.generation.render_adapters.schemas import RenderJob
 
@@ -126,3 +126,91 @@ def test_scene_resolution_override_walks_the_ladder(tmp_path, capsys, rules):
     # 480p has no measured rate yet -> falls back to the 720p rate, loudly
     assert "no measured credit rate for 480p" in out
     assert result.credits_spent == 45.0
+
+
+# --- PER-SCENE SPLICE LANE (execute_splice, Way 2, 2026-07-14 grill) --------------
+# N DIFFERENT jobs rendered once each (vs execute_scene's N takes of ONE job).
+# Decisions confirmed with the user 2026-07-14: one generation per shot (no retake
+# ladder in v1), and ANY shot failing aborts the whole render (no holed video).
+
+
+def _scene_shot_jobs(count: int = 3) -> list[RenderJob]:
+    """One scene_shot job per shot, as adapter._shot_jobs would emit them."""
+    return [
+        RenderJob(
+            model_cli_id="seedance_2_0", kind="scene_shot",
+            prompt=f"shot {i} prose. Audio: rain. No music.",
+            aspect_ratio="9:16", shot_index=i, duration=7,
+            reference_images=["refs/eve/front.png"],
+            covers_shots=[i],
+        )
+        for i in range(count)
+    ]
+
+
+def test_splice_renders_one_generation_per_job(tmp_path, rules):
+    cli = FakeCLI()
+    result = execute_splice(
+        _scene_shot_jobs(), str(tmp_path),
+        run_cli=cli, download=_fake_download, probe_audio=lambda p: True, rules=rules,
+    )
+    assert len(cli.create_calls) == 3  # one per shot, NOT takes of one job
+    assert [c.shot_indices for c in result.clips] == [[0], [1], [2]]
+    assert [c.clip_path.endswith(f"scene_shot_{i}.mp4") for i, c in enumerate(result.clips)] == [True] * 3
+    argv = cli.create_calls[0]
+    # duration rides the job (splice_defaults 7s), not the 15s single_gen default
+    assert argv[argv.index("--duration") + 1] == "7"
+    assert argv[argv.index("--resolution") + 1] == "720p"
+    assert argv[-1] == "--wait"
+
+
+def test_splice_dry_run_estimates_from_yaml_and_never_calls_cli(tmp_path, rules):
+    cli = FakeCLI()
+    result = execute_splice(
+        _scene_shot_jobs(), str(tmp_path), dry_run=True, run_cli=cli, rules=rules,
+    )
+    # billing-verified 4.5cr/s @720p x 7s x 3 shots — the whole point of the
+    # preflight is that this number is known before anything is spent (ADR-0007)
+    assert result.credits_spent == 94.5
+    assert cli.calls == []
+    assert result.clips == []
+
+
+def test_splice_aborts_on_shot_failure(tmp_path, rules):
+    """A failed shot stops the render dead — no partial, holed video (user
+    decision 2026-07-14; failed jobs are uncharged, FINDINGS.md)."""
+    cli = FakeCLI(fail_on_create_number=2)
+    with pytest.raises(subprocess.CalledProcessError):
+        execute_splice(
+            _scene_shot_jobs(), str(tmp_path),
+            run_cli=cli, download=_fake_download, probe_audio=lambda p: True, rules=rules,
+        )
+    assert len(cli.create_calls) == 2  # shot 2 never submitted
+
+
+def test_splice_manifest_resumes_completed_shots_after_abort(tmp_path, rules):
+    """What makes abort-on-failure cheap: the shots that DID land are in the
+    manifest, so the re-run re-renders only the one that failed."""
+    first = FakeCLI(fail_on_create_number=3)
+    with pytest.raises(subprocess.CalledProcessError):
+        execute_splice(
+            _scene_shot_jobs(), str(tmp_path),
+            run_cli=first, download=_fake_download, probe_audio=lambda p: True, rules=rules,
+        )
+    second = FakeCLI()
+    result = execute_splice(
+        _scene_shot_jobs(), str(tmp_path),
+        run_cli=second, download=_fake_download, probe_audio=lambda p: True, rules=rules,
+    )
+    assert len(second.create_calls) == 1  # shots 0-1 resumed, only shot 2 re-rendered
+    assert len(result.clips) == 3
+    assert [c.shot_indices for c in result.clips] == [[0], [1], [2]]
+
+
+def test_splice_warns_when_audio_model_returns_mute_clip(tmp_path, capsys, rules):
+    cli = FakeCLI()
+    execute_splice(
+        _scene_shot_jobs(1), str(tmp_path),
+        run_cli=cli, download=_fake_download, probe_audio=lambda p: False, rules=rules,
+    )
+    assert "should emit native audio" in capsys.readouterr().out

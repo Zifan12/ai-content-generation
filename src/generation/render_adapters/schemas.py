@@ -6,7 +6,9 @@ render work — the output the :class:`RenderAdapter` produces and a future
 the executor needs to issue one Higgsfield call, but it never calls the CLI
 itself and holds no behaviour.
 
-Three job kinds flow through the pipeline (spec data-flow §7):
+Five job kinds flow through the pipeline (spec data-flow §7). The first three
+belong to the still-first lane, deleted 2026-07-07 (see ``adapter.py``'s module
+docstring) — they survive here because the Literal is not yet pruned:
 
 - ``"still"`` — a text-to-image render (e.g. nano_banana_2). No input image,
   no duration; ``image_ref`` / ``start_image`` / ``end_image`` / ``duration``
@@ -16,6 +18,18 @@ Three job kinds flow through the pipeline (spec data-flow §7):
 - ``"keyframe"`` — a start+end interpolation render. ``start_image`` and
   ``end_image`` carry the two frames to interpolate between (the escalation
   lever for impossible-physics / event shots).
+
+The two LIVE kinds, one per scene lane (``scene_lane.mode`` in the yaml):
+
+- ``"multi_shot"`` — the ``single_gen`` lane (default, spec 2026-07-06 D3):
+  ONE generation covering EVERY shot via internal prose-chained cuts.
+  ``covers_shots`` is the whole package's shot range; the job carries the
+  whole cast's reference images.
+- ``"scene_shot"`` — ONE shot of a per-scene-SPLICE package, rendered as its
+  own standalone generation (2026-07-14 grill, Way 2). Each job covers
+  exactly one shot index (``covers_shots == [shot_index]``) and carries ONLY
+  that shot's own characters' reference images (grill Q3) — not the whole
+  package's cast. The clips are concatenated afterwards by ``assembly.py``.
 
 Field invariants (e.g. a still must not carry a duration) are enforced by the
 adapter that builds these jobs, not by this schema — the schema stays a dumb,
@@ -36,9 +50,11 @@ class RenderJob(BaseModel):
             ``"minimax_hailuo"``). The router selects this from
             ``config/render_rules.yaml``; it is a plain string, not an enum,
             so the valid set lives in the yaml rather than this schema.
-        kind: Which of the three job types this is — ``"still"``, ``"motion"``,
-            or ``"keyframe"`` — which determines how the executor wires images
-            and duration.
+        kind: Which job type this is (see the module docstring) — which
+            determines how the executor wires images and duration. Live values
+            are ``"multi_shot"`` (single_gen lane) and ``"scene_shot"``
+            (per_scene_splice lane); ``"still"`` / ``"motion"`` / ``"keyframe"``
+            are still-first-lane leftovers nothing builds anymore.
         prompt: The model-native prompt string the builder produced. For
             ``"motion"`` jobs this is motion-only (it does not re-describe the
             still).
@@ -57,9 +73,10 @@ class RenderJob(BaseModel):
         reference_images: Key-art paths/upload-ids grounding a ``"still"`` job
             (mandatory grounding, DECISIONS_LOCKED L3); empty for video jobs.
             CLI 1.1.5: repeated ``--image-references``, max 14.
-        covers_shots: All shot indices a ``"multi_shot"`` job renders (one Kling
-            generation with internal cuts); empty list for single-shot jobs,
-            meaning "just shot_index".
+        covers_shots: All shot indices this job's generation renders — the whole
+            package's range for ``"multi_shot"`` (internal cuts in one
+            generation), exactly ``[shot_index]`` for ``"scene_shot"`` (one
+            clip per shot). An empty list means "just shot_index".
         prompt_english: The pre-translation English composition when ``prompt``
             was translated (D-language, spec 2026-07-13); ``None`` means
             ``prompt`` was never translated (English lane or translation
@@ -74,7 +91,7 @@ class RenderJob(BaseModel):
     """
 
     model_cli_id: str
-    kind: Literal["still", "motion", "keyframe", "multi_shot"]
+    kind: Literal["still", "motion", "keyframe", "multi_shot", "scene_shot"]
     prompt: str
     image_ref: str | None = None
     start_image: str | None = None

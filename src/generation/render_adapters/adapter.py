@@ -1,13 +1,22 @@
-"""Render adapter: turn a MultiShotPackage into the ONE composed scene RenderJob.
+"""Render adapter: turn a MultiShotPackage into its composed scene RenderJob(s).
 
 This is where prompts become FINAL — the composition seam: anchors_block,
 style_anchor, ref bindings, and the constraint tail are assembled HERE, in
 code, so identity text is byte-identical on every take and no LLM is ever
 trusted to repeat itself verbatim.
 
-SCENE LANE (spec 2026-07-06 A3, live-validated 2026-07-07): one package ->
-ONE ``multi_shot`` job on rules.scene_model(). The scene prompt is composed
-deterministically:
+TWO LANES, selected by ``scene_lane.mode`` in the yaml (2026-07-14 grill Q1);
+``render_jobs`` dispatches and callers stay lane-agnostic:
+
+- ``single_gen`` (DEFAULT, spec 2026-07-06 A3, live-validated 2026-07-07): one
+  package -> ONE ``multi_shot`` job on rules.scene_model(), shots chained as
+  prose with internal cuts.
+- ``per_scene_splice`` (Way 2): one ``scene_shot`` job PER SHOT, each rendered
+  as its own standalone generation and hard-cut concatenated at assembly.
+  Built by slicing the package per shot and reusing ``_scene_job`` — the
+  composition below is common to both lanes (see ``_shot_jobs``).
+
+The scene prompt is composed deterministically:
 
   style preamble ("exactly matching the art style of the reference images"
   + style_anchor)  ->  identity block (anchors_block verbatim + one binding
@@ -234,17 +243,112 @@ def _scene_job(package: MultiShotPackage, rules: RenderRules) -> RenderJob:
     )
 
 
+def _shot_jobs(package: MultiShotPackage, rules: RenderRules) -> list[RenderJob]:
+    """Build one ``scene_shot`` job per shot (per-scene splice lane, Way 2).
+
+    Where ``_scene_job`` composes ONE generation covering every shot, this
+    composes N independent generations — one per shot — which the executor
+    renders separately and ``assembly.assemble()`` concatenates. Each shot is
+    built by slicing the package down to just that shot and handing the slice
+    to ``_scene_job`` itself, so every guard and every composition rule (cast
+    cap, ref cap, prompt ceiling, location setting block, positional bindings)
+    is inherited rather than re-implemented — the splice lane cannot drift from
+    the single_gen lane's composition, because it IS that composition.
+
+    Two things the slice must get right, both load-bearing:
+
+    - ``reference_image_paths`` is sliced alongside ``shots``. Slicing only
+      ``shots`` leaves the whole package's refs against a one-shot cast, and
+      ``_ordered_refs_by_character`` then rejects every other character's refs
+      as unattributable. This is also what implements grill Q3 — a shot's
+      generation uploads ONLY its own characters' refs.
+    - ``location_reference_paths`` is NOT sliced: a location is not a cast
+      member (it bypasses the cast guard and binds its own "(imageN)" setting
+      slot), and every shot happens in the same room. Dropping it would render
+      an ungrounded room on every clip — the confound that invalidated the
+      pitch-47 test.
+
+    Per-shot slot numbering is a deliberate consequence: a character who is
+    "image2" in a two-hander is "image1" in their solo shot, because each shot
+    is an independent upload. Bindings are composed per shot, so they agree.
+
+    Duration comes from ``scene_lane.splice_defaults`` (grill Q2), never the
+    package's ``ShotSpec.duration_seconds`` — that field is a narration/pacing
+    budget that never reaches the CLI (see ``schemas/generation.py``).
+
+    Raises:
+        ValueError: the same guards ``_scene_job`` raises, prefixed with the
+            offending shot index; or an unattributable ref (checked against the
+            WHOLE package's cast up front — see below).
+    """
+    # Validate refs against the FULL cast BEFORE slicing. The per-shot slice
+    # silently drops refs belonging to other shots' characters, which is the
+    # point (Q3) — but it would equally silently drop a ref that belongs to NO
+    # cast member (a typo'd path, a flat legacy layout). This call exists for
+    # that crash-loud guard alone; its return value is deliberately unused.
+    _ordered_refs_by_character(package)
+
+    limits = rules.model(rules.scene_model())["limits"]
+    duration = int(rules.data["scene_lane"]["splice_defaults"]["duration_seconds"])
+
+    jobs: list[RenderJob] = []
+    for i, shot in enumerate(package.shots):
+        slugs = {_slug(name) for name in shot.characters_in_frame}
+        # model_copy does NOT re-validate (pydantic v2) — deliberate here: a
+        # one-shot slice violates MultiShotPackage's own min_length=3 and its
+        # 10-25s total-duration validator. The slice is a transient carrier for
+        # _scene_job, never returned or persisted; constructing it through
+        # MultiShotPackage(...) would reject it.
+        one_shot = package.model_copy(
+            update={
+                "shots": [shot],
+                "reference_image_paths": [
+                    ref
+                    for ref in package.reference_image_paths
+                    if Path(ref).parent.name in slugs
+                ],
+            }
+        )
+        try:
+            job = _scene_job(one_shot, rules)
+        except ValueError as err:
+            raise ValueError(f"shot {i}: {err}") from err
+
+        jobs.append(
+            job.model_copy(
+                update={
+                    "kind": "scene_shot",
+                    "duration": min(duration, int(limits["max_duration_seconds"])),
+                    "shot_index": i,
+                    "covers_shots": [i],
+                }
+            )
+        )
+    return jobs
+
+
 def render_jobs(package: MultiShotPackage, rules: RenderRules) -> list[RenderJob]:
     """Translate a MultiShotPackage into its composed render job(s).
 
-    Scene lane: every package yields exactly ONE composed ``multi_shot`` job
-    on rules.scene_model() (spec 2026-07-06 A3/D3; live-validated 2026-07-07).
-    Returns a one-element list so downstream code keeps a uniform job-list
-    shape.
+    Dispatches on ``scene_lane.mode`` (2026-07-14 grill Q1), so a caller never
+    needs to know which lane it got — only that it got a list of jobs to render
+    in order:
+
+    - ``single_gen`` (default, spec 2026-07-06 A3/D3; live-validated
+      2026-07-07): ONE composed ``multi_shot`` job covering every shot, in a
+      one-element list.
+    - ``per_scene_splice`` (Way 2): one ``scene_shot`` job per shot, rendered
+      independently and concatenated at assembly (see ``_shot_jobs``).
+
+    The two lanes are config-selectable alternatives, NOT a migration —
+    single_gen stays the default and the fallback.
 
     Raises:
         ValueError: unattributable ref, ungrounded cast member, cast over the
-            yaml character cap, refs over the yaml image cap, or a composed
+            yaml character cap (whole-package for single_gen, per-shot for
+            per_scene_splice), refs over the yaml image cap, or a composed
             prompt over the yaml char ceiling.
     """
+    if rules.data["scene_lane"].get("mode", "single_gen") == "per_scene_splice":
+        return _shot_jobs(package, rules)
     return [_scene_job(package, rules)]

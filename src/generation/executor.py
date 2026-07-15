@@ -1,15 +1,27 @@
-"""Render executor: run the scene lane's ONE RenderJob on the Higgsfield CLI.
+"""Render executor: run the scene lane's RenderJob(s) on the Higgsfield CLI.
 
-``execute_scene`` renders the adapter's composed multi_shot job N times
-(``--takes``, D6 retake ladder), with the cost preflight computed from the
-yaml's billing-verified per-second rates BEFORE any paid call
-(DECISIONS_LOCKED L7) — a dry run makes zero CLI calls.
+One entrypoint per lane (``scene_lane.mode``; the adapter decides which shape
+of job list you get, these consume it):
 
-RESUME MANIFEST: every completed take is recorded in
-``<out_dir>/render_manifest.json`` (key ``scene_take_<k>``) with its result
-URL and local path, written AFTER the download lands. A re-run over the same
-out_dir renders only the missing takes. (OpenMontage's completed-ids
-checkpoint shape, enforced in code rather than agent convention.)
+- ``execute_scene`` (single_gen) renders the adapter's composed multi_shot job
+  N times (``--takes``, D6 retake ladder) and the human picks a winner.
+- ``execute_splice`` (per_scene_splice, 2026-07-14) renders N different
+  scene_shot jobs ONCE each — one clip per shot — and all of them ship,
+  concatenated by ``assembly.assemble()``.
+
+Both compute the cost preflight from the yaml's billing-verified per-second
+rates BEFORE any paid call (DECISIONS_LOCKED L7, ADR-0007) — a dry run makes
+zero CLI calls. They differ on failure handling, deliberately: a failed TAKE
+is reported and the run continues (another take may land), a failed SHOT
+aborts (the sequence would have a hole in it).
+
+RESUME MANIFEST: every completed generation is recorded in
+``<out_dir>/render_manifest.json`` (key ``scene_take_<k>`` for takes,
+``scene_shot_<i>`` for splice shots) with its result URL and local path,
+written AFTER the download lands. A re-run over the same out_dir renders only
+what is missing. (OpenMontage's completed-ids checkpoint shape, enforced in
+code rather than agent convention.) In splice mode this is also the re-roll
+mechanism: delete one shot's entry, re-run, pay for that shot alone.
 
 All side-effecting boundaries — the CLI, downloads, the ffprobe audio probe —
 are injected as callables (defaulting to real implementations) so tests drive
@@ -325,6 +337,131 @@ def execute_scene(
         still_paths=[],
         clips=clips,
         credits_spent=per_take * takes,
+        manifest_path=str(manifest_path),
+    )
+
+
+def execute_splice(
+    jobs: list[RenderJob],
+    out_dir: str,
+    *,
+    resolution: str | None = None,
+    dry_run: bool = False,
+    run_cli=_run_cli,
+    download=_download,
+    probe_audio=_probe_audio,
+    rules: RenderRules | None = None,
+) -> PackageRenderResult:
+    """Render the splice lane's ``scene_shot`` jobs — N jobs, ONE generation each.
+
+    The mirror image of ``execute_scene``: that renders ONE job ``takes`` times
+    and the human picks a winner; this renders N DIFFERENT jobs (one per shot)
+    exactly once each, and ALL of them ship — concatenated in shot order by
+    ``assembly.assemble()``, which needs no changes because it already consumes
+    a ``list[ShotClip]`` (BUG-020-hardened) regardless of where the clips
+    came from.
+
+    Two behaviours confirmed with the user 2026-07-14, both deliberate:
+
+    - NO retake ladder in v1 (one generation per shot). A shot that renders
+      badly is re-rolled by deleting its ``scene_shot_<i>`` entry from the
+      resume manifest and re-running — the other shots resume free, so a
+      re-roll costs one clip, not the package.
+    - ANY shot failing ABORTS the whole render (the CLI's CalledProcessError
+      propagates uncaught) rather than splicing a video with a hole in the
+      story. This is cheap to recover from for the same reason: completed
+      shots are already in the manifest, so the re-run only retries the
+      failure. It also matches the yaml's D3 rule — a failed render is a loud
+      stop for a human call, never an automatic retry. Note this DIVERGES from
+      ``execute_scene``'s report-and-continue, correctly: a missing take costs
+      nothing, a missing shot breaks the sequence.
+
+    Cost note (ADR-0007): splice is inherently pricier than single_gen for the
+    same video — N short generations bill more total seconds than one long one
+    (at 7s/720p: ~31.5cr per shot, so a 5-shot package is ~157cr against
+    67.5cr for one 15s generation). The preflight below prints the total before
+    anything is spent.
+
+    Args:
+        jobs: One ``scene_shot`` RenderJob per shot, in shot order (from
+            ``adapter._shot_jobs``). Each job's own ``duration`` is used, so
+            the per-shot length comes from ``scene_lane.splice_defaults``.
+        out_dir: Directory for downloads + the resume manifest.
+        resolution: Override the yaml scene_lane default; the D6 ladder still
+            applies (480p is the cheapest sanity pass for a brand-new prompt,
+            and this is a brand-new lane).
+        dry_run: Estimate-and-return; no CLI calls, nothing spent.
+        run_cli / download / probe_audio: Injected side-effect boundaries
+            (same pattern as ``execute_scene``).
+        rules: Render rules; built from config when None.
+
+    Returns:
+        PackageRenderResult — one ShotClip per job, in shot order, each
+        covering exactly its own shot index. ``credits_spent`` is the preflight
+        estimate for the whole job list; shots resumed from the manifest are
+        included in it, so on a resumed run it overstates what was actually
+        billed (it is an estimate, never a bill — read
+        ``higgsfield account transactions`` for truth).
+
+    Raises:
+        subprocess.CalledProcessError: any shot's CLI call failing, uncaught by
+            design — see the abort behaviour above. Failed jobs are uncharged.
+    """
+    rules = rules or RenderRules()
+    defaults = rules.data["scene_lane"]["defaults"]
+    resolution = resolution or str(defaults["resolution"])
+
+    # A job always carries its splice_defaults duration; fall back to the lane
+    # default only if some caller hands us a job with duration unset.
+    durations = [job.duration or int(defaults["duration_seconds"]) for job in jobs]
+    estimates = [
+        _scene_take_estimate(rules, job.model_cli_id, duration, resolution)
+        for job, duration in zip(jobs, durations)
+    ]
+    total_estimate = sum(estimates)
+    print(
+        f"Splice render estimate: {len(jobs)} shot(s) x {durations}s @ {resolution} "
+        f"= {total_estimate}cr (one generation per shot, no retakes)"
+    )
+    if dry_run:
+        return PackageRenderResult(
+            still_paths=[], clips=[], credits_spent=total_estimate, manifest_path=""
+        )
+
+    out_path = Path(out_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+    manifest_path = out_path / MANIFEST_NAME
+    manifest = _load_manifest(manifest_path)
+
+    clips: list[ShotClip] = []
+    for job, duration in zip(jobs, durations):
+        key = f"scene_shot_{job.shot_index}"
+        if key in manifest and manifest[key].get("status") == "completed":
+            path = manifest[key]["path"]
+            print(f"[resume] skipping completed {key} -> {path}")
+        else:
+            # No try/except: a failed shot must abort the package (see docstring).
+            url = _extract_url(
+                run_cli(_scene_create_argv(job, duration=duration, resolution=resolution))
+            )
+            path = download(url, str(out_path / f"{key}.mp4"))
+            manifest[key] = {"status": "completed", "url": url, "path": path}
+            _save_manifest(manifest_path, manifest)
+
+        has_audio = probe_audio(path)
+        if rules.emits_audio(job.model_cli_id) and not has_audio:
+            print(
+                f"WARNING: {job.model_cli_id} should emit native audio but {key} "
+                f"has no audio stream ({path})."
+            )
+        clips.append(
+            ShotClip(shot_indices=[job.shot_index], clip_path=path, has_audio=has_audio)
+        )
+
+    return PackageRenderResult(
+        still_paths=[],
+        clips=clips,
+        credits_spent=total_estimate,
         manifest_path=str(manifest_path),
     )
 
