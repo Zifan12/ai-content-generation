@@ -385,6 +385,56 @@ def test_pitch_travels_inside_the_injection_guard(rules):
     assert "A grand ice-tower chamber" in after_guard
 
 
+def test_director_sees_each_beats_own_story_not_a_paraphrase(rules):
+    """The pitch-47 regression, stated as the guarantee that is actually checkable.
+
+    THE BUG: the writer used to run PLAN (beats -> motion_intent) then SCENE
+    (motion_intent -> scene_line), and SCENE never saw the pitch. PLAN turned
+    "pulling him toward the bed" into "dragged backward across the room" and
+    dropped "lifts Will onto the bed"; SCENE faithfully converted the damaged
+    paraphrase, because the paraphrase was the only story it had. The render cut
+    from the drag straight to the end-state.
+
+    WHAT THIS PINS: the director is handed each beat's OWN words — visual_line,
+    destination, required_action — with no stage between it and the pitch. That is
+    the structural property the 2026-07-15 merge bought, and it is deterministic:
+    reintroduce any paraphrase stage, or stop passing the pitch whole, and this
+    fails.
+
+    WHAT THIS CANNOT PIN, deliberately: that the LLM then HONORS what it reads.
+    Ticket 04 planned to assert the destination and required_action survive into
+    the shipped scene_line, but that check was disproven on real output — the
+    director legitimately paraphrases ("chest" -> "shoulder", "grasping" ->
+    "grips"), so a lexical check false-fails good writing, while the real pitch-47
+    bug line ("head lolling against Elfaria's chest") CONTAINS the word "chest"
+    and would pass. It yells at the paraphrase and waves through the bug. See
+    .scratch/director-stage/PRD.md "Rejected designs". Honoring is evidenced by
+    live runs (pitches 50 and 51: the bed and the lift both survived), not by a
+    unit test.
+    """
+    beats = [
+        StoryBeat(
+            role=BeatRole.hook if i == 0 else BeatRole.payoff,
+            visual_line=f"Beat {i}: she pulls him toward the bed.",
+            destination="the bed",
+            required_action="lifts him onto the bed and cradles him",
+            narration_line=None,
+            shot_size=_SIZES[i],
+            characters_in_frame=["Eve"],
+        )
+        for i in range(3)
+    ]
+    pitch = _pitch(3)
+    pitch = pitch.model_copy(update={"beats": beats})
+    fake = FakeLLM(_plan(_draft_shots(3)))
+    _write(pitch, fake, rules)
+    prompt = fake.calls[0]["prompt"]
+    for i in range(3):
+        assert f"Beat {i}: she pulls him toward the bed." in prompt  # the beat's OWN words
+    assert '"destination": "the bed"' in prompt
+    assert '"required_action": "lifts him onto the bed and cradles him"' in prompt
+
+
 def test_injected_motion_craft_does_not_contradict_the_continuous_move_rule(rules):
     """The EFFECTIVE director prompt is the system string PLUS the motion_craft YAML
     the envelope injects — so a rule can be reinstated in the data that the prompt

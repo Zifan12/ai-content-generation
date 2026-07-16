@@ -241,6 +241,59 @@ uploading a ref" rule is scoped narrowly to character *appearance*; its own temp
 lighting field with an environment ref attached, and the 8-element worked example states lighting alongside
 an attached room photo.
 
+### D2/D3 ARE REJECTED — the lexical spine check was disproven on real output (2026-07-15, user call)
+
+**Do not re-propose the substring/overlap check. It was built, measured, and it does not work.**
+
+D2 ("assert the destination and required_action appear in the shipped scene_line") and D3 ("the fields
+make the check a substring assertion") both assume the spine fields are STABLE, CHECKABLE TOKENS. They
+are not. Measured on real director output from pitches 50 and 51:
+
+| the pitcher's `destination` for the SAME payoff beat | vs pitch 47's real bug line | vs real good output |
+|---|---|---|
+| `"the bed"` (chosen on pitch 48) | FAIL — catches it | PASS |
+| `"Elfaria's chest"` (chosen on pitches 50 AND 51) | **PASS — misses the bug** | **FAIL — false-fails good writing** |
+
+The check's correctness is a coin flip on which noun the pitcher happened to pick. Worse, the two failure
+modes are exactly inverted: pitch 47's real bug line is *"head lolling against Elfaria's chest"* — it
+CONTAINS "chest", so the check passes the bug it was built for; meanwhile the good line says "cradling
+him; his head lolls against her **shoulder**", so the check fails correct output.
+
+`required_action` overlap fares no better: the clean-spine positive floor measured **0.62** against a real
+bug at 0.42 — a +0.03 margin over any usable threshold, with beat 1 "missing" `grasp/halt/reach` only
+because the director wrote "grips his wrist".
+
+**The root cause is not tunable.** The director is REQUIRED to paraphrase — that is the elevation this
+PRD exists to protect ("Adding 'his arms stretching ahead...' is the director doing its job"). Synonym
+substitution (chest→shoulder, grasping→grips) is indistinguishable, lexically, from dropping a fact. A
+deterministic word check cannot separate the two, because both look like *different words*. Only meaning
+separates them, and reading meaning is the LLM judge D2 explicitly rejects. **D2's own reasoning
+("only code guarantees the property") is sound about prompts and wrong about this property: some
+properties are not code-checkable at all.**
+
+**What replaced it (user decision, 2026-07-15): nothing, and that is the honest answer.** The bug does
+not reproduce. Two live runs post-02/03 (pitches 50 and 51) both shipped the bed AND the lift. Tickets 02
+(structured spine in the pitch) and 03 (one director reading the beat directly) fixed it. Building an
+unreliable alarm for a break-in that stopped happening costs real things: it blocks good output, and its
+repair loop would nag the director toward specific words, fighting the craft rules 02/03 just established.
+
+**The guard that IS sound** is structural, not lexical:
+`test_director_sees_each_beats_own_story_not_a_paraphrase` pins that the director receives each beat's
+own visual_line/destination/required_action with no stage in between. Reintroduce a paraphrase hop and it
+fails. It cannot pin that the LLM honors what it reads — that is evidenced by live runs, not unit tests.
+
+**Accepted cost, stated plainly:** if this failure class returns in a new form, nothing catches it
+automatically. It gets caught the way it was caught the first time — by watching the render. That was
+expensive, and it is the price of not having a check that works.
+
+**D5 (`shot_size` gets a field and is code-copied) is dropped with it, for a different reason.** Grep of
+`src/`: `shot_size` exists ONLY in `StoryBeat`, its variety validator, and prompt prose. Nothing in
+`src/schemas/generation.py`, the adapter, or the executor reads it. Framing reaches the model solely as
+prose inside `scene_line`. So code-copying it into `ShotSpec` would add a field no consumer reads — dead
+metadata — and the only way to make it *do* anything is to validate `scene_line`'s framing prose against
+the enum, which is the same lexical disease ("Medium shot" vs `medium`). The beat's shot_size still
+governs via the director prompt's FRAMING clause, which is where it was always actually enforced.
+
 ### Rejected designs (recorded so they are not re-proposed)
 
 - **Pass-through** (freeze `visual_line`; director only adds camera+sound). Contradicts the governing frame —
