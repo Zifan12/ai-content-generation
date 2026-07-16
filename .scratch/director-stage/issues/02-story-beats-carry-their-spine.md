@@ -18,13 +18,26 @@ pitcher to choose `lifts` **or** `cradles` for that beat. The field would be bor
 downstream check would protect one half of the move while the other half vanishes — which is the exact
 bug this whole feature exists to kill.
 
-**The rule conflict being resolved:** the corpus keeps a multi-beat action (reach→lift→clutch→retreat) in
-ONE shot as flowing prose and warns never to let a continuous physical action span an unshown gap. Our
-pitcher's grain is finer — one sub-motion per beat — and since **every beat becomes a cut**, that finer
-grain manufactures cuts in the middle of continuous actions: the corpus's named failure mode. The user
-watched pitch 47 do exactly this — it cuts from Will being dragged straight to Will lying on her chest,
-because the lift was split off and then lost. A continuous move is ONE action however many sub-motions it
-takes.
+**The rule conflict being resolved.** `ai_video_resources/Dan Kieft Cinematic Seedance Updated.md:471`,
+verbatim: *"**One flowing motion per shot.** Write 'he speaks and immediately whips his head around in
+panic' as one continuous action, not a setup sentence + an 'after he finishes…' block (that reads as two
+shots)."*
+
+Our pitcher's grain is finer — one sub-motion per beat — and since **every beat becomes a cut**, that
+finer grain manufactures cuts in the middle of continuous actions, which L471 says reads as two shots.
+The user watched pitch 47 do exactly this: it cuts from Will being dragged straight to Will lying on her
+chest, because the lift was split off and then lost. A continuous move is ONE action however many
+sub-motions it takes.
+
+**Cite L471 only.** An earlier draft cited "Dan Kieft:51,471" and claimed the corpus "warns never to let
+a continuous action span an unshown gap." Both wrong: L51 is a 6-SHOT CEILING (economy — merge actions so
+you don't over-shoot), and L471's actual reason is that a split flowing move *reads as two shots*, a
+prose-structure claim. Conclusion unchanged; support narrower than advertised.
+
+**[inference]** L471 is from the OpenArt-frontend playbook `INDEX.md` flags "cherry-pick claims, never
+adopt wholesale" — the same file whose Chinese-prompt rule ticket 01 deleted. Defensible to cherry-pick
+here (it gives its reason, and concerns prose structure not frontend mechanics) but **untested on the
+Higgsfield CLI**. If flowing-motion beats ever render worse, this is the assumption to pull.
 
 **Schema decision (encodes the nullable call — user, 2026-07-15):**
 

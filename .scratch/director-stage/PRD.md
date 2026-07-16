@@ -142,10 +142,31 @@ have to pick `lifts` OR `cradles` for beat 4 — the check would protect one and
 baking the bug into the schema.
 
 **The conflict:** the pitcher currently forbids "three micro-motions crammed into one beat — split them
-across beats." The corpus keeps a multi-beat action (reach→lift→clutch→retreat) in ONE shot as flowing
-prose and warns never to let a continuous physical action span an unshown gap. Reach-lift-clutch is
-literally three micro-motions. Since every beat becomes a cut, our finer grain **manufactures cuts in the
-middle of continuous actions** — the corpus's named failure mode.
+across beats." Against it, `ai_video_resources/Dan Kieft Cinematic Seedance Updated.md:471`, verbatim:
+
+> **One flowing motion per shot.** Write "he speaks and immediately whips his head around in panic" as
+> one continuous action, not a setup sentence + an "after he finishes…" block (that reads as two shots).
+
+Reach-lift-clutch is literally three micro-motions by our rule. Since every beat becomes a cut, our finer
+grain **manufactures cuts in the middle of continuous actions** — which L471 says reads as two shots.
+
+**Cite L471 and only L471.** An earlier draft of this PRD cited "Dan Kieft:51,471" and said the corpus
+"warns never to let a continuous physical action span an unshown gap." Both were wrong, and the error is
+worth recording because the conclusion happened to survive it:
+
+- **L51 is a different rule** — a 6-SHOT CEILING: "if over 6, merge actions into fewer shots. Multiple
+  small actions go in ONE shot: 'reaches in → lifts egg → clutches it → backs away' is ONE shot, not
+  four." That is shot ECONOMY, not continuity. Same conclusion, different mechanism. Citing it here
+  overstated the corpus's support. (Its sibling `:469` is economy too.)
+- **"span an unshown gap" is not L471's claim.** L471's stated reason is that splitting a flowing move
+  *reads as two shots* — about prose structure, not about the audience missing the action.
+
+**[inference] Source-tier caveat.** L471 lives in the OpenArt-frontend playbook that `INDEX.md` flags
+"cherry-pick claims, never adopt wholesale" — the same file whose Chinese-prompt rule this project
+rejected and deleted on the same day (ticket 01). Cherry-picking L471 is defensible where that was not:
+it gives its reason, and it concerns prose structure rather than frontend mechanics, so it plausibly
+transfers to the Higgsfield CLI. **Plausibly, not measured** — nothing in the corpus tests it on our
+platform. If a future render shows flowing-motion beats rendering worse, this is the assumption to pull.
 
 **The evidence:** the user watched the render. It cuts from dragging straight to lying-on-chest. Beat 4
 ("lifts Will onto the bed and cradles him") **violated our rule and was correct for it**; the craft gate
