@@ -172,8 +172,7 @@ def _scene_prompt(package: MultiShotPackage, rules: RenderRules) -> str:
 
     preamble = (
         # 24fps header: Dan-Kieft L52/L592 anti-stutter lever, promoted from
-        # sequence_craft_candidates 2026-07-13 — survives zh translation
-        # (numerals + Latin tags stay untranslated per the translation stage).
+        # sequence_craft_candidates 2026-07-13.
         "24fps. "
         "Exactly matching the art style of the reference images. "
         f"{rules.data['scene_lane']['style_anchor']}"

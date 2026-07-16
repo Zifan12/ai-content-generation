@@ -72,7 +72,6 @@ from src.generation.reference_check import (  # noqa: E402
     render_manifest,
 )
 from src.generation.executor import execute_scene, execute_splice  # noqa: E402
-from src.generation.prompt_translation import translate_job  # noqa: E402
 from src.providers.tts.higgsfield_tts import HiggsfieldTTS  # noqa: E402
 from src.generation.render_adapters.adapter import render_jobs  # noqa: E402
 from src.generation.render_adapters.rules import RenderRules  # noqa: E402
@@ -353,38 +352,6 @@ def main() -> None:
         _dump_flow()
 
         jobs = render_jobs(package, rules)
-        # D-language (spec 2026-07-13): translate the composed scene prompt
-        # EN->ZH when the model's dialect leaf asks for it. Runs on dry runs
-        # too, so the Chinese prompt is inspectable BEFORE any spend; a failed
-        # mechanical check falls back to the English prompt loudly
-        # (job.translation_status carries the outcome into the JSON dump).
-        if rules.model(rules.scene_model())["dialect"].get("prompt_language") == "zh":
-            print("[translate] prompt_language=zh -> prompt_translator seat")
-
-            def _dialogue_for(job) -> list[str]:
-                """The dialogue lines THIS job's prompt actually contains.
-
-                translate_job asserts every line it is given survives verbatim in
-                the Chinese output, so the lines must be scoped to the job. A
-                single_gen job covers every shot (so this is the whole package's
-                dialogue, exactly as before); a splice job covers ONE shot, and
-                handing it the whole package's dialogue would fail the
-                dialogue_missing check on every other shot's lines and silently
-                fall back to English.
-                """
-                indices = job.covers_shots or [job.shot_index]
-                return [
-                    package.shots[i].dialogue_line
-                    for i in indices
-                    if package.shots[i].dialogue_line
-                ]
-
-            translator = llm_for_seat("prompt_translator")
-            jobs = [
-                translate_job(job, _dialogue_for(job), rules, translator) for job in jobs
-            ]
-            for job in jobs:
-                print(f"[translate] status={job.translation_status}")
         flow["render_jobs"] = [job.model_dump(mode="json") for job in jobs]
         _dump_flow()
         # Lane shape (scene_lane.mode, 2026-07-14 grill Q1): single_gen yields ONE

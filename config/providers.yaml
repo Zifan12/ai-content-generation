@@ -41,7 +41,6 @@ llm:
   groundedness_judge:  {provider: openrouter, model: "google/gemini-2.5-flash"}
   location_anchor:     {provider: openrouter, model: "google/gemini-2.5-flash"}  # vision: room screencap -> world_anchor text (decision #4)
   voice_profile:       {provider: openrouter, model: "google/gemini-2.5-flash"}  # text: fetched canon -> voice_profile.md (spec 2026-07-11)
-  prompt_translator:   {provider: openrouter, model: "deepseek/deepseek-v4-pro"}  # EN scene prompt -> ZH for ByteDance models (D-language 2026-07-13)
 
 image:
   active: null

@@ -77,17 +77,6 @@ class RenderJob(BaseModel):
             package's range for ``"multi_shot"`` (internal cuts in one
             generation), exactly ``[shot_index]`` for ``"scene_shot"`` (one
             clip per shot). An empty list means "just shot_index".
-        prompt_english: The pre-translation English composition when ``prompt``
-            was translated (D-language, spec 2026-07-13); ``None`` means
-            ``prompt`` was never translated (English lane or translation
-            fallback — disambiguate via ``translation_status``).
-        translation_status: Provenance of the prompt language, set by the
-            prompt-translation stage: ``"not_attempted"`` (leaf absent/en, or
-            stage never ran), ``"translated"`` (prompt is Chinese,
-            ``prompt_english`` holds the mirror), or ``"fallback:<check>"``
-            (translation discarded by the named mechanical check; prompt is
-            the original English). Dumped run JSONs self-explain via this
-            field — the console WARNING alone is not durable.
     """
 
     model_cli_id: str
@@ -101,5 +90,3 @@ class RenderJob(BaseModel):
     shot_index: int
     reference_images: list[str] = []
     covers_shots: list[int] = []
-    prompt_english: str | None = None
-    translation_status: str = "not_attempted"
