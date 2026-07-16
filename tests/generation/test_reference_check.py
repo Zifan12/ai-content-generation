@@ -106,3 +106,34 @@ def test_present_voice_profile_has_no_note(tmp_path, monkeypatch):
     m = check_references(build_story_pitch(3), location_slug=None)
     eve = next(i for i in m.items if i.slug == "eve")
     assert "voice profile" not in eve.detail.lower()
+
+
+def test_more_than_two_character_refs_warns_but_stays_ready(tmp_path, monkeypatch):
+    """4 refs/character is what confounded every render up to 2026-07-15.
+
+    Vendor guidance is headshot + full-body ONLY: multi-view material shows one
+    person at several angles, so the model reads it as several PEOPLE and ID drift
+    gets worse (08-避坑12问.md:21). We were sending master + identity + turnaround +
+    detail — a FRONT/SIDE/BACK/THREE-QUARTER page among them — while chasing a
+    pose-reset symptom that guidance predicts exactly.
+
+    Warns rather than blocks, deliberately: the claim is single-source and unmeasured
+    on the Higgsfield CLI, and `present` means "has key-art at all". The manifest is
+    printed before any spend, so the operator sees it where the decision is made.
+    """
+    _layout(tmp_path, chars={"eve": 4}, location="room", loc_images=("a.jpg",), loc_desc=True)
+    monkeypatch.chdir(tmp_path)
+    m = check_references(build_story_pitch(3), location_slug="room")
+    assert m.ready is True  # advisory, not a gate
+    eve = next(it for it in m.items if it.label == "Eve")
+    assert "headshot + full-body ONLY" in eve.detail
+    assert "!!" in render_manifest(m)
+
+
+def test_two_character_refs_is_clean_no_warning(tmp_path, monkeypatch):
+    """The vendor's exact prescription: headshot + full-body. Must not nag."""
+    _layout(tmp_path, chars={"eve": 2}, location="room", loc_images=("a.jpg",), loc_desc=True)
+    monkeypatch.chdir(tmp_path)
+    m = check_references(build_story_pitch(3), location_slug="room")
+    eve = next(it for it in m.items if it.label == "Eve")
+    assert "headshot + full-body ONLY" not in eve.detail

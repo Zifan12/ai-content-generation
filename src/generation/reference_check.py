@@ -22,6 +22,22 @@ _IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg"}
 _REFS_ROOT = Path("refs")
 _LOCATION_ROOT = _REFS_ROOT / "_location"
 
+# Vendor guidance is that a character reference is a headshot + a full-body shot,
+# and NOTHING else: [cited] ai_video_resources/lanshu-awesome-ai-video-kit/
+# methodology/08-避坑12问.md:21 — 人物参考使用大头照 + 全身照即可，不建议使用人物多视图。
+# 多视图素材包含同一人物的不同角度，模型易将其识别为多个不同主体，反而加剧 ID 漂移问题。
+# ("multi-view material contains the same person at different angles, so the model
+# reads them as multiple different subjects, which WORSENS ID drift.")
+#
+# We violated this until 2026-07-15 by sending 4 refs/character including a
+# FRONT/SIDE/BACK/THREE-QUARTER turnaround page — a directly documented mechanism
+# for the pose-reset symptom we were chasing. It confounded every render to that
+# date. This is an ADVISORY, not a gate: `present` still means "has any image at
+# all", because the vendor claim is single-source and unmeasured on the Higgsfield
+# CLI. It prints in the manifest, which the operator reads before any spend — a
+# warning where the decision is actually made beats a rule nobody remembers.
+_VENDOR_REFS_PER_CHARACTER = 2
+
 
 @dataclass
 class RequiredRef:
@@ -106,6 +122,15 @@ def check_references(pitch: StoryPitch, location_slug: str | None) -> ReferenceM
         has_profile = (folder / "voice_profile.md").is_file()
         base_detail = f"{len(images)} images" if present else "MISSING — drop key-art here"
         voice_note = "" if has_profile else "  (no voice profile — silent; run gen_voice_profile)"
+        # Every image in the folder is sent to the render, so an extra page here is
+        # not free — it is another subject the model may read as a different person.
+        multiview_note = (
+            f"  !! {len(images)} refs — vendor says headshot + full-body ONLY "
+            "(multi-view reads as MULTIPLE people and worsens ID drift); "
+            "archive the extras before trusting this render"
+            if len(images) > _VENDOR_REFS_PER_CHARACTER
+            else ""
+        )
         items.append(
             RequiredRef(
                 kind="character",
@@ -115,7 +140,7 @@ def check_references(pitch: StoryPitch, location_slug: str | None) -> ReferenceM
                 images=images,
                 present=present,
                 has_description=None,
-                detail=base_detail + voice_note,
+                detail=base_detail + voice_note + multiview_note,
             )
         )
 
