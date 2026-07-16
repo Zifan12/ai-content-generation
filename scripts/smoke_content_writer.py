@@ -313,7 +313,7 @@ def main() -> None:
             _images, world_anchor = load_location(location_slug)
 
         rules = RenderRules()
-        print("[write] two-call multi-shot writer")
+        print("[write] one-call director -> multi-shot package")
         package = ContentWriter(llm=llm_for_seat("content_writer")).write(
             pitch,
             rules=rules,

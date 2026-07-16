@@ -221,20 +221,39 @@ def test_director_envelope_carries_dialogue(rules):
     assert '"speaker": "Eve"' in director_call["prompt"]
 
 
-def test_scene_line_over_90_words_raises(rules):
+def test_scene_line_over_90_words_repairs_then_raises(rules):
     # Hard cap recalibrated 40-soft/60-hard -> 65-soft/90-hard (2026-07-11,
-    # video-researcher evidence). 91 words is a genuine runaway.
+    # video-researcher evidence). 91 words is over it.
+    # Behaviour changed 2026-07-16: a fat line used to raise on the spot. It now
+    # takes the SAME bounded repair as a fat body — both are "too many words", and
+    # since the director merge a fat line is ordinary variance, not breakage (the
+    # director carries the whole required_action + destination + 5 clauses + full
+    # exact names). A director that stays fat through the repair still fails loud.
     long_line = "word " * 91
-    fake = FakeLLM(
-        _plan(
-            _draft_shots(
-                3,
-                lines=[long_line, "CONVERTED[1]. Audio: rain.", "CONVERTED[2]. Audio: rain."],
-            )
+    fat = _plan(
+        _draft_shots(
+            3,
+            lines=[long_line, "CONVERTED[1]. Audio: rain.", "CONVERTED[2]. Audio: rain."],
         )
     )
+    fake = FakeLLM(fat)  # never improves — same fat draft every call
     with pytest.raises(ValueError, match="hard cap"):
         _write(_pitch(3), fake, rules)
+    assert len(fake.calls) == 2  # tried the repair before giving up
+
+
+def test_scene_line_over_90_words_recovers_when_the_repair_lands(rules):
+    """The pitch-51 case: one fat line killed a whole run that had passed twice
+    before. A director that tightens on the retry must be allowed to succeed."""
+    fat = _plan(_draft_shots(3, lines=["word " * 97, "CONVERTED[1].", "CONVERTED[2]."]))
+    slim = _plan(_draft_shots(3, lines=list(_SLIM_LINES)))
+    fake = FakeLLM(fat, draft_queue=[fat, slim])
+    package = _write(_pitch(3), fake, rules)
+    assert [s.scene_line for s in package.shots] == _SLIM_LINES
+    assert len(fake.calls) == 2
+    retry = fake.calls[1]["prompt"]
+    assert "97 words" in retry  # the measurement is fed back, not a vague "too long"
+    assert "same destinations and the same complete actions" in retry  # D4/spine held
 
 
 def test_scene_line_at_65_words_is_accepted(rules):

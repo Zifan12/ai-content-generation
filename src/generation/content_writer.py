@@ -219,6 +219,24 @@ you. When the beat names a destination, the place it names must appear in your
 line. When the beat names a required_action, the whole move must appear in your
 line. Everything else about the shot is yours.
 
+THE BEAT IS THE STORY, NOT THE PROSE. Take its FACTS — who, what move, where it
+heads, what is said. Do NOT copy its WORDING where your rules below forbid that
+content. The beat was written by someone who had never seen the location photo
+and who does not write render prose; you have both. Two places this bites, every
+time:
+- ROOM MATERIALS. If the beat says "boots scuff the gravel path" but the location
+  given below is a tiled courtyard, the ground is TILE — write "boots scuff the
+  ground" and let the photo answer what it is made of. Never repeat a material,
+  surface, or fixture the beat guessed at. A prompt that says gravel while the
+  attached photo shows tile makes the model blend the two or flip between them
+  shot to shot; that is the single most common way a render falls apart.
+- STATIC EXPRESSION. If the beat says "he watches with a smug, knowing grin",
+  that is a feeling stated as an adjective, and copying it renders a generic
+  pleasant face and inverts the register you were asked for. Keep the BEAT (he
+  watches; he is smug) and rewrite the FACE as a change your camera can watch
+  happen — see the expression rule in SUBJECT + ACTION below. Carrying the beat's
+  meaning is required; carrying its adjectives is not.
+
 Each scene_line must contain, in this order:
 1. FRAMING — the beat's shot_size and an angle, as plain camera language ("Medium
    shot", "Close-up from behind", "Wide low-angle shot"). The beat's shot_size is
@@ -503,14 +521,31 @@ class ContentWriter:
                 spend).
         """
         # ONE director call — the pitch in, a finished prose line per beat out
-        # (PRD D1). A blown GLOBAL char budget gets one bounded repair re-call
-        # with the overage fed back (regenerate-with-feedback, never truncate —
-        # cutting prose mid-sentence is a worse formatting failure than the one
-        # being fixed). Structural failures (shot-count mismatch, runaway line)
-        # stay immediate fail-loud: they signal a broken draft, not ordinary
-        # verbosity variance. There is no anchor-leak check — the director never
-        # sees style_anchor text (it's a fixed yaml constant the adapter composes
-        # in code), so there is nothing for a scene line to leak.
+        # (PRD D1). TOO-MANY-WORDS gets one bounded repair re-call with the
+        # measurement fed back (regenerate-with-feedback, never truncate — cutting
+        # prose mid-sentence is a worse formatting failure than the one being
+        # fixed), then fails loud. Only a shot-count mismatch is immediate
+        # fail-loud: it is the one failure that means the draft is BROKEN rather
+        # than merely fat. There is no anchor-leak check — the director never sees
+        # style_anchor text (it's a fixed yaml constant the adapter composes in
+        # code), so there is nothing for a scene line to leak.
+        #
+        # BOTH length guards share this loop (2026-07-16). The per-line cap used to
+        # raise on the spot, on the theory that a runaway line "signals a broken
+        # conversion, not ordinary verbosity variance" — which was true of the
+        # deleted SCENE call, whose only job was converting one short motion_intent
+        # into one line. It is NOT true of the merged director: it carries the whole
+        # required_action (D4: every sub-motion of a flowing move), the destination,
+        # 5 clauses, and full exact names ("Elfaria Albis Serfort" is 3 words at
+        # every mention), so a fat line is now the EXPECTED tail of normal variance.
+        # Measured 2026-07-16 on pitch 51: a legitimate beat carrying a 5-sub-motion
+        # action landed at 97 words and killed the whole run with no retry, while
+        # the same pitch had passed twice before — verbosity variance, not breakage.
+        # A fat LINE and a fat BODY are the same failure ("too many words") and now
+        # get the same treatment, rather than one repairing and the other aborting.
+        # The cap itself is NOT raised: 90 is Seedance-derived (see its constant),
+        # and quietly raising a ceiling to make a red run green is how a real budget
+        # guard rots.
         #
         # The count check lives INSIDE the loop now. It used to be two separate
         # guards (plan-vs-beats, then lines-vs-plan) because a second call could
@@ -520,6 +555,7 @@ class ContentWriter:
         body_budget = _scene_body_budget(rules, world_anchor)
         envelope = _build_director_envelope(pitch, rules, world_anchor)
         draft_package = None
+        complaint = ""
         for attempt in range(_SCENE_BUDGET_ATTEMPTS):
             candidate = self.llm.parse(
                 envelope,
@@ -532,41 +568,59 @@ class ContentWriter:
                     f"director produced {len(candidate.shots)} shots for "
                     f"{len(pitch.beats)} beats — one shot per beat is the contract"
                 )
-            for index, shot in enumerate(candidate.shots):
-                word_count = len(shot.scene_line.split())
-                if word_count > _SCENE_LINE_MAX_WORDS:
-                    raise ValueError(
-                        f"scene line {index} is {word_count} words (hard cap "
-                        f"{_SCENE_LINE_MAX_WORDS}) — the prompt's soft budget is 65; "
-                        "this line ran away and must be rejected, not silently trimmed"
-                    )
+
+            overlong = [
+                (index, len(shot.scene_line.split()))
+                for index, shot in enumerate(candidate.shots)
+                if len(shot.scene_line.split()) > _SCENE_LINE_MAX_WORDS
+            ]
             body_chars = _scene_body_chars([s.scene_line for s in candidate.shots])
-            if body_chars <= body_budget:
+            if not overlong and body_chars <= body_budget:
                 draft_package = candidate
                 break
+
+            # Name every problem at once: fixing one line at a time would burn the
+            # single repair attempt on the first complaint and re-fail on the next.
+            faults = []
+            if overlong:
+                faults.append(
+                    "; ".join(
+                        f"line {index} is {words} words (hard cap "
+                        f"{_SCENE_LINE_MAX_WORDS}, soft budget 65)"
+                        for index, words in overlong
+                    )
+                )
+            if body_chars > body_budget:
+                faults.append(
+                    f"all lines together are {body_chars} chars against a "
+                    f"{body_budget}-char composed-prompt budget"
+                )
+            complaint = "; ".join(faults)
             words_per_line = body_budget // max(len(pitch.beats), 1) // 6
             logger.warning(
-                "scene body %s chars over its %s budget (attempt %s/%s) — retrying",
-                body_chars,
-                body_budget,
+                "director draft too long — %s (attempt %s/%s) — retrying",
+                complaint,
                 attempt + 1,
                 _SCENE_BUDGET_ATTEMPTS,
             )
             envelope = (
                 f"{_build_director_envelope(pitch, rules, world_anchor)}\n\n"
-                f"REWRITE: your previous scene lines totaled {body_chars} characters, "
-                f"but all lines together must fit {body_budget} characters "
+                f"REWRITE: your previous scene lines were too long — {complaint}. "
+                f"Every line must stay under {_SCENE_LINE_MAX_WORDS} words and all "
+                f"{len(pitch.beats)} lines together must fit {body_budget} characters "
                 f"(roughly {words_per_line} words per line). Rewrite ALL "
                 f"{len(pitch.beats)} lines tighter — same shots, same order, same "
-                "dialogue — cut decorative detail first, never the action, framing, "
-                "camera, or audio clauses."
+                "dialogue, same destinations and the same complete actions — cut "
+                "decorative detail first, never the action, framing, camera, or "
+                "audio clauses."
             )
         if draft_package is None:
             raise ValueError(
-                f"scene lines still over the composed-prompt budget after "
-                f"{_SCENE_BUDGET_ATTEMPTS} attempts ({body_chars} chars for a "
-                f"{body_budget}-char body budget) — refusing to hand the adapter "
-                "a prompt that will blow max_prompt_chars"
+                f"director's scene lines are still too long after "
+                f"{_SCENE_BUDGET_ATTEMPTS} attempts ({complaint}) — refusing to hand "
+                "the adapter a prompt that will blow max_prompt_chars or a line that "
+                "ran away; not silently trimmed, because cutting prose mid-sentence "
+                "is worse than the fault being fixed"
             )
 
         scene_model = rules.scene_model()
