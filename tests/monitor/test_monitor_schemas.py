@@ -131,6 +131,89 @@ def test_scene_setting_defaults_empty_string_for_backcompat() -> None:
     assert pitch.scene_setting == ""
 
 
+def test_spine_fields_default_none_for_backcompat() -> None:
+    """A beat written before 2026-07-15 has no spine fields and still loads.
+
+    They are optional ONLY for this reason — the downstream check skips (loudly)
+    when they are None rather than treating absence as a failure.
+    """
+    beat = _beat(BeatRole.hook, ShotSize.wide)
+    assert beat.destination is None
+    assert beat.required_action is None
+
+
+def test_pre_spine_story_json_row_still_loads() -> None:
+    """The real back-compat case: pitch 47 must stay readable.
+
+    Pitch 47's stored row predates the spine fields and is the ONLY real evidence
+    we have about the bug they exist to fix (the writer dropped its "toward the
+    bed" destination and its "lifts onto the bed" action). If adding these fields
+    made that row unloadable, the fix would destroy its own test case — hence
+    optional rather than required. Shaped like the stored row, not built via the
+    schema, so it fails the way the loader would.
+    """
+    stored_row = {
+        "logline": "x", "mode": "wish",
+        "characters": [{"name": "Eve", "ip_source": "SB"}],
+        "desired_moment": "x",
+        "beats": [
+            {"role": r, "visual_line": "x", "narration_line": None,
+             "shot_size": s, "characters_in_frame": ["Eve"],
+             "hero_moment": r == "payoff"}
+            for r, s in [("hook", "wide"), ("turn", "medium"), ("payoff", "close_up")]
+        ],
+        "caption_policy": "hook_only", "hook_line": "x",
+        "why_it_lands": "x", "legal_flag": False,
+    }
+    pitch = StoryPitch.model_validate(stored_row)
+    assert all(b.destination is None for b in pitch.beats)
+    assert all(b.required_action is None for b in pitch.beats)
+
+
+def test_spine_fields_round_trip_when_set() -> None:
+    """A beat that names its spine keeps it verbatim — this is the pitch-47 payoff.
+
+    required_action holds ONE FLOWING MOTION, not one verb: "lifts... and cradles"
+    is a single continuous move (Dan Kieft L471). Reducing it to "cradles" is the
+    exact loss that shipped a video where the lift never happened.
+    """
+    beat = StoryBeat(
+        role=BeatRole.payoff,
+        visual_line=(
+            "Elfie lifts Will onto the bed and cradles him against her, "
+            "his head lolling, eyes half-closed."
+        ),
+        destination="the bed",
+        required_action="lifts Will onto the bed and cradles him",
+        narration_line=None,
+        shot_size=ShotSize.close_up,
+        characters_in_frame=["Eve"],
+        hero_moment=True,
+    )
+    assert beat.destination == "the bed"
+    assert "lifts" in beat.required_action
+    assert "cradles" in beat.required_action
+
+
+def test_beat_with_no_destination_is_legitimate() -> None:
+    """Not every beat goes somewhere; None must mean "no destination", not "forgot".
+
+    A beat like "she smirks at the camera" has nowhere to arrive. The downstream
+    check must skip it rather than invent a destination to satisfy itself.
+    """
+    beat = StoryBeat(
+        role=BeatRole.hook,
+        visual_line="Eve smirks straight down the lens and the candle gutters.",
+        destination=None,
+        required_action="smirks straight down the lens",
+        narration_line=None,
+        shot_size=ShotSize.close_up,
+        characters_in_frame=["Eve"],
+    )
+    assert beat.destination is None
+    assert beat.required_action == "smirks straight down the lens"
+
+
 def test_old_six_beat_story_json_row_now_invalid_by_design() -> None:
     """
     Pins the documented behavior (spec §6 BACK-COMPAT note): a pre-v2 stored

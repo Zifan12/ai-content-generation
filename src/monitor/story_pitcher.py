@@ -78,11 +78,28 @@ _STORYPITCH_FIELD_SPEC = """For each StoryPitch produce:
 - beats: 3-5 ordered StoryBeats. Each beat has:
     role: its function in the arc (hook, establish, build, turn, escalate, reveal, payoff, tag).
     visual_line: what the camera SEES this beat — concrete, shootable, render-facing.
-        ONE action per beat: a single physical thing happens, big enough to read in
-        ~3 seconds (never three micro-motions crammed into one beat — split them
-        across beats or cut them). Each beat's action BEGINS where the previous
-        beat's action ENDED (end-state = start-state chaining): if beat 2 ends
-        with her hand on the door, beat 3 opens from that hand on that door.
+        ONE FLOWING MOTION per beat: one continuous physical move, however many
+        sub-motions it takes. "Reaches in, lifts the egg, clutches it, backs away"
+        is ONE beat, not four. "Lifts him onto the bed and cradles him" is ONE beat.
+        The sub-motions of a single gesture belong together — splitting a flowing
+        move into a setup beat plus an "after that…" beat reads as two shots and
+        puts a cut in the middle of the action.
+        What does NOT belong together is SEPARATE events: "she laughs" + "the door
+        opens" + "he falls" is three beats, not one. Test: could a camera hold on
+        this without cutting, as one unbroken move? Then it is ONE beat.
+        Each beat's motion BEGINS where the previous beat's motion ENDED (end-state
+        = start-state chaining): if beat 2 ends with her hand on the door, beat 3
+        opens from that hand on that door.
+    destination: WHERE this beat's motion is going, as a short noun phrase ("the
+        bed", "the far door") — or null when the beat goes nowhere ("she smirks at
+        the camera" has no destination; do NOT invent one). Set it whenever the
+        NEXT beat stops making sense if the character never arrives. This is a
+        non-negotiable: the render stage may rephrase your beat freely but is held
+        by code to keeping this.
+    required_action: the ONE FLOWING MOTION this beat exists to show, in a few
+        words — "lifts Will onto the bed and cradles him", "drags him backward
+        toward the bed". Copy the whole move; do NOT reduce it to a single verb.
+        This is the other non-negotiable, held by code the same way.
     narration_line: an optional voiceover/caption line, or null — LEAVE THIS NULL. The
         product has no voiceover or on-screen text; narration_line is retired.
     dialogue_line: an optional SPOKEN line one character says on screen this beat, or

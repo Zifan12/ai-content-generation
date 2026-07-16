@@ -151,10 +151,54 @@ class CharacterRef(BaseModel):
 
 
 class StoryBeat(BaseModel):
+    """One beat of a pitch: the idea for a single shot.
+
+    The beat is the IDEA, not the finished prompt — the director stage downstream
+    elevates it with craft (camera, sound, physical detail) and is expected to. But
+    it may not lose the beat's SPINE: ``destination`` and ``required_action`` name
+    the facts the story collapses without, and code (not a prompt) asserts they
+    survive into the shipped scene line.
+
+    Why the spine is structured and not just prose: on 2026-07-15 the writer turned
+    the pitch's "pulling him toward the bed" into "dragged backward across the room"
+    and dropped "lifts Will onto the bed" entirely. Both losses shipped, and the
+    rendered video cut from the drag straight to the end-state — the lift never
+    happened on screen because nothing asked for it. Prose cannot be checked
+    deterministically ("the bed" is not extractable from a sentence without NLP), so
+    the beat states its own non-negotiables as fields the adapter can assert on.
+    See .scratch/director-stage/PRD.md.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
     role: BeatRole
     visual_line: str  # what the camera sees this beat (render-facing)
+    destination: str | None = None
+    """WHERE the action is going, when the story depends on arriving there.
+
+    A short noun phrase naming the place or object the beat drives toward ("the
+    bed", "the far door") — the thing whose absence makes the NEXT beat
+    incoherent. ``None`` is legitimate and common: a beat that goes nowhere
+    ("she smirks at the camera") has no destination, and the downstream check
+    skips (loudly) rather than inventing one.
+
+    Optional ONLY for backwards compatibility: ``story_json`` rows written before
+    2026-07-15 have no such field and must still load (pitch 47 is the only real
+    evidence we have about this bug). New pitches set it whenever the story has a
+    destination at all.
+    """
+    required_action: str | None = None
+    """The ONE flowing motion this beat exists to show.
+
+    One continuous move, however many sub-motions it takes — "lifts Will onto the
+    bed and cradles him" is ONE action, not two. The sub-motions of a single
+    flowing gesture belong together; splitting them reads as two shots (Dan Kieft
+    L471: "One flowing motion per shot... not a setup sentence + an 'after he
+    finishes…' block"). Do NOT reduce it to one verb: reducing "lifts... and
+    cradles" to "cradles" is exactly the loss that produced the pitch-47 failure.
+
+    Optional ONLY for backwards compatibility — see ``destination``.
+    """
     narration_line: str | None  # optional VO/caption line; None = silent beat
     dialogue_line: str | None = None  # optional spoken line, quoted-speech form
     speaker: str | None = None  # must be one of characters_in_frame; set iff dialogue_line is
@@ -245,7 +289,7 @@ class StoryCraftVerdict(BaseModel):
     register_match: bool  # comedic/earnest/satirical register matches gap.audience_want
     dialogue_earns_place: bool  # any dialogue_line pulls its weight; true if there is none
     scene_setting_contained: bool  # every beat stays inside ONE Scene Space (+ <=1 threshold)
-    one_action_per_beat: bool  # each beat stages exactly one ~3s-readable physical action
+    one_action_per_beat: bool  # each beat stages ONE flowing motion, however many sub-motions
     notes: str
     failure_notes: str | None  # what to fix on a repair re-pitch; None if it passes
     would_watch: bool
