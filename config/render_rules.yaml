@@ -270,7 +270,21 @@ still_dialect:
 # on top of each model's dialect block. source: image-video-director/03.
 # ---------------------------------------------------------------------------
 motion_craft:
-  one_move_one_action: "ONE camera move + ONE subject action per shot. Stacking moves ('dolly + pan + zoom + crane') produces floaty, game-like camera."   # 03 §camera L9,13
+  # Re-scoped 2026-07-15 (PRD D4) — the SUBJECT half only; the camera half is unchanged.
+  # The old text ended at the bare phrase "ONE subject action per shot", which is where
+  # this rule broke: an LLM reads a bare "one action" as ONE VERB, and on pitch 47 the
+  # writer duly collapsed "lifts him onto the bed and cradles him" down to "cradles" —
+  # killing the lift, so the next shot opened on an end-state with no cause.
+  # THE CORPUS NEVER MEANT ONE VERB, and the source this rule already cites proves it:
+  # 03:14 says "a single subject action", and its OWN example at 03:16 is "Actor takes
+  # four steps to the window, pauses, and pulls the curtain in the final second" — three
+  # sub-motions AND a destination, called ONE action. The compression to a bare phrase
+  # dropped the example that defined the rule. Restored here, in the corpus's own words.
+  # This is a SECOND, independent corpus source for D4 (Dan Kieft:471 "one flowing
+  # motion per shot" is the other) — and unlike that one, 03 is not the doc INDEX.md
+  # flags "cherry-pick, never adopt wholesale". D4 is better-founded than the PRD's
+  # "[inference] plausibly, not measured" caveat assumed.
+  one_move_one_action: "ONE camera move + ONE CONTINUOUS subject move per shot. Stacking camera moves ('dolly + pan + zoom + crane') produces floaty, game-like camera. ONE subject move means one FLOWING motion, however many sub-motions it takes — 'four steps to the window, pause, pull the curtain in the final second' is ONE action, not three. NEVER reduce such a chain to its final verb: the dropped sub-motions are the visible CAUSE of the shot's end-state, and without them the shot reads as broken. Unrelated actions with no single arc through them (waves, then sits, then pours a drink) still belong in separate shots."   # 03 §camera L9 (camera half) + 03 L14,16 (subject half + its beats example)
   action_as_beats: "Express the action as countable beats ('four steps to the window, pause, pull the curtain in the final second'), not vague verbs ('walks across the room') — vague action makes the model guess pace and drift."   # 03 L14-16
   emotion_is_visible: "Carry mood through lighting/palette/micro-performance (eye-line, breath, posture, tight jaw), NOT the words 'sad'/'epic'. Every emotional word must pair with something the camera can see."   # 03 §color-script L91
   anti_intensifiers: ["stunning", "breathtaking", "ultra-detailed", "masterpiece", "best quality", "8K"]   # 04 L94 + 05 L9 — wasted words across all modern models

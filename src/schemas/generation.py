@@ -185,9 +185,10 @@ class DirectorDraft(BaseModel):
 class MultiShotPackage(BaseModel):
     """One generated video's full content kit — the writer flow's final output.
 
-    Assembled in CODE from ShotPlanDraft + call 2's scene lines; never parsed
-    whole from a single LLM response. Provenance fields (pitch_id,
-    reference_image_paths) are code-set and never trusted from the LLM.
+    Assembled in CODE from the DirectorDraft; never parsed whole from a single LLM
+    response — the beat's own facts are copied over the draft's echo of them.
+    Provenance fields (pitch_id, reference_image_paths) are code-set and never
+    trusted from the LLM.
 
     Attributes:
       shots: 3–6 ShotSpecs, one per source StoryBeat, in beat order.

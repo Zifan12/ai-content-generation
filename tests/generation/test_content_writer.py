@@ -385,6 +385,25 @@ def test_pitch_travels_inside_the_injection_guard(rules):
     assert "A grand ice-tower chamber" in after_guard
 
 
+def test_injected_motion_craft_does_not_contradict_the_continuous_move_rule(rules):
+    """The EFFECTIVE director prompt is the system string PLUS the motion_craft YAML
+    the envelope injects — so a rule can be reinstated in the data that the prompt
+    forbids, and nothing would notice. That is exactly what happened here: the merge
+    put ONE CONTINUOUS MOVE (D4) in the system prompt while render_rules.yaml still
+    shipped 'ONE camera move + ONE subject action per shot' — the very phrasing that
+    collapsed "lifts him onto the bed and cradles him" to "cradles" on pitch 47. Two
+    rules in tension with the LLM refereeing is the failure mode D4 exists to kill,
+    relocated from the prompt into the config.
+
+    Guards the rule's MEANING, not its wording: the camera half (the stacked-move ban,
+    a rule ticket 03 must preserve) has to survive, and the subject half must not
+    regress to a bare one-verb reading."""
+    rule = rules.data["motion_craft"]["one_move_one_action"]
+    assert "dolly + pan + zoom + crane" in rule  # camera half: stacked-move ban intact
+    assert "ONE subject action per shot" not in rule  # the exact phrase that broke it
+    assert "CONTINUOUS" in rule and "sub-motions" in rule
+
+
 def test_mixed_motion_tags_still_one_call(rules):
     shots = _draft_shots(3)
     shots[1] = DirectorShotDraft(
