@@ -19,10 +19,10 @@ from pydantic import ValidationError
 from src.generation.render_adapters.rules import RenderRules
 from src.monitor.schemas import BeatRole
 from src.schemas.generation import (
+    DirectorDraft,
+    DirectorShotDraft,
     MotionTag,
     MultiShotPackage,
-    ShotDraft,
-    ShotPlanDraft,
     ShotSpec,
 )
 
@@ -48,19 +48,19 @@ def _package(durations: list[int]) -> MultiShotPackage:
     )
 
 
-def _draft(duration: int = 5) -> ShotDraft:
-    return ShotDraft(
+def _draft(duration: int = 5) -> DirectorShotDraft:
+    return DirectorShotDraft(
         beat_role=BeatRole.build,
         motion_tag=MotionTag.spectacle,
-        motion_intent="Camera pushes toward the tower as lights ignite floor by floor.",
+        scene_line="Camera pushes toward the tower as lights ignite floor by floor. Audio: a low hum.",
         duration_seconds=duration,
         narration_line=None,
         characters_in_frame=[],
     )
 
 
-def _plan(durations: list[int]) -> ShotPlanDraft:
-    return ShotPlanDraft(
+def _plan(durations: list[int]) -> DirectorDraft:
+    return DirectorDraft(
         shots=[_draft(duration=d) for d in durations],
         hook_text="the scene they cut",
         caption="caption",
@@ -198,7 +198,7 @@ def test_package_rejects_unknown_field():
 
 def test_plan_draft_rejects_unknown_field():
     with pytest.raises(ValidationError):
-        ShotPlanDraft(
+        DirectorDraft(
             shots=[_draft(), _draft(), _draft()],
             hook_text=None,
             caption="c",

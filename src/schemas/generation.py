@@ -8,11 +8,11 @@ PIPELINE ROLE:
   →  assembly (TTS narration + BGM + hook card + tail-fade)  →  one 10–25s 9:16 video.
 
 WHY THIS FILE EXISTS:
-  MultiShotPackage is the schema the LLM fills via structured output (in two calls —
-  ShotPlanDraft is call 1's output; call 2 writes per-shot scene lines; the final
-  package is assembled in code). Pydantic validation is the guard rail: a package
-  that breaks the product envelope (shot count, per-shot estimate, total duration)
-  is rejected, not silently rendered.
+  MultiShotPackage is the schema the LLM fills via structured output (in ONE
+  director call — DirectorDraft is its output, carrying a finished scene_line per
+  shot; the final package is assembled in code). Pydantic validation is the guard
+  rail: a package that breaks the product envelope (shot count, per-shot estimate,
+  total duration) is rejected, not silently rendered.
 
 PARADIGM (motion-native scene lane, spec 2026-07-06, supersedes the still-first
   multi-shot paradigm of spec 2026-07-04):
@@ -90,10 +90,11 @@ class ShotSpec(BaseModel):
       beat_role: Copied from the source StoryBeat (hook/establish/.../payoff/tag).
       motion_tag: LLM-classified shot-content tag — metadata only (D3): nothing
         routes on it; it stays as a free labeled feature for P4.
-      scene_line: Call 2's Seedance prose line for this shot — one camera move +
-        one subject action (separated) + a concrete "Audio:" event. Carries NO
-        anchors, NO style words, NO seconds/timestamps (D2) — the adapter chains
-        lines with "Then cut to" and composes identity/style/constraints in code.
+      scene_line: The director's Seedance prose line for this shot — one camera
+        move + one continuous subject move (separated) + a concrete "Audio:" event.
+        Carries NO anchors, NO style words, NO seconds/timestamps (D2) — the
+        adapter chains lines with "Then cut to" and composes identity/style/
+        constraints in code.
       duration_seconds: 3–8s INTERNAL estimate (narration word-budget math only);
         NEVER enters prompt text — duration reaches the model exclusively as the
         CLI --duration parameter (D2). Floor raised 2→3 (2026-07-12, sequence-craft
@@ -120,37 +121,49 @@ class ShotSpec(BaseModel):
     model_cli_id: str = ""
 
 
-class ShotDraft(BaseModel):
-    """Call-1 draft of one shot: classified and planned, but not yet model-native.
+class DirectorShotDraft(BaseModel):
+    """The director's draft of one shot: the finished render prose plus metadata.
 
-    motion_intent is a model-AGNOSTIC action/camera/timing/audio description; call 2
-    converts it into a Seedance prose line (becoming ShotSpec.scene_line). The draft
-    carries NO still_prompt — the scene lane renders no stills, so call 1 never
-    spends tokens writing image prompts (dropped 2026-07-06, D4).
+    scene_line is written STRAIGHT FROM the source StoryBeat's own visual_line and
+    is already model-native — it becomes ShotSpec.scene_line verbatim. There is no
+    intermediate paraphrase between the beat and this line (2026-07-15 director
+    merge, PRD D1): the model-agnostic `motion_intent` field this class used to
+    carry was a second rewrite hop, and every hop is a chance to drop a story fact.
+    On pitch 47 it dropped two — "toward the bed" became "across the room", and
+    "lifts Will onto the bed" vanished — and the render showed neither.
+
+    Still a *Draft* despite carrying finished prose: code stamps the beat's own
+    facts (role, cast, dialogue, silence) over the LLM's echo of them at assembly,
+    so nothing here is trusted except scene_line itself and the metadata below.
+    The draft carries NO still_prompt — the scene lane renders no stills, so the
+    director never spends tokens writing image prompts (dropped 2026-07-06, D4).
     """
 
     model_config = ConfigDict(extra="forbid")
 
     beat_role: BeatRole
     motion_tag: MotionTag
-    motion_intent: str
+    scene_line: str
     duration_seconds: int = Field(ge=3, le=8)
     narration_line: str | None
     characters_in_frame: list[str]
 
 
-class ShotPlanDraft(BaseModel):
-    """Call 1's full structured output: draft shots + package-level creative fields.
+class DirectorDraft(BaseModel):
+    """The director call's full structured output: shots + package-level fields.
 
     Everything the LLM decides lives here; routing, consistency grouping, and
     provenance are stamped by code afterwards (spec §2.2). Same cardinality and
-    duration envelope as the final package so a bad plan fails BEFORE call 2 spends
-    tokens converting it.
+    duration envelope as the final package so a bad draft fails before the adapter
+    ever composes a prompt from it.
+
+    Renamed from ShotPlanDraft (2026-07-15): "Plan" named a stage that no longer
+    exists — PLAN and SCENE merged into one DIRECTOR call.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    shots: list[ShotDraft] = Field(min_length=3, max_length=5)
+    shots: list[DirectorShotDraft] = Field(min_length=3, max_length=5)
     hook_text: str | None
     caption: str
     hashtags: list[str]
@@ -158,8 +171,8 @@ class ShotPlanDraft(BaseModel):
     rationale: str | None = None
 
     @model_validator(mode="after")
-    def _check_total_duration(self) -> "ShotPlanDraft":
-        """Reject plans whose summed shot estimates leave the 10–25s product envelope (D1)."""
+    def _check_total_duration(self) -> "DirectorDraft":
+        """Reject drafts whose summed shot estimates leave the 10–25s product envelope (D1)."""
         total = sum(shot.duration_seconds for shot in self.shots)
         if not TOTAL_SECONDS_MIN <= total <= TOTAL_SECONDS_MAX:
             raise ValueError(

@@ -1,19 +1,17 @@
-"""Tests for ContentWriter (motion-native scene lane, plan 2026-07-06 Task 3).
+"""Tests for ContentWriter (motion-native scene lane, director merge 2026-07-15).
 
-FakeLLM answers by response_model type: ShotPlanDraft requests get the queued
-draft; SceneLines requests get one "CONVERTED[i]" line per shot in the envelope
-(counted from the "motion_intent:" markers), unless a broken conversion is
-forced. No network, no credits.
+FakeLLM answers the ONE director call with a queued DirectorDraft. Since the
+2026-07-15 merge there is only one response model to answer — scene_line is a
+field of each drafted shot, not a second call's separate output — so a test that
+wants specific shipped prose queues shots carrying it. No network, no credits.
 """
 
 import pytest
 
 from src.generation.content_writer import (
-    PLAN_SYSTEM_PROMPT,
-    SCENE_LINE_SYSTEM_PROMPT,
+    DIRECTOR_SYSTEM_PROMPT,
     WRITER_MAX_TOKENS,
     ContentWriter,
-    SceneLines,
 )
 from src.generation.render_adapters.rules import RenderRules
 from src.monitor.schemas import (
@@ -26,10 +24,10 @@ from src.monitor.schemas import (
     StoryPitch,
 )
 from src.schemas.generation import (
+    DirectorDraft,
+    DirectorShotDraft,
     MotionTag,
     MultiShotPackage,
-    ShotDraft,
-    ShotPlanDraft,
 )
 
 _SIZES = [
@@ -81,12 +79,19 @@ def _draft_shots(
     n: int,
     tag: MotionTag = MotionTag.character_consistency,
     narration: str | None = "Polished narration.",
-) -> list[ShotDraft]:
+    lines: list[str] | None = None,
+) -> list[DirectorShotDraft]:
+    """n drafted shots whose every code-copied field deliberately CONTRADICTS the
+    pitch, so a test that passes proves code won rather than that the echo agreed.
+    `lines` forces the shipped prose when a test cares about it."""
     return [
-        ShotDraft(
+        DirectorShotDraft(
             beat_role=BeatRole.build,  # deliberately wrong: writer must copy pitch's
             motion_tag=tag,
-            motion_intent=f"Shot {i}: slow push-in, she turns on the final second.",
+            scene_line=(
+                lines[i] if lines is not None
+                else f"CONVERTED[{i}]. Audio: rain on pavement."
+            ),
             duration_seconds=4,
             narration_line=narration,
             characters_in_frame=["WRONG_ECHO"],  # writer must copy pitch's
@@ -95,8 +100,8 @@ def _draft_shots(
     ]
 
 
-def _plan(shots: list[ShotDraft]) -> ShotPlanDraft:
-    return ShotPlanDraft(
+def _plan(shots: list[DirectorShotDraft]) -> DirectorDraft:
+    return DirectorDraft(
         shots=shots,
         hook_text="DRAFT HOOK — must lose to pitch.hook_line",
         caption="they finally rendered it",
@@ -109,13 +114,11 @@ def _plan(shots: list[ShotDraft]) -> ShotPlanDraft:
 class FakeLLM:
     def __init__(
         self,
-        plan: ShotPlanDraft,
-        conversion_prompts: list[str] | None = None,
-        conversion_queue: list[list[str]] | None = None,
+        draft: DirectorDraft,
+        draft_queue: list[DirectorDraft] | None = None,
     ):
-        self._plan = plan
-        self._forced_conversion = conversion_prompts
-        self._conversion_queue = conversion_queue  # one entry per scene call (retries)
+        self._draft = draft
+        self._queue = draft_queue  # one entry per director call (budget retries)
         self.calls: list[dict] = []
 
     def parse(self, prompt, response_model, system=None, max_tokens=1024):
@@ -127,17 +130,10 @@ class FakeLLM:
                 "max_tokens": max_tokens,
             }
         )
-        if response_model is ShotPlanDraft:
-            return self._plan
-        if response_model is SceneLines:
-            if self._conversion_queue:
-                return SceneLines(scene_lines=self._conversion_queue.pop(0))
-            if self._forced_conversion is not None:
-                return SceneLines(scene_lines=self._forced_conversion)
-            n = prompt.count("motion_intent:")
-            return SceneLines(
-                scene_lines=[f"CONVERTED[{i}]. Audio: rain on pavement." for i in range(n)]
-            )
+        if response_model is DirectorDraft:
+            if self._queue:
+                return self._queue.pop(0)
+            return self._draft
         raise AssertionError(f"unexpected response_model {response_model}")
 
 
@@ -169,7 +165,7 @@ def test_five_beats_five_shots(rules):
     assert len(package.shots) == 5
 
 
-def test_plan_beat_count_mismatch_raises(rules):
+def test_director_beat_count_mismatch_raises(rules):
     with pytest.raises(ValueError, match="one shot per beat"):
         _write(_pitch(4), FakeLLM(_plan(_draft_shots(3))), rules)
 
@@ -213,12 +209,16 @@ def test_dialogue_and_speaker_copied_from_pitch_not_draft(rules):
     assert package.shots[1].speaker == "Eve"
 
 
-def test_scene_call_envelope_carries_dialogue(rules):
+def test_director_envelope_carries_dialogue(rules):
+    """The director reads the pitch itself, so the dialogue pair rides along in the
+    beat JSON. The deleted scene call had to be hand-fed this: it never saw the
+    pitch, only a paraphrase, so code copied dialogue into its envelope by hand."""
     pitch = _pitch(3, dialogue={1: ("Wait, don't!", "Eve")})
     fake = FakeLLM(_plan(_draft_shots(3)))
     _write(pitch, fake, rules)
-    scene_call = fake.calls[1]
-    assert 'Eve says "Wait, don\'t!"' in scene_call["prompt"]
+    director_call = fake.calls[0]
+    assert '"dialogue_line": "Wait, don\'t!"' in director_call["prompt"]
+    assert '"speaker": "Eve"' in director_call["prompt"]
 
 
 def test_scene_line_over_90_words_raises(rules):
@@ -226,8 +226,12 @@ def test_scene_line_over_90_words_raises(rules):
     # video-researcher evidence). 91 words is a genuine runaway.
     long_line = "word " * 91
     fake = FakeLLM(
-        _plan(_draft_shots(3)),
-        conversion_prompts=[long_line, "CONVERTED[1]. Audio: rain.", "CONVERTED[2]. Audio: rain."],
+        _plan(
+            _draft_shots(
+                3,
+                lines=[long_line, "CONVERTED[1]. Audio: rain.", "CONVERTED[2]. Audio: rain."],
+            )
+        )
     )
     with pytest.raises(ValueError, match="hard cap"):
         _write(_pitch(3), fake, rules)
@@ -238,8 +242,12 @@ def test_scene_line_at_65_words_is_accepted(rules):
     # action + space + dialogue + audio lands ~55-65 words and must NOT be rejected.
     line_65 = "word " * 65 + "Audio: rain."
     fake = FakeLLM(
-        _plan(_draft_shots(3)),
-        conversion_prompts=[line_65, "CONVERTED[1]. Audio: rain.", "CONVERTED[2]. Audio: rain."],
+        _plan(
+            _draft_shots(
+                3,
+                lines=[line_65, "CONVERTED[1]. Audio: rain.", "CONVERTED[2]. Audio: rain."],
+            )
+        )
     )
     package = _write(_pitch(3), fake, rules)  # no raise
     assert package.shots[0].scene_line.startswith("word")
@@ -256,31 +264,32 @@ _SLIM_LINES = [f"SLIM[{i}]. Audio: rain." for i in range(3)]
 def test_scene_budget_blown_retries_once_with_feedback(rules):
     fake = FakeLLM(
         _plan(_draft_shots(3)),
-        conversion_queue=[list(_FAT_LINES), list(_SLIM_LINES)],
+        draft_queue=[
+            _plan(_draft_shots(3, lines=list(_FAT_LINES))),
+            _plan(_draft_shots(3, lines=list(_SLIM_LINES))),
+        ],
     )
     package = _write(_pitch(3), fake, rules)
-    assert len(fake.calls) == 3  # plan + first scene call + ONE repair re-call
-    retry_call = fake.calls[2]
-    assert retry_call["prompt"].startswith("<plan>")  # same data, plus feedback
+    assert len(fake.calls) == 2  # first director call + ONE repair re-call
+    retry_call = fake.calls[1]
+    assert retry_call["prompt"].startswith("<story>")  # same data, plus feedback
     assert "REWRITE:" in retry_call["prompt"]
-    assert "characters" in retry_call["prompt"]
+    assert "characters_in_frame" in retry_call["prompt"]
     assert [shot.scene_line for shot in package.shots] == _SLIM_LINES
 
 
 def test_scene_budget_still_blown_after_repair_raises(rules):
-    fake = FakeLLM(
-        _plan(_draft_shots(3)),
-        conversion_queue=[list(_FAT_LINES), list(_FAT_LINES)],
-    )
+    fat = _plan(_draft_shots(3, lines=list(_FAT_LINES)))
+    fake = FakeLLM(fat, draft_queue=[fat, _plan(_draft_shots(3, lines=list(_FAT_LINES)))])
     with pytest.raises(ValueError, match="composed-prompt budget"):
         _write(_pitch(3), fake, rules)
-    assert len(fake.calls) == 3  # plan + 2 scene attempts, no third
+    assert len(fake.calls) == 2  # 2 director attempts, no third
 
 
 def test_scene_budget_fit_first_try_makes_no_retry(rules):
     fake = FakeLLM(_plan(_draft_shots(3)))
     _write(_pitch(3), fake, rules)
-    assert len(fake.calls) == 2  # unchanged happy path (D3: one scene call)
+    assert len(fake.calls) == 1  # happy path is ONE call since the director merge
 
 
 def test_provenance_code_set(rules):
@@ -312,12 +321,11 @@ def test_location_grounding_defaults_empty_when_absent(rules):
 
 
 def test_writer_calls_receive_the_world_anchor(rules):
-    """The writer invented rooms because it had never seen one: neither envelope
+    """The writer invented rooms because it had never seen one: the envelope never
     carried world_anchor (it was only subtracted from the char budget). Measured
     2026-07-14 pitch 47 — the scene line said "a dim stone chamber lit by a single
     torch" while world_anchor in the SAME prompt said "ornate white marble bedroom,
-    tall windows". Both calls need it: the plan call writes "where it happens" into
-    motion_intent, which the scene call then echoes."""
+    tall windows"."""
     seen = []
 
     class CapturingLLM:
@@ -334,61 +342,73 @@ def test_writer_calls_receive_the_world_anchor(rules):
         reference_image_paths=["refs/eve/front.png"],
         world_anchor="A grand ice-tower chamber, pale marble floor.",
     )
-    # >= 2, not == 2: the SCENE call has its own budget-repair retry loop that
+    # >= 1, not == 1: the director call has a budget-repair retry loop that
     # re-calls on an over-budget candidate (observed live 2026-07-14: "scene body
     # 1882 chars over its 1812 budget (attempt 1/2) — retrying"). Pinning an exact
     # count would make this test fail on a legitimate repair.
-    assert len(seen) >= 2  # plan call + scene call, plus any budget repair
+    assert len(seen) >= 1  # the director call, plus any budget repair
     assert all("A grand ice-tower chamber" in p for p in seen)
 
 
 # --- call mechanics ---------------------------------------------------------------
 
 
-def test_two_calls_and_prompt_contents(rules):
+def test_one_call_and_prompt_contents(rules):
     fake = FakeLLM(_plan(_draft_shots(3)))
     _write(_pitch(3), fake, rules)
-    assert len(fake.calls) == 2  # one plan + ONE scene call, always (D3)
-    plan_call, scene_call = fake.calls
-    assert plan_call["system"] == PLAN_SYSTEM_PROMPT
-    assert plan_call["max_tokens"] == WRITER_MAX_TOKENS
-    assert "Motion craft:" in plan_call["prompt"]
-    assert "Still dialect:" not in plan_call["prompt"]  # scene lane writes no stills
-    assert "the ending they cut" in plan_call["prompt"]  # pitch JSON present
-    assert scene_call["system"] == SCENE_LINE_SYSTEM_PROMPT
-    assert scene_call["max_tokens"] == WRITER_MAX_TOKENS
-    # the whole plan travels as data inside the injection-guard wrapper,
-    # every beat present, no durations (D2)
-    assert scene_call["prompt"].startswith("<plan>")
-    assert scene_call["prompt"].rstrip().endswith("</plan>")
-    for i in range(3):
-        assert f"shot_index={i}" in scene_call["prompt"]
-    assert "duration" not in scene_call["prompt"]
+    assert len(fake.calls) == 1  # ONE director call, always (PRD D1)
+    director_call = fake.calls[0]
+    assert director_call["system"] == DIRECTOR_SYSTEM_PROMPT
+    assert director_call["max_tokens"] == WRITER_MAX_TOKENS
+    assert "Motion craft:" in director_call["prompt"]
+    assert "Still dialect:" not in director_call["prompt"]  # scene lane writes no stills
+    assert "the ending they cut" in director_call["prompt"]  # pitch JSON present
 
 
-def test_mixed_motion_tags_still_one_scene_call(rules):
+def test_pitch_travels_inside_the_injection_guard(rules):
+    """The pitch is untrusted data (a beat's prose could read as an instruction), so
+    it rides inside <story> tags the system prompt tells the model to treat as
+    material only. Instructions to the director — the craft rules, the location —
+    must stay OUTSIDE the tags, or the guard would disarm them too."""
+    fake = FakeLLM(_plan(_draft_shots(3)))
+    ContentWriter(llm=fake).write(
+        _pitch(3),
+        rules=rules,
+        reference_image_paths=["refs/eve/front.png"],
+        world_anchor="A grand ice-tower chamber, pale marble floor.",
+    )
+    prompt = fake.calls[0]["prompt"]
+    assert prompt.startswith("<story>")
+    body, _, after_guard = prompt.partition("</story>")
+    assert "the swordswoman advances through the rain" in body  # beats: inside
+    assert "Motion craft:" in after_guard  # instructions to obey: outside
+    assert "A grand ice-tower chamber" in after_guard
+
+
+def test_mixed_motion_tags_still_one_call(rules):
     shots = _draft_shots(3)
-    shots[1] = ShotDraft(
+    shots[1] = DirectorShotDraft(
         beat_role=BeatRole.build,
         motion_tag=MotionTag.fluid_motion,
-        motion_intent="Water arcs over the wall, edges holding.",
+        scene_line="Water arcs over the wall, edges holding. Audio: the hiss of spray.",
         duration_seconds=4,
         narration_line="x",
         characters_in_frame=["WRONG_ECHO"],
     )
     fake = FakeLLM(_plan(shots))
     package = _write(_pitch(3), fake, rules)
-    assert len(fake.calls) == 2  # tags are metadata — no per-model batching (D3)
+    assert len(fake.calls) == 1  # tags are metadata — no per-model batching (D3)
     assert {shot.model_cli_id for shot in package.shots} == {rules.scene_model()}
 
 
-def test_scene_line_count_mismatch_raises(rules):
-    fake = FakeLLM(_plan(_draft_shots(3)), conversion_prompts=["only one"])
-    with pytest.raises(ValueError, match="returned 1 lines for 3 shots"):
-        _write(_pitch(3), fake, rules)
+# A line-count mismatch used to be its own failure mode (the scene call could
+# return 1 line for 3 shots) and had its own test. Since the director merge,
+# scene_line is a FIELD of each drafted shot, so structured output makes one line
+# per shot structurally guaranteed — the only count that can still be wrong is
+# shots-vs-beats, covered by test_director_beat_count_mismatch_raises.
 
 
-def test_motion_prompts_assigned_in_shot_order(rules):
+def test_scene_lines_assigned_in_shot_order(rules):
     package = _write(_pitch(3), FakeLLM(_plan(_draft_shots(3))), rules)
     assert [shot.scene_line for shot in package.shots] == [
         "CONVERTED[0]. Audio: rain on pavement.",

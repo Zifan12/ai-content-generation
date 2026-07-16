@@ -953,3 +953,51 @@ Track every shipped feature that fails, what was tried, and what fixed it.
   step Path B topics get.
 - Decision: not being fixed now. Session scope is Path B only; Path A's research-depth parity is
   a real, legitimate design question for later, not an active work item.
+
+
+### BUG-028 - test_package_total_10s_accepted builds a 2s shot against a 3s floor, has failed since the floor was raised
+- Date opened: 2026-07-15 (hit while running the suite for the director merge, ticket 03)
+- Status: open — out of scope for the director merge, logged rather than silently fixed. Confirmed
+  PRE-EXISTING by stashing the ticket-03 diff and re-running on HEAD: same failure, so the merge
+  neither caused nor masks it.
+- Feature: `tests/schemas/test_generation.py::test_package_total_10s_accepted` via its `_shot_spec`
+  helper.
+- Behavior: the test asks for a package totaling 10s and reaches it with a shot of
+  `duration_seconds=2`. `ShotSpec.duration_seconds` is `Field(ge=3, le=8)`, so the helper raises
+  `ValidationError` before the test's actual assertion (the 10s total-envelope floor) is ever
+  exercised.
+- Root cause: the per-shot floor was raised 2 -> 3 on 2026-07-12 (a 2s shot cannot fit a readable
+  action — pitch-43's 2s/3-action hook rendered smeared). The product-envelope test was not
+  re-based onto the new floor, so it still composes 10s the old way.
+- Why it matters beyond a red square: the 10s total floor is currently UNTESTED. The test that
+  claims to cover it dies in its fixture, so a regression in `_check_total_duration` would not be
+  caught. This is a false sense of coverage, not just a broken test.
+- Fix (not applied): re-base the fixture onto durations that are legal per-shot and still total 10
+  (e.g. 3+3+4), so the assertion under test actually runs.
+
+
+### BUG-029 - the voiceover path is still live in code with no kill-switch; only a prompt convention keeps it silent
+- Date opened: 2026-07-15 (examined while merging PLAN+SCENE into the director, ticket 03 — the PRD
+  required narration_line be examined rather than carried into the director unexamined)
+- Status: open — deliberately out of scope for ticket 03 (PRD: "Log and fix separately"). The
+  prompt half was addressed in passing; the assembly half is untouched.
+- Feature: `src/generation/assembly.py` (TTS + mix), `ShotSpec.narration_line`, and the writer's
+  beat gate in `src/generation/content_writer.py`.
+- Behavior: the product is pure picture + native sound (native-quality-v2, locked 2026-07-07) — no
+  voiceover of any kind. But assembly still calls TTS and mixes narration whenever
+  `narration_line` is non-null, with NO global kill-switch. Nothing enforces the product rule; the
+  only thing keeping the product silent is a CONVENTION — the pitcher's prompt says narration_line
+  is "retired, LEAVE THIS NULL", and the writer's gate (`draft.narration_line if
+  beat.narration_line is not None else None`) then drops whatever the director wrote.
+- Consequence: a stale pre-pivot `story_json` row (written while narration was still a real field)
+  would pass `beat.narration_line is not None`, survive the gate, and ship real voiceover into a
+  no-voiceover product. This is the same shape as the bug the whole director-stage PRD exists to
+  fix: a product guarantee resting on an LLM instruction instead of code.
+- Partially mitigated 2026-07-15 (ticket 03): the merged DIRECTOR prompt no longer instructs
+  narration composition (PLAN's "2.2 words per second" rule); it mirrors `hook_text` with
+  "ignore — always return null". Live-path behavior is unchanged (the beat gate already dropped it);
+  a legacy row is now strictly safer, because the director returns null even when the beat carries
+  text. The DEFECT REMAINS: the guarantee is still a prompt instruction plus a gate keyed on the
+  stale beat, not a code-level switch.
+- Fix (not applied): a single explicit no-voiceover switch at assembly, so the product rule is
+  enforced where the audio is actually mixed rather than three stages upstream.
