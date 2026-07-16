@@ -1009,9 +1009,20 @@ Track every shipped feature that fails, what was tried, and what fixed it.
 
 ### BUG-030 - our identity reference images smile into the lens; refs beat prompts, so the character smiles into the lens
 - Date opened: 2026-07-16 (pitch-51 paid render, 67.5cr — full forensics `render_taste_test/PITCH51_FORENSICS.md`)
-- Status: open. Systemic — the char-sheet generator produces this for EVERY character, forever. Blocks
-  any render whose payoff depends on a specific expression.
-- Feature: `refs/<slug>/sheet_identity.png` + `master.png`, produced by the char-sheet generator.
+- Status: open. Blocks any render whose payoff depends on a specific expression.
+- Feature: `refs/elfaria_albis_serfort/sheet_identity.png` — a HAND-PLACED asset. No code produces it.
+- ATTRIBUTION CORRECTED 2026-07-16 (this entry originally blamed the char-sheet generator; that was
+  wrong, and the correction narrows the bug to a one-off asset):
+  - Nothing in the repo writes `sheet_identity.png` or `master.png`. `scripts/make_char_sheet.py`
+    writes `front.png` / `three_quarter.png` / `profile.png` (`make_char_sheet.py:67-71,134`).
+    Grep for both filenames across `*.py|*.md|*.yaml` returns only prose (bugs.md, DECISIONS_LOCKED,
+    PITCH51_FORENSICS, the two WHY_ARCHIVED notes) — never a writer. The live refs were hand-made.
+  - The generator ALREADY prescribes neutral: "Neutral expression, arms relaxed at the sides"
+    (`make_char_sheet.py:85`), under a comment citing the very playbook line this bug rests on
+    (`make_char_sheet.py:64-66`). So "the generator produces this for EVERY character, forever"
+    was false — the smile is a one-off in a hand-made file, not a systemic generator defect.
+  - The generator DOES have a real, separate systemic defect — wrong ref SHAPE, not expression.
+    Filed as BUG-032; do not conflate the two.
 - Behavior: `refs/elfaria_albis_serfort/sheet_identity.png` shows her SMILING with eyes on the lens.
   On the pitch-51 render her payoff shot — prompted "a satisfied smirk curls her lips", camera "slow
   tilt up... to her face" — rendered as a wide open smile aimed directly INTO CAMERA. The register
@@ -1067,3 +1078,93 @@ Track every shipped feature that fails, what was tried, and what fixed it.
   chest") and re-render on the SAME lane. This is the cheap, targeted next test — cheaper and better
   aimed than a lane change. Unlike a prompt tweak, beats ARE mechanically checkable, so this one is a
   candidate for code enforcement rather than another instruction.
+- CAUTION on that last sentence, added 2026-07-16: "beats ARE mechanically checkable" is an ASSERTION
+  written in the same session that spent the 67.5cr — it is not a measured fact, and it is the exact
+  argument that produced the rejected lexical spine check (see memory `project_spine_check_rejected_lexical`).
+  The failing line carries TWO verbs; the corpus rewrite carries four — a verb/clause counter cannot
+  separate "beat-free but verb-heavy" from "decomposed but terse" without a lexical proxy that breaks
+  on paraphrase. Do NOT build a checker before a render proves beats fix the zero-frame lift: the fix
+  itself is untested (forensics §4), and enforcement for an unvalidated fix is how the spine check was
+  born. If one is ever built, the gate is that it must separate the two lines already in the forensics
+  PLUS a deliberate false-positive and false-negative.
+- STAGE ATTRIBUTION, corrected 2026-07-16 from the render artifacts (was: "Feature: DIRECTOR_SYSTEM_PROMPT
+  + motion_craft"). The beat-free motion is authored UPSTREAM of the director:
+  - Pitch 51 beat 3 `required_action` (DB `angle_pitches.story_json`) is ALREADY beat-free:
+    "lifting Will by the wrist and cradling him against her chest, holding his lolling head".
+  - The pitcher's own spec is what produced that shape — `story_pitcher.py:99-104` asks for the move
+    "in a few words" and its worked example is "reaches in and lifts the egg out of the nest", a
+    2-verb+target shape structurally identical to the line that failed. No pitcher instruction
+    mentions pacing, counts, pauses, or "final second"; the pitcher never loads `render_rules.yaml`.
+  - The director then emitted "Still gripping Will's wrist, Elfaria lifts him from the floor onto the
+    bed, cradling him against her chest" (`output/smoke_runs/smoke_20260716_002107_2899ec1.json`,
+    shots[3].scene_line) — it carried the sub-motions (lift, cradle, chest) and chained the grip from
+    the prior beat.
+  - "BEAT-FREE" IS TOO STRONG (adversarial 4-agent verify, 2026-07-16 — corrected my own first read).
+    The line is not free of sequence: lift → cradle → head-lolls → smirk → speech. It is the THIN END
+    of a texture gradient, not a binary collapse. What is actually thinner on shot 3 than on shots 0/2
+    is INVENTED tactile texture: shots 0 ("fingers scraping with each convulsion") and 2 ("trailing
+    fingers leaving faint marks") spend their whole budget on physical detail; shot 3 does not. And NO
+    shot in the package literally counts beats ("four steps... pause... final second") — so the
+    counted-beats form was ignored UNIFORMLY, not specifically on the lift.
+  - "DISPLACEMENT-SPECIFIC" IS NOT ESTABLISHED and is NOT corpus-backed. The corpus draws no
+    displacement-vs-continuous difficulty distinction anywhere; it is SILENT on how to write a
+    lift/carry and SILENT on zero-frame rendering entirely (both confirmed by full-read, not grep).
+    "A bare displacement verb is the canonical bad example" is a PROJECT framing built by applying the
+    corpus's ONE generic rule ("one action, as counted beats, not a vague verb", `03:14-16`) to this
+    case — legitimate, but not a named corpus class. With n=1 pitch, "only displacement collapses"
+    cannot be asserted.
+  - THE DIRECTOR ALREADY HAS THE BEATS RULE. Direct read (`content_writer.py:417-419` injects the
+    whole `motion_craft` dict; `render_rules.yaml:300` is `action_as_beats`) confirms the director's
+    prompt carries counted-beats verbatim, alongside `one_move_one_action` and its own "countable
+    physical beats". So "give the director the rule" is a DEAD fix — it has the rule and applied it
+    to no shot.
+  - RETRACTED 2026-07-16 (two adversarial refuters + advisor): "the director ignored the beats rule /
+    there is a free enforcement fix" is WRONG. The director was NOT starved of the rule and did NOT
+    disobey it. `action_as_beats` is referenced loudly in the system prompt (`content_writer.py:201-203`,
+    `247-248`, `260-262`) AND injected verbatim every call (`:419`); it does NOT conflict with
+    `one_move_one_action` — both cite the identical "four steps... pause... final second" example, and
+    `test_content_writer.py:457-473` already guards against them contradicting. The output being
+    flowing-chain is EXPECTED, not a violation: the pitch's beats are short atomic gestures
+    (claw/clasp/drag/lift) and beat 2's `required_action` upstream literally says "one smooth motion".
+    "Lifts him onto the bed" is a short specific action, not a vague long traversal like "walks across
+    the room" — the corpus beats rule may not even bite here. So there is NO demonstrated text defect
+    to enforce, and the "word-budget contention" hypothesis (my earlier note here) is also unsupported —
+    shot 3 HAD ~5.7s of screen time and spent it static.
+  - BEST-SUPPORTED CAUSE (measured, forensics §1 — a RENDER-MODEL behavior, not a text defect): the
+    model rendered the displacement AS A CUT and then held the end-state static. Cut detected at 9.20s;
+    lift tile shows Will on the floor at 9.17s and already cradled at 9.25s (the cut falls between them);
+    the final segment 9.20s→15s (~5.7s, 38% of runtime) is the near-static cradle two-shot. The payoff
+    shot opened on its own end-state and held it — exactly "opens on an end-state with no visible cause"
+    (the failure the director prompt forbids for TEXT), done by the model to the PIXELS. The corpus is
+    silent on this behavior; NO prompt change is proven to touch it.
+  - LEVERS THAT ACTUALLY TARGET "displacement falling into a cut" (both UNTESTED): give the lift its
+    own sustained shot, or splice (real per-clip duration). Splice already came back "better but"
+    motion-sparse (2026-07-13 A/B) and costs ~2x. Per-shot screen-time has no lever on single_gen
+    (bracket timestamps CLI-rejected). So the only remaining moves are empirical and cost credits —
+    a SPEND decision (the user's), not a code fix. Investigation has bottomed out: corpus exhausted,
+    code understood, rule present-and-followed.
+
+
+### BUG-032 - the char-sheet generator emits a 3-angle multi-view suite with no headshot, contradicting our own 2-ref rule
+- Date opened: 2026-07-16 (surfaced while correcting BUG-030's mis-attribution)
+- Status: open, LATENT — no character currently in the live library was made by this generator, so it
+  has never yet confounded a render. It would confound the first one it produces.
+- Feature: `scripts/make_char_sheet.py`
+- Behavior: `_ANGLES` (`make_char_sheet.py:67-71`) generates `front` ("a front-facing full-body view"),
+  `three_quarter` ("body and face turned about 45 degrees") and `profile` ("face and body fully
+  side-on") — three full-body angles of one person, and NO headshot. Every image in a character folder
+  is sent to the render (`reference_check.py:174`), so a character built by this tool ships exactly the
+  turnaround-shaped ref set that was archived on 2026-07-15, and trips `reference_check`'s own
+  multi-view advisory (`reference_check.py:127-133`) on its first run.
+- Root cause: the generator predates the 2026-07-15 vendor finding. Its docstring still describes
+  "3 angles is the coverage knee (reference-material-playbook L66-77: front → ¾ → profile)"
+  (`make_char_sheet.py:17-21`) — a rule the project has since superseded. [cited]
+  `ai_video_resources/lanshu-awesome-ai-video-kit/methodology/08-避坑12问.md:21`: 人物参考使用大头照 +
+  全身照即可，不建议使用人物多视图 — headshot + full-body ONLY; multi-view reads as multiple subjects
+  and worsens ID drift. The two live characters escaped this only because their refs are hand-made.
+- Note: the generator's EXPRESSION handling is already correct ("Neutral expression",
+  `make_char_sheet.py:85`) — do not conflate this with BUG-030.
+- Fix (not applied): replace the 3 full-body angles with the vendor's two — a headshot and a full-body
+  — and update the docstring's superseded coverage-knee rationale. Cheap and cited, but it is NOT on
+  the critical path for the pitch-51 re-render (both live characters already have hand-made 2-ref
+  sets), so it should not delay that test.
