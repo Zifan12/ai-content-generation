@@ -143,11 +143,30 @@ _SCENE_BUDGET_ATTEMPTS = 2
 #    blending. Writing an expression CHANGE against a neutral ref face is a
 #    potential prompt-reference fight that no source reconciles.
 #
-# EVERY EXAMPLE BELOW IS DELIBERATELY FAR-DOMAIN (eggs, engines, baseball, snow —
-# never our characters or rooms). Measured 2026-07-15 (memory
-# feedback_prompt_examples_far_domain): examples drawn from our own story bias the
-# output toward copying them, and removing examples entirely breaks the field
-# outright (0/5 filled). Move examples to a far domain; never delete them.
+# EVERY EXAMPLE BELOW IS DELIBERATELY FAR-DOMAIN (eggs, engines, lighthouses,
+# baseball, snow — never our characters, rooms, beds, or their actual lines).
+# Measured 2026-07-15 (memory feedback_prompt_examples_far_domain): examples drawn
+# from our own story bias the output toward copying them, and removing examples
+# entirely breaks the field outright (0/5 filled). Move examples to a far domain;
+# never delete them. The trap is subtle and it caught the first draft of THIS
+# prompt: an adversarial diff found the role block illustrating a dropped
+# destination with "dragged backward across the room" and D7 illustrating a static
+# adjective with "a cool, satisfied smirk" — both lifted verbatim from pitch 47's
+# real shipped output. A cautionary example still teaches the model the vocabulary
+# it is being warned about; NEGATIVE examples need the far domain exactly as much
+# as positive ones do.
+#
+# TWO PLAN RULES WERE DELIBERATELY NARROWED, not lost:
+#  - The framing half of PLAN's arc guidance ("framing tightens as the story
+#    peaks: wide early, closest at the payoff") is GONE, because shot_size is the
+#    beat's to choose and the director may not override it. Its pacing half (the
+#    payoff gets the most air) survives on duration_seconds. Keeping both would
+#    have told the model to honor shot_size AND to re-pick framing — two rules in
+#    tension with an LLM refereeing, which is the failure mode this PRD exists to
+#    kill.
+#  - "Show emotion ONLY through the body" lost its "only" to make room for D7's
+#    narrow close-up facial-CHANGE exception. The exception is tightly scoped
+#    ("At a CLOSE-UP or the story's peak"), so the body-first default stands.
 DIRECTOR_SYSTEM_PROMPT = """\
 <role>
 You are the DIRECTOR for a channel that renders the scene a fandom is currently
@@ -157,11 +176,11 @@ into a finished, render-ready shot line.
 Elevating the idea with craft is YOUR JOB and the reason you exist: the camera
 move, the concrete sound, and the physical detail the pitch never specified are
 yours to invent, and a shot that is merely the beat restated is a failure. What
-you may NOT do is lose the story. Adding "his arms stretching ahead, three faint
-trails across the stone" to a beat that only said "dragged" is elevation. Turning
-"pulling him toward the doorway" into "dragged backward across the room" is not
-elevation — it deletes the place the story was heading, and the audience then
-watches motion with no destination.
+you may NOT do is lose the story. Adding "his boots skidding on wet gravel, his
+breath clouding" to a beat that only said "runs" is elevation — invent freely
+there. Turning "runs for the lighthouse" into "runs across the headland" is NOT
+elevation: it deletes the place the story was heading, and the audience is left
+watching motion with no destination.
 
 The finished video must read as a DELETED SCENE from a PHOTOREAL LIVE-ACTION
 ADAPTATION of the source work — the register of a prestige streaming-service
@@ -203,8 +222,8 @@ line. Everything else about the shot is yours.
 Each scene_line must contain, in this order:
 1. FRAMING — the beat's shot_size and an angle, as plain camera language ("Medium
    shot", "Close-up from behind", "Wide low-angle shot"). The beat's shot_size is
-   AUTHORITATIVE — never substitute a different size; the pitch chose it and the
-   system re-copies it regardless. The ANGLE is the part shot_size leaves open:
+   AUTHORITATIVE — the pitch chose that framing deliberately, so render THAT size
+   and never substitute another. The ANGLE is the part shot_size leaves open:
    vary it across the scene, and when two adjacent beats share a size, change the
    angle so the cut does not stutter.
 2. SUBJECT + ACTION — who is on screen and ONE CONTINUOUS MOVE they perform,
@@ -230,7 +249,7 @@ Each scene_line must contain, in this order:
    ("sad", "moved") and never explain intent. At a CLOSE-UP or the story's peak
    you may write the FACE, but ONLY as a CHANGE the camera can watch happen ("her
    jaw unclenches as the engine finally turns over", "his grin fades") — NEVER a
-   static adjective stacked onto the shot ("a cool, satisfied smirk"), which
+   static adjective stacked onto the shot ("a fierce, determined glare"), which
    renders as a generic pleasant expression and inverts the register you asked
    for. Most shots carry no facial description at all.
    Refer to each character by the EXACT same name in every shot line — never swap
@@ -317,7 +336,9 @@ Each scene_line must contain, in this order:
 - duration_seconds: integer 3-8 per shot, total 10-15. This is an INTERNAL
   estimate that gates the product's total-runtime envelope — it never appears in
   any prompt, and the video model is never told it. Never plan a shot under 3
-  seconds: an action needs that long to physically read on screen.
+  seconds: an action needs that long to physically read on screen. Allocate air
+  deliberately across the arc — the hook can open wide and brisk, the build
+  carries the middle, and the payoff beat gets the MOST air of any shot.
 - narration_line: ignore — always return null. The product has no voiceover and no
   on-screen text of any kind; the picture and its native sound carry the story
   alone.
