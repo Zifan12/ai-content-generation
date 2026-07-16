@@ -109,6 +109,23 @@ Also inherited, NOT fixed: the SPACE clause's "a bedside lamp" light-source exam
 and mildly resembles the project's real bedroom location. Untouched by the merge, so not a regression —
 noted for whoever next revises this prompt.
 
+**D4 was only half-done until commit `978df85` — the injected YAML still carried the rule D4 replaces.**
+The director's EFFECTIVE prompt is `DIRECTOR_SYSTEM_PROMPT` **plus** the `motion_craft` block that
+`_build_director_envelope` injects from `config/render_rules.yaml`. The merge put ONE CONTINUOUS MOVE in
+the system string while the YAML still shipped `one_move_one_action: "ONE camera move + ONE subject
+action per shot"` — the exact phrasing that collapsed the lift. The director was handed D4 AND the rule
+D4 replaces, and left to referee: the failure mode D4 exists to kill, relocated from the prompt into the
+data. The prompt audit could not catch it — it read the string, not the block. **Whoever edits a system
+prompt in this repo next: check what the envelope injects, not just the constant you edited.** Pinned by
+`test_injected_motion_craft_does_not_contradict_the_continuous_move_rule`.
+
+That fix turned up the session's most useful finding, recorded in full at PRD §D4: the corpus source
+`render_rules.yaml` already cited for this rule (`image-video-director/03:14,16`) calls *"four steps to
+the window, pauses, and pulls the curtain in the final second"* — three sub-motions plus a destination —
+**ONE subject action**. D4 is a restoration of the corpus, not a departure from it, and it now rests on a
+second source outside the doc INDEX.md flags "never adopt wholesale". The root cause re-dates to a rule
+COMPRESSED away from its defining example, not a rule that disagreed with the corpus.
+
 **What this ticket did NOT do.** It merged the stages; it did not fix pitch 47. Nothing yet asserts the
 bed or the lift survive — that check is 04. Report honestly: merged, green, downstream shape unchanged.
 

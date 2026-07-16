@@ -168,6 +168,29 @@ it gives its reason, and it concerns prose structure rather than frontend mechan
 transfers to the Higgsfield CLI. **Plausibly, not measured** — nothing in the corpus tests it on our
 platform. If a future render shows flowing-motion beats rendering worse, this is the assumption to pull.
 
+**SUPERSEDED 2026-07-15 (during ticket 03) — the caveat above understates D4's footing. Read this
+before pulling the assumption.** [cited] A second, independent corpus source says the same thing, and
+it is the source the project's own `config/render_rules.yaml` ALREADY cited for this very rule:
+`ai_video_resources/image-video-director/03-video-prompting-techniques.md:14` — *"Constrain each shot to
+a single camera behavior and a single subject action"* — whose own worked example at `:16` is:
+
+> Example: "Actor takes four steps to the window, pauses, and pulls the curtain in the final second."
+
+**Three sub-motions and a destination, and the corpus calls it ONE subject action.** So "one subject
+action" NEVER meant one verb, anywhere in the corpus. D4 is not a departure from the corpus — it is a
+**restoration** of it. 03 is a general video-prompting doc, NOT the flagged OpenArt playbook, so the
+source-tier caveat does not apply to it.
+
+**This also re-dates the root cause.** The bug was not that our rule disagreed with the corpus; it was
+that our rule COMPRESSED the corpus rule down to the bare phrase "ONE subject action per shot" and
+dropped the example that defined it. The bare phrase is what PLAN echoed and what the LLM obeyed when
+it collapsed "lifts... and cradles" to "cradles". A rule stripped of its example silently changes
+meaning — the same mechanism as [[feedback_prompt_examples_far_domain]]'s no-examples ablation (0/5
+fields filled), hit from the other direction.
+
+**The conflict with our pitcher's "split micro-motions across beats" rule stands as described above** —
+that rule is genuinely ours and genuinely wrong, and 02 relaxed it. Nothing here changes that.
+
 **The evidence:** the user watched the render. It cuts from dragging straight to lying-on-chest. Beat 4
 ("lifts Will onto the bed and cradles him") **violated our rule and was correct for it**; the craft gate
 passed it anyway; then PLAN's `ONE subject action` collapsed it to one verb and killed the lift.
