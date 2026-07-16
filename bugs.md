@@ -1005,3 +1005,65 @@ Track every shipped feature that fails, what was tried, and what fixed it.
   stale beat, not a code-level switch.
 - Fix (not applied): a single explicit no-voiceover switch at assembly, so the product rule is
   enforced where the audio is actually mixed rather than three stages upstream.
+
+
+### BUG-030 - our identity reference images smile into the lens; refs beat prompts, so the character smiles into the lens
+- Date opened: 2026-07-16 (pitch-51 paid render, 67.5cr — full forensics `render_taste_test/PITCH51_FORENSICS.md`)
+- Status: open. Systemic — the char-sheet generator produces this for EVERY character, forever. Blocks
+  any render whose payoff depends on a specific expression.
+- Feature: `refs/<slug>/sheet_identity.png` + `master.png`, produced by the char-sheet generator.
+- Behavior: `refs/elfaria_albis_serfort/sheet_identity.png` shows her SMILING with eyes on the lens.
+  On the pitch-51 render her payoff shot — prompted "a satisfied smirk curls her lips", camera "slow
+  tilt up... to her face" — rendered as a wide open smile aimed directly INTO CAMERA. The register
+  inverted (a cool private smirk at another character became a broad smile at the viewer). This is the
+  THIRD session running that this shot has failed the same way; each previous session tried to fix it
+  in the PROMPT (D7, expression-as-a-CHANGE, "her smirk widens") and each was overridden.
+- Root cause [cited]: `ai_video_resources/reference-material-playbook.md:59-60` — "Baseline rules that
+  hold everywhere: no multi-face collages; neutral expression mandatory (smiling ref reshapes face into
+  a 'midpoint face')." We violate it. And `reference-material-playbook.md:112-114` — "prompt
+  contradicting refs → blend or per-shot alternation. Prompt must describe the ref or stay silent on
+  ref-covered attributes." REFS WIN. Seedance specifically is "Strong at single-scene reference
+  adherence" (`image-video-director/01-model-registry.md:212`) — the worst model to argue with in text.
+  We were handing the model a photo of her smiling at the camera while telling it, in words, to smirk.
+- Natural experiment (same render, n=2): Will's `sheet_identity.png` is neutral/deadpan → Will renders
+  correctly vacant. Elfaria's smiles → Elfaria smiles. Only the ref's expression differs.
+- Fix (not applied): regenerate identity refs with a NEUTRAL expression. Cited, unambiguous, safe.
+- OPEN CONTRADICTION, do not guess: eyeline. `Dan Kieft Cinematic Seedance Updated.md:507-520` — the
+  recipe our sheets were built from — explicitly prescribes "eyes looking straight into the camera
+  lens" for an identity plate, while `reference-material-playbook.md:86-87` says "Pose belongs to the
+  SHOT... identity belongs to the refs." No source reconciles them; no source warns that a still ref's
+  gaze carries into a video render. Settling it needs a controlled A/B (same text, camera-facing ref vs
+  off-axis ref), not a decision from the armchair.
+
+
+### BUG-031 - the director emits beat-free action lines; the action then renders in zero frames
+- Date opened: 2026-07-16 (pitch-51 paid render — forensics `render_taste_test/PITCH51_FORENSICS.md`)
+- Status: open. This is the actual cause of the pitch-47/51 "the lift never happens" failure that the
+  whole director-stage PRD (tickets 02/03/04) was built to fix and did not.
+- Feature: `DIRECTOR_SYSTEM_PROMPT` in `src/generation/content_writer.py` + `motion_craft` in
+  `config/render_rules.yaml`.
+- Behavior: the shipped line was "Elfaria lifts him from the floor onto the bed, cradling him against
+  her chest." Measured at 12fps: at 9.17s he is flat on the floor; at 9.25s — the next frame — he is
+  already cradled on the bed. The lift rendered in ZERO frames despite the shot having 5.7 seconds.
+- Root cause [cited]: a bare displacement verb is the corpus's canonical BAD example.
+  `image-video-director/03-video-prompting-techniques.md:15` — "'Actor walks across the room' is
+  underspecified. The model guesses pace, path, camera relationship." The documented fix is BEATS
+  (`03:14,16`): "Express action as beats (counts, pauses, 'final second')" — worked example "Actor
+  takes four steps to the window, pauses, and pulls the curtain in the final second." Corroborated by
+  `lanshu .../03-分镜时序.md:3,14,16`: the model "decouples space and time" and cannot judge an
+  action's start and end from an undifferentiated sentence.
+- Why the PRD's fix missed it: pitch 47's bug was the WRITER collapsing "lifts...and cradles" to
+  "cradles", so tickets 02/03 restored VERB COUNT. The corpus's fix was BEAT DECOMPOSITION. On pitch 51
+  both verbs were present and the lift still rendered zero frames. Verb count was never the mechanism.
+  (D4's flowing-motion principle is not wrong — `Dan Kieft:471` and `03:16` both use multi-verb
+  examples — it is insufficient.)
+- The infuriating part: WE ALREADY HAVE THIS RULE. `render_rules.yaml` `motion_craft.action_as_beats`
+  states it verbatim and is injected into the director's prompt, alongside `one_move_one_action` and
+  DIRECTOR_SYSTEM_PROMPT's own "countable physical beats". Three statements of the rule; the director
+  emitted a beat-free line anyway. The rule is present and unenforced — same shape as every other
+  failure in this pipeline: rules live in prompts, and prompts are suggestions.
+- Fix (not applied, and NOT yet tested): rewrite the same shot with countable sub-motions ("grips his
+  wrist, pulls him upright, lifts him onto the mattress in one motion, then draws him against her
+  chest") and re-render on the SAME lane. This is the cheap, targeted next test — cheaper and better
+  aimed than a lane change. Unlike a prompt tweak, beats ARE mechanically checkable, so this one is a
+  candidate for code enforcement rather than another instruction.

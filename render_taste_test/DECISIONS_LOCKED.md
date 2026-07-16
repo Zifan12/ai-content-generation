@@ -235,6 +235,49 @@ PARTIAL-ACCEPT.** Split verdict:
 
 ---
 
+## L9. Pitch-51 paid render (2026-07-16, 67.5cr) — FIRST clean-ref render. Read the forensics.
+
+**Full evidence + all citations: `render_taste_test/PITCH51_FORENSICS.md`.** Do not re-derive; do not
+propose a render fix without reading it. Operational must-knows:
+
+- **Refs are now headshot + full-body ONLY** (2/character, turnaround + detail sheets archived
+  2026-07-15). Identity HELD on this render — both characters matched refs. The multi-view defect is
+  fixed; renders from here are no longer confounded by it.
+- **A beat-free action line does not render.** "lifts him from the floor onto the bed" is the corpus's
+  canonical BAD shape (`image-video-director/03:15`) — it rendered in ZERO frames despite having 5.7s.
+  The fix is countable beats (`03:14,16`), NOT verb count. Our own `render_rules.yaml`
+  `motion_craft.action_as_beats` already says this and the director ignored it.
+- **Our identity refs violate a cited baseline rule.** `reference-material-playbook.md:59-60`:
+  "neutral expression mandatory (smiling ref reshapes face into a 'midpoint face')". Elfaria's
+  `sheet_identity.png` smiles into the lens — and she renders smiling into the lens on the payoff,
+  overriding every prompt rule we wrote. Will's ref is neutral and Will renders correctly. **Refs beat
+  prompts** (`reference-material-playbook.md:112-114`); Seedance is "strong at single-scene reference
+  adherence" (`01-model-registry.md:212`). See BUG-030.
+- **The location ref DICTATES THE CAMERA.** For ~3s the render reproduced `room.jpg`'s exact camera
+  and composited the characters in; our authored framing was ignored. We role-declare NONE of our 5
+  uploads, and `video_model_system_guide.md:347-351` says un-role-tagged uploads cause "ambiguous
+  processing" — but that is @-tag dialect and `INDEX.md:22` warns Higgsfield binds POSITIONALLY.
+  **Unresolved; biggest open gap.**
+- **Assembly was manufacturing judder.** It force-converted 24fps renders to 30fps, duplicating 90
+  frames. Fixed (`_FPS = 24`, commit 9f50175). **Never resample; keep _FPS equal to what the model
+  emits.** Every render judged before 2026-07-16 carried this.
+- **NOT a slideshow — measured.** 360 frames, ZERO near-zero deltas, mean motion 7.65, sustained
+  2s–14s. Use `tblend=difference,signalstats` on the RAW take (not the assembled file) to measure this
+  again; it is free and beats eyeballing.
+- **Shot count was never the problem.** 4 shots in 15s is mid-bracket (`Dan Kieft:47-51`,
+  `guide:499-503`). 2 characters is within `15-seedance-masterclass.md:136-139`.
+- **The model allocates screen time badly and there is NO lever.** It gave one beat ~0.9s and parked
+  5.7s (38%) on a near-static two-shot. Bracket timestamps are measured-rejected here; word-count →
+  screen-time is absent from the whole corpus.
+
+**PROCESS (the real finding):** three of these four failures were already documented in our own files
+before the render, and `docs/superpowers/plans/2026-07-12-anime-tutorial-lane.md:59-71` records that
+the single-gen vs splice A/B ALREADY RAN on 2026-07-13 (splice = "better but", still motion-sparse)
+**and that no further renders were authorized.** This render went ahead on the deprecated lane anyway.
+Read the file before you spend.
+
+---
+
 *Change policy: Tier 1 changes require a paid-render counter-evidence note (date +
 artifact path). Tier 2 changes require a spec supersession. Either way, edit THIS
 file in the same commit — it is the file other docs point at.*
