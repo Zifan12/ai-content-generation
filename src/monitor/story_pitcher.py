@@ -102,6 +102,14 @@ _STORYPITCH_FIELD_SPEC = """For each StoryPitch produce:
         the move, and a bare verb phrase is a story fact thrown away. Copy the
         whole move and every sub-motion of it. This is the other non-negotiable,
         held the same way.
+        MOTION ONLY — never a face, an expression, or a mood. "hauls the crate up
+        onto the tailgate" belongs here; "hauls the crate up onto the tailgate,
+        grinning with grim satisfaction" does not — cut the grin, keep the haul.
+        A face is not a motion. Code holds this field as the story's spine, so an
+        expression parked here gets locked in as if it were the movement itself,
+        and a locked-in expression renders as a stiff adjective on a face. How the
+        feeling reaches the screen is the render stage's craft, not your call —
+        put it in visual_line if it matters and leave this field pure movement.
     narration_line: an optional voiceover/caption line, or null — LEAVE THIS NULL. The
         product has no voiceover or on-screen text; narration_line is retired.
     dialogue_line: an optional SPOKEN line one character says on screen this beat, or

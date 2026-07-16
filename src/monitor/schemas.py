@@ -193,7 +193,7 @@ class StoryBeat(BaseModel):
     destination at all.
     """
     required_action: str | None = None
-    """The ONE flowing motion this beat exists to show.
+    """The ONE flowing motion this beat exists to show. MOTION ONLY — never a face.
 
     One continuous move, however many sub-motions it takes — "lifts Will onto the
     bed and cradles him" is ONE action, not two. The sub-motions of a single
@@ -201,6 +201,17 @@ class StoryBeat(BaseModel):
     L471: "One flowing motion per shot... not a setup sentence + an 'after he
     finishes…' block"). Do NOT reduce it to one verb: reducing "lifts... and
     cradles" to "cradles" is exactly the loss that produced the pitch-47 failure.
+
+    **No expression, mood, or facial state belongs in this field** (added
+    2026-07-15, ticket 04). Pitch 50 shipped ``"lifting Will's limp body onto the
+    bed and cradling him against her chest, holding his lolling head, looking down
+    with a satisfied smirk"`` — the trailing clause is expression, not motion, and
+    it leaked in from the beat's prose. It matters because CODE holds this field as
+    the story's spine: an expression parked here would be enforced as though it
+    were the movement, which is the one thing D7 forbids (a static adjective on a
+    face renders as a generic pleasant expression and inverts the intended
+    register — measured on pitch 47's payoff). Emotion is the render stage's craft,
+    written as a CHANGE at close-ups; it lives in ``visual_line``, never here.
 
     Optional ONLY for backwards compatibility — see ``destination``.
     """
