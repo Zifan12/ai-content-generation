@@ -128,6 +128,7 @@ models:
       cost_estimate_credits:        # executor dry-run pricing (ADR-0007): state cost per take before any paid run.
         # MEASURED 2026-07-06 from `higgsfield account transactions` (billing = ground
         # truth; the earlier ~35cr/10s session-note figure was wrong). Linear rates:
+        per_second_480p: 3.0        # 45cr/15s — one measured point (billing 2026-07-16, the lift-split probe)
         per_second_720p: 4.5        # 22.5cr/5s, 45cr/10s, 67.5cr/15s — three measured points
         per_second_1080p: 9.0       # inferred from two FAILED (refunded) attempts: 90cr/10s, 135cr/15s — confirm on first kept 1080p render
     dialect:

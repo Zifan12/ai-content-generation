@@ -1137,12 +1137,30 @@ Track every shipped feature that fails, what was tried, and what fixed it.
     shot opened on its own end-state and held it — exactly "opens on an end-state with no visible cause"
     (the failure the director prompt forbids for TEXT), done by the model to the PIXELS. The corpus is
     silent on this behavior; NO prompt change is proven to touch it.
-  - LEVERS THAT ACTUALLY TARGET "displacement falling into a cut" (both UNTESTED): give the lift its
-    own sustained shot, or splice (real per-clip duration). Splice already came back "better but"
-    motion-sparse (2026-07-13 A/B) and costs ~2x. Per-shot screen-time has no lever on single_gen
-    (bracket timestamps CLI-rejected). So the only remaining moves are empirical and cost credits —
-    a SPEND decision (the user's), not a code fix. Investigation has bottomed out: corpus exhausted,
-    code understood, rule present-and-followed.
+  - LEVERS THAT ACTUALLY TARGET "displacement falling into a cut": give the lift its own sustained shot
+    (TESTED — see below, FAILED), or splice (real per-clip duration; already "better but" motion-sparse,
+    2026-07-13 A/B, ~2x cost). Per-shot screen-time has no lever on single_gen (bracket timestamps
+    CLI-rejected).
+  - PROBE RESULT — SPLIT DISPROVEN (2026-07-16, 45cr, billed, single-variable). Took pitch-51's EXACT
+    render prompt and split ONLY the payoff: the lift got its OWN shot (no dialogue) with an explicit
+    "Camera: tilts up following his body as it rises off the floor" cue, then the cradle+line as a
+    separate shot. Everything else byte-identical (same 5 refs, same shots 1-3), rendered 480p/15s.
+    Artifacts: `output/smoke_runs/probe_lift_split_480p/` (take_1.mp4, sheet_2fps.jpg, lift_window.jpg,
+    motion.txt). MEASURED: the lift is STILL a one-frame teleport, just relocated to the new shot
+    boundary — `scdet` cut at 8.583s; inter-frame motion across the cut = [4.9 4.7 4.4 3.8 3.2 | 48.4 |
+    18.3 18.3 18.7] (the 48.4 spike IS the cut). Before: Will flat on the floor (wide). One frame after:
+    already cradled (close-up). The rise animates in ZERO frames — same as the 67.5cr render. A dedicated
+    lift shot + a follow-the-rise camera cue did NOT help.
+  - What the probe changed vs did not: freezedetect found NO static hold this time (the original's 5.7s
+    frozen cradle became a MOVING hold, ~18 motion — Elfaria turns/adjusts); mean motion 7.92, 1.9%
+    near-zero, identity held — so it is NOT a slideshow, it just refuses to show the lift. Splitting
+    converted "park on a frozen end-state" into "moving hold"; it did not make the displacement animate.
+  - CONCLUSION: the zero-frame lift is a genuine Seedance BEHAVIOR (it will not animate one body lifting
+    another off the floor), NOT a prompt-structure defect — two renders (bundled AND split) both collapse
+    it. FIX A ("relocation beat carries no dialogue") is therefore NOT a fix; the pitcher edit that
+    encoded it was reverted before this probe (correctly — validate before enforce). Remaining moves are
+    product-level: splice (weak, already tested) or REDESIGN the payoff to an action the model can
+    animate (no vertical body-lift). That is a taste/product call, the user's — not a code fix.
 
 
 ### BUG-032 - the char-sheet generator emits a 3-angle multi-view suite with no headshot, contradicting our own 2-ref rule
