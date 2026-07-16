@@ -957,9 +957,13 @@ Track every shipped feature that fails, what was tried, and what fixed it.
 
 ### BUG-028 - test_package_total_10s_accepted builds a 2s shot against a 3s floor, has failed since the floor was raised
 - Date opened: 2026-07-15 (hit while running the suite for the director merge, ticket 03)
-- Status: open — out of scope for the director merge, logged rather than silently fixed. Confirmed
-  PRE-EXISTING by stashing the ticket-03 diff and re-running on HEAD: same failure, so the merge
-  neither caused nor masks it.
+- Status: FIXED 2026-07-15 (commit below). Was: open, out of scope for the director merge, confirmed
+  PRE-EXISTING by stashing the ticket-03 diff and re-running on HEAD.
+- Fix: re-based the fixture off the dead 2s shot — `_package([4, 4, 2])` -> `_package([4, 3, 3])`.
+  Still totals 10, but every shot now clears the per-shot floor too, so the assertion under test
+  (the 10s total envelope) actually runs. Verified it now bites: [4,3,3]=10s accepted, [3,3,3]=9s
+  rejected — the floor is live and genuinely exercised, not just green. Also corrected the adjacent
+  9s-rejected test's comment, which still claimed "the per-shot floor is 2s".
 - Feature: `tests/schemas/test_generation.py::test_package_total_10s_accepted` via its `_shot_spec`
   helper.
 - Behavior: the test asks for a package totaling 10s and reaches it with a shot of

@@ -126,11 +126,17 @@ def test_package_total_12s_accepted():
 
 def test_package_total_10s_accepted():
     # The new floor (D1): one 10s Seedance generation must validate.
-    assert sum(s.duration_seconds for s in _package([4, 4, 2]).shots) == 10
+    # Durations were [4, 4, 2] until 2026-07-15 (BUG-028): the per-shot floor rose
+    # 2 -> 3 on 2026-07-12 (a 2s shot cannot fit a readable action — pitch-43's
+    # 2s/3-action hook rendered smeared) and this fixture was never re-based, so it
+    # died in _shot_spec on a ValidationError and the 10s floor it exists to guard
+    # went untested for three days. Every shot here must clear BOTH floors.
+    assert sum(s.duration_seconds for s in _package([4, 3, 3]).shots) == 10
 
 
 def test_package_total_9s_rejected():
-    # Below the 10s floor — constructible now that the per-shot floor is 2s.
+    # Below the 10s floor, built from shots that are each individually legal (>= 3)
+    # — so this fails on the TOTAL envelope, not the per-shot floor.
     with pytest.raises(ValidationError):
         _package([3, 3, 3])
 
