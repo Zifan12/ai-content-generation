@@ -80,26 +80,28 @@ _STORYPITCH_FIELD_SPEC = """For each StoryPitch produce:
     visual_line: what the camera SEES this beat — concrete, shootable, render-facing.
         ONE FLOWING MOTION per beat: one continuous physical move, however many
         sub-motions it takes. "Reaches in, lifts the egg, clutches it, backs away"
-        is ONE beat, not four. "Lifts him onto the bed and cradles him" is ONE beat.
-        The sub-motions of a single gesture belong together — splitting a flowing
-        move into a setup beat plus an "after that…" beat reads as two shots and
-        puts a cut in the middle of the action.
-        What does NOT belong together is SEPARATE events: "she laughs" + "the door
-        opens" + "he falls" is three beats, not one. Test: could a camera hold on
-        this without cutting, as one unbroken move? Then it is ONE beat.
+        is ONE beat, not four — the sub-motions of a single gesture belong
+        together, and splitting a flowing move into a setup beat plus an "after
+        that…" beat reads as two shots and puts a cut in the middle of the action.
+        What does NOT belong together is SEPARATE events that do not flow into one
+        move. Test: could a camera hold on this without cutting, as one unbroken
+        move? Then it is ONE beat.
         Each beat's motion BEGINS where the previous beat's motion ENDED (end-state
-        = start-state chaining): if beat 2 ends with her hand on the door, beat 3
-        opens from that hand on that door.
-    destination: WHERE this beat's motion is going, as a short noun phrase ("the
-        bed", "the far door") — or null when the beat goes nowhere ("she smirks at
-        the camera" has no destination; do NOT invent one). Set it whenever the
-        NEXT beat stops making sense if the character never arrives. This is a
-        non-negotiable: the render stage may rephrase your beat freely but is held
-        by code to keeping this.
+        = start-state chaining): if a beat ends with a hand on a latch, the next
+        opens from that hand on that latch.
+    destination: the place or object this beat's motion is AIMED AT, as a short
+        noun phrase — aimed at, not necessarily reached. A climber lunging for a
+        ledge has "the ledge" whether or not she catches it; a hand groping for a
+        dropped key has "the key". Fill it whenever the motion is going somewhere.
+        Null ONLY when the motion genuinely goes nowhere — a shiver, a laugh, a
+        look. Never invent one. This is a non-negotiable: the render stage may
+        rephrase your beat freely but is held by code to keeping it.
     required_action: the ONE FLOWING MOTION this beat exists to show, in a few
-        words — "lifts Will onto the bed and cradles him", "drags him backward
-        toward the bed". Copy the whole move; do NOT reduce it to a single verb.
-        This is the other non-negotiable, held by code the same way.
+        words, INCLUDING where the motion is headed. Write "reaches in and lifts
+        the egg out of the nest", never "lifts the egg" — the target is part of
+        the move, and a bare verb phrase is a story fact thrown away. Copy the
+        whole move and every sub-motion of it. This is the other non-negotiable,
+        held the same way.
     narration_line: an optional voiceover/caption line, or null — LEAVE THIS NULL. The
         product has no voiceover or on-screen text; narration_line is retired.
     dialogue_line: an optional SPOKEN line one character says on screen this beat, or

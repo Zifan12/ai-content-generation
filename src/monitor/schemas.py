@@ -174,13 +174,18 @@ class StoryBeat(BaseModel):
     role: BeatRole
     visual_line: str  # what the camera sees this beat (render-facing)
     destination: str | None = None
-    """WHERE the action is going, when the story depends on arriving there.
+    """WHERE the beat's motion POINTS — aimed at, not necessarily reached.
 
-    A short noun phrase naming the place or object the beat drives toward ("the
-    bed", "the far door") — the thing whose absence makes the NEXT beat
-    incoherent. ``None`` is legitimate and common: a beat that goes nowhere
-    ("she smirks at the camera") has no destination, and the downstream check
-    skips (loudly) rather than inventing one.
+    A short noun phrase naming the place or object the motion is aimed at. Note
+    "points", not "arrives": a character crawling toward an exit they never reach
+    still has that exit as their destination, and it is exactly as load-bearing —
+    drop it and the beat is a person moving for no reason. An earlier draft of
+    this field tied it to arrival and the pitcher correctly left it null on every
+    beat whose goal was denied, which is most of the interesting ones.
+
+    ``None`` is legitimate: a beat whose motion points nowhere ("she smirks at
+    the camera") has no destination, and the downstream check skips (loudly)
+    rather than inventing one.
 
     Optional ONLY for backwards compatibility: ``story_json`` rows written before
     2026-07-15 have no such field and must still load (pitch 47 is the only real

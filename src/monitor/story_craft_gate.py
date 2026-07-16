@@ -80,12 +80,11 @@ is a fail even if each beat is individually well-crafted.
 
 10. one_action_per_beat — Does every beat's visual_line stage exactly ONE FLOWING MOTION? \
 One continuous physical move counts as ONE action however many sub-motions it takes: \
-"reaches in, lifts the egg, clutches it, backs away" is ONE beat, and so is "lifts him onto \
-the bed and cradles him". Do NOT fail a beat for chaining the sub-motions of a single gesture \
-— they belong together, and splitting them puts a cut in the middle of the action. \
-A beat fails when it stages SEPARATE events that do not flow into one move ("she laughs" + \
-"the door opens" + "he falls"), or when the move could not physically complete in its beat's \
-few seconds. Test: could a camera hold on this as one unbroken move, without cutting? Then it \
+"reaches in, lifts the egg, clutches it, backs away" is ONE beat, not four. Do NOT fail a \
+beat for chaining the sub-motions of a single gesture — they belong together, and splitting \
+them puts a cut in the middle of the action. \
+A beat fails when it stages SEPARATE events that do not flow into one move, or when the move \
+could not physically complete in its beat's few seconds. Test: could a camera hold on this as one unbroken move, without cutting? Then it \
 passes. Name the overloaded beat in failure_notes and say which event to split off — never \
 which sub-motion of a single move to drop.
 
