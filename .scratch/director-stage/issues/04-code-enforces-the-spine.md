@@ -39,7 +39,10 @@ director's output path).
 - [ ] `shot_size` is copied from the beat and survives even when the director's draft echoes a different one — mirroring the existing "copied from pitch not draft" tests.
 - [ ] The pitch-47 regression exists as a test: given its real beats and a director line that says "across the room", the check catches it.
 - [ ] **Free validation:** re-run the writer on pitch 47 and diff the shipped line against `visual_line`. The bed and the lift are present. Record the diff.
-- [ ] `uv run pytest`, `uv run ruff check .`, `uv run mypy src/` all pass.
+- [~] `uv run pytest`, `uv run ruff check .`, `uv run mypy src/` — same true-and-precise status as ticket
+  03's line (see there): zero regressions, changed files clean on all three, and the repo's standing
+  numbers unchanged — `pytest` 2 pre-existing failures (BUG-028 + the flaky rag latency test), `ruff`
+  34, `mypy` 17. Not "all pass"; that phrasing was wrong on 03 and is not repeated here.
 
 **After this ticket — read before rendering.** The free diff proves the story reached the *prompt*. It does
 NOT prove it reaches the *screen*: in pitch 47, "she looks down with a cool, satisfied smirk" **was** in the

@@ -270,6 +270,18 @@ still_dialect:
 # on top of each model's dialect block. source: image-video-director/03.
 # ---------------------------------------------------------------------------
 motion_craft:
+  # SIBLINGS — this rule is stated in FOUR places and has already drifted once (see
+  # below). Change one, change all four; they cannot share a source because each
+  # addresses a different reader:
+  #   1. here — injected as DATA into the director's prompt (render_rules motion_craft)
+  #   2. src/generation/content_writer.py DIRECTOR_SYSTEM_PROMPT — the director's own rules
+  #   3. src/monitor/story_pitcher.py _STORYPITCH_FIELD_SPEC — tells the PITCHER how to write required_action
+  #   4. src/monitor/schemas.py StoryBeat.required_action docstring — the durable contract
+  # (1) and (2) are concatenated into ONE effective prompt, so a disagreement there is
+  # a live self-contradiction — that pair is pinned by
+  # test_injected_motion_craft_does_not_contradict_the_continuous_move_rule. (3) and (4)
+  # reach a different stage and can only drift semantically; verified in sync 2026-07-15.
+  #
   # Re-scoped 2026-07-15 (PRD D4) — the SUBJECT half only; the camera half is unchanged.
   # The old text ended at the bare phrase "ONE subject action per shot", which is where
   # this rule broke: an LLM reads a bare "one action" as ONE VERB, and on pitch 47 the

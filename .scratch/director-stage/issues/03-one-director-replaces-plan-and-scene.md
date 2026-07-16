@@ -52,7 +52,21 @@ translator sits at the adapter and never touches the writer, so it does not gate
 - [x] The package shape reaching the adapter is unchanged — this ticket is invisible downstream.
 - [x] Existing writer tests (word budget, retry-once-with-feedback, beat-count mismatch, silent-beat) pass against the merged call, adapted only where they named the deleted stage.
 - [x] The model-agnostic split is gone; nothing pretends the plan layer is render-model-neutral.
-- [x] `uv run pytest`, `uv run ruff check .`, `uv run mypy src/` all pass.
+- [~] `uv run pytest`, `uv run ruff check .`, `uv run mypy src/` — **NOT literally "all pass", and the
+  box was wrong to say so** (caught in code review, 2026-07-15). What is true: this work adds ZERO
+  regressions — every number below is identical to what HEAD produced before the ticket, verified by
+  stashing the diff and re-running. The changed files themselves are clean on all three.
+  - `pytest`: **602 passed, 2 failed**. Both pre-existing: `test_package_total_10s_accepted`
+    (logged as BUG-028 — a 2s shot against a floor raised 2->3 on 2026-07-12) and
+    `tests/rag/test_rag_retriever.py::test_latency` (known flaky).
+  - `ruff check .`: **34 errors — repo baseline, unchanged.** (An old memory claims the baseline is
+    32; that memory is stale. Measured on HEAD before this ticket: 34.) The five changed files pass clean.
+  - `mypy src/`: **17 errors in 10 files — repo baseline, unchanged.** The changed source files pass clean.
+
+  Recording the wording failure, because it is the same class of defect this whole PRD is about: the
+  original line was checked `[x]` and the failures were disclosed honestly three paragraphs further
+  down. A reader who trusts the checkbox never reaches the disclosure. **A summary that is only true
+  if you keep reading is not true.**
 
 **Implementation notes (2026-07-15).**
 
