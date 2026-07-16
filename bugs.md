@@ -1155,12 +1155,20 @@ Track every shipped feature that fails, what was tried, and what fixed it.
     frozen cradle became a MOVING hold, ~18 motion — Elfaria turns/adjusts); mean motion 7.92, 1.9%
     near-zero, identity held — so it is NOT a slideshow, it just refuses to show the lift. Splitting
     converted "park on a frozen end-state" into "moving hold"; it did not make the displacement animate.
-  - CONCLUSION: the zero-frame lift is a genuine Seedance BEHAVIOR (it will not animate one body lifting
-    another off the floor), NOT a prompt-structure defect — two renders (bundled AND split) both collapse
-    it. FIX A ("relocation beat carries no dialogue") is therefore NOT a fix; the pitcher edit that
-    encoded it was reverted before this probe (correctly — validate before enforce). Remaining moves are
-    product-level: splice (weak, already tested) or REDESIGN the payoff to an action the model can
-    animate (no vertical body-lift). That is a taste/product call, the user's — not a code fix.
+  - CORRECTION (user watched the video, 2026-07-16 — my frame-only "didn't work / zero-frame" was too
+    absolute): the result is PARTIAL, not total failure. What the user confirmed on screen: Elfaria DOES
+    grab Will and settle him ONTO THE BED, and that stretch (shot 4, 8.58-10.75s) is ANIMATED — it matches
+    the measured ~18 motion and, unlike the original, freezedetect found NO frozen hold. So the model CAN
+    animate the onto-bed settle. What it still skips is ONLY the vertical PICKUP — Will rising off the
+    floor — which teleports at the 8.58s cut (three frames flat, next frame already up). So the split DID
+    change something real: the original's post-cut cradle was FROZEN 5.7s; this one keeps moving.
+  - REVISED CONCLUSION: not "lift is unrenderable" but "the vertical PICKUP off the floor is the part the
+    model won't draw; the onto-bed settle animates fine." Narrows the product question to a taste call
+    (the user's): does the payoff NEED the visible floor-pickup, or does "she pulls him onto the bed"
+    (which renders) carry it? FIX A ("relocation beat carries no dialogue") is still NOT validated as a
+    fix for the pickup specifically (it teleported either way), and its pitcher edit stays reverted —
+    but the split is not worthless: it unfroze the settle. Remaining moves if the pickup IS wanted:
+    splice (weak) or redesign the pickup out. Not a code fix.
 
 
 ### BUG-032 - the char-sheet generator emits a 3-angle multi-view suite with no headshot, contradicting our own 2-ref rule
