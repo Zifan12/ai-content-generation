@@ -37,7 +37,18 @@ from src.schemas.generation import MultiShotPackage
 
 # Output canvas: TikTok vertical.
 _CANVAS = "1080:1920"
-_FPS = 30
+# 30 -> 24 (2026-07-16). Seedance delivers 24fps and the scene prompt opens with a
+# literal "24fps." header, so forcing 30 made ffmpeg pad the gap by DUPLICATING
+# frames — measured on the pitch-51 render: the 24fps take carried 361 unique
+# frames, the assembled 30fps output carried 451, and mpdecimate dropped it right
+# back to 361. Every one of those 90 extra frames is a repeat. 30 is not a clean
+# multiple of 24, so the repeats land unevenly — which is judder, manufactured by
+# us, on the one axis (motion quality) this project keeps failing. 24 also IS the
+# register: the style anchor asks for "shot on 35mm", and 24fps is the cinematic
+# standard; TikTok accepts it natively.
+# Keep this EQUAL to whatever the render model actually emits. If a future model
+# emits 30, set 30 — the rule is "never resample", not "always 24".
+_FPS = 24
 _BGM_VOLUME = 0.2
 _BGM_FADE_SECONDS = 3
 # D5 tail-fade (2026-07-06 spec, the one sanctioned assembly change): a short
