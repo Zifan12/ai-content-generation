@@ -22,18 +22,21 @@ parameter exists ONLY so idea mode's own test can assert it is never called;
 it is a forward seam for ticket 05 to wire real calls into, not a stub
 implementation.
 
-Flow: operator idea -> POVPitch (code, no LLM) -> POVScriptWriter.develop
-(ONE LLM call) -> POVScript -> compile_pov_prompt (ticket 02, deterministic
-code) -> CompiledPOVPrompt -> build_render_sheet (ticket 03, deterministic
-code) -> four files written under a slug-named run directory: pitch.json,
-script.json, prompt.txt, render_sheet.md.
+Flow: operator idea -> POVPitch (code, no LLM) -> craft_enforcement.
+develop_valid_script (POVScriptWriter.develop, ONE structural check, and — on
+a violation — ONE bounded POVScriptWriter.repair call, ticket 04) -> POVScript
+-> compile_pov_prompt (ticket 02, deterministic code) -> CompiledPOVPrompt ->
+build_render_sheet (ticket 03, deterministic code) -> four files written
+under a slug-named run directory: pitch.json, script.json, prompt.txt,
+render_sheet.md.
 
-No structural validation runs here (per-beat action count, beat-count
-budget, dialogue-never-final-beat, duration in {10, 15}) — ticket 04 owns
-that bounded-repair loop. A script that violates one of those rules compiles
-anyway in THIS ticket's driver; only compile_pov_prompt's own word-budget
-check (60-100 words) can fail a run, and that failure is allowed to surface
-loud here (no repair loop exists yet to catch it).
+Structural validation (per-beat action count, beat-count budget,
+dialogue-never-final-beat, duration in {10, 15}) now runs on every script via
+``develop_valid_script`` (ticket 04) — a script that still violates a rule
+after its one bounded repair raises ``POVStructuralViolationError`` and this
+driver lets it surface loud (no silent pass-through into the compiler).
+compile_pov_prompt's own word-budget check (60-100 words) is a separate,
+unrelated failure that can still surface loud here too.
 
 LIVE SMOKE (not run in CI — spends one real LLM call, zero render credits):
     uv run python scripts/pov.py --idea "I dive into a sunken WWII wreck and \
@@ -56,6 +59,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.generation.pov.compiler import compile_pov_prompt  # noqa: E402
+from src.generation.pov.craft_enforcement import develop_valid_script  # noqa: E402
 from src.generation.pov.render_sheet import build_render_sheet  # noqa: E402
 from src.generation.pov.schemas import POVPitch  # noqa: E402
 from src.generation.render_adapters.rules import RenderRules  # noqa: E402
@@ -113,12 +117,15 @@ def run_pov_pipeline(
     Run idea mode end-to-end and write its run directory.
 
     Flow: operator idea -> POVPitch (code-copy, no LLM) ->
-    ``script_writer.develop`` (ONE LLM call) -> POVScript ->
+    ``craft_enforcement.develop_valid_script`` (``script_writer.develop``,
+    one structural check, and on a violation ONE bounded
+    ``script_writer.repair`` call, ticket 04) -> POVScript ->
     ``compile_pov_prompt`` -> CompiledPOVPrompt -> ``build_render_sheet`` ->
     four files on disk.
 
     Args:
         script_writer: Anything with ``develop(pitch: POVPitch) -> POVScript``
+            and ``repair(pitch, failed_script, violations) -> POVScript``
             (real: ``POVScriptWriter``; tests: a fake recording calls).
         rules: A loaded RenderRules instance (pov_grammar + scene_lane).
         idea: The operator's ``--idea`` text — wrapped verbatim as the
@@ -133,9 +140,14 @@ def run_pov_pipeline(
     Returns:
         The created run directory (``output_dir/<slug>/``), containing
         ``pitch.json``, ``script.json``, ``prompt.txt``, ``render_sheet.md``.
+
+    Raises:
+        POVStructuralViolationError: if the script still violates a
+            structural rule after its one bounded repair (ticket 04) —
+            surfaces loud, no run directory is written.
     """
     pitch = _pitch_from_idea(idea)
-    script = script_writer.develop(pitch)
+    script = develop_valid_script(script_writer, pitch, rules)
     compiled = compile_pov_prompt(script, rules)
     sheet = build_render_sheet(pitch, script, compiled, rules)
 

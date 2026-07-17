@@ -4,9 +4,9 @@
 
 **Blocked by:** 03 — Idea mode end-to-end.
 
-**Status:** ready-for-agent
+**Status:** closed
 
-- [ ] Each violation class has a test: fake seat returns a violating script, repair path fires exactly once, repaired output accepted
-- [ ] Unrepairable output (violation persists after one repair) fails loud with the violation in the error
-- [ ] Valid scripts pass through with zero repair calls (fake proves it)
-- [ ] Tests green; ruff/mypy clean
+- [x] Each violation class has a test: fake seat returns a violating script, repair path fires exactly once, repaired output accepted
+- [x] Unrepairable output (violation persists after one repair) fails loud with the violation in the error
+- [x] Valid scripts pass through with zero repair calls (fake proves it)
+- [x] Tests green; ruff/mypy clean
