@@ -1,6 +1,6 @@
 # 02: Research loop's finalize step synthesizes a Topic Brief
 
-Status: ready-for-human
+Status: ready-for-agent
 
 ## Scope
 

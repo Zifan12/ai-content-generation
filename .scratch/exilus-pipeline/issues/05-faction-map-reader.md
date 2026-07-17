@@ -1,6 +1,6 @@
 # 05: FactionMap schema + faction reader stage
 
-Status: ready-for-human
+Status: ready-for-agent
 
 ## Scope
 

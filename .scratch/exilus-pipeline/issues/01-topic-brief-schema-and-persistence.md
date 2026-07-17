@@ -1,6 +1,6 @@
 # 01: TopicBrief typed schema + per-topic persistence
 
-Status: ready-for-human
+Status: ready-for-agent
 
 ## Scope
 

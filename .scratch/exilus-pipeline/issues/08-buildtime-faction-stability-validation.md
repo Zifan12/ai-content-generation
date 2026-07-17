@@ -1,6 +1,6 @@
 # 08: Build-time faction-map shuffle-stability validation
 
-Status: ready-for-human
+Status: ready-for-agent
 
 ## Scope
 

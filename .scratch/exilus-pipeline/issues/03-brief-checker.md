@@ -1,6 +1,6 @@
 # 03: Topic Brief checker — two-layer grading + bounded repair loop
 
-Status: ready-for-human
+Status: ready-for-agent
 
 ## Scope
 

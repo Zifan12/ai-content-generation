@@ -1,6 +1,6 @@
 # 07: Pipeline driver and pinning
 
-Status: ready-for-human
+Status: ready-for-agent
 
 ## Scope
 
@@ -222,11 +222,9 @@ named-mirror carve-out.
   (as `pitch_angles.py` calls `index_web_text` inline today) or internally by
   the research component before it returns — affects this ticket's exact
   dependency list.
-- **PENDING USER DECISION (User Story 22, coverage audit found no owner):** the
-  mechanism by which the operator CORRECTS a stored brief/faction map (reading
-  is trivial; correcting is not). Options to put to the user before this
-  ticket starts: (a) a small CLI edit flow — dump the artifact to a JSON file,
-  operator edits it, a command re-imports and re-pins it; (b) a direct-DB edit
-  helper script; (c) treat the handoff JSON file as the editable source of
-  truth the driver re-reads. Until decided, US22 is only half-delivered
-  (read yes, correct no) — do not silently drop it.
+- (RESOLVED 2026-07-17, user delegated to AI recommendation: **option (a) — CLI
+  edit flow.** The driver gains `--dump-artifacts` (writes the topic's stored
+  brief + faction map as editable JSON files) and `--import-artifacts`
+  (validates the edited files through the artifact schemas and re-pins them,
+  REPLACING stored values). Explicit two-step, schema-validated on import, no
+  file-watching. This ticket owns both flags; US22 is thereby fully delivered.)

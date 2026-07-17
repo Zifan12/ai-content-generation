@@ -1,6 +1,6 @@
 # 04: Fridge — index Reddit text alongside web text + refresh-replace semantics
 
-Status: ready-for-human
+Status: ready-for-agent
 
 ## Scope
 

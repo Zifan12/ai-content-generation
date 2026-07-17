@@ -1,6 +1,6 @@
 # 06: Ideation stage — reshape the slim pitcher into a wide idea slate
 
-Status: ready-for-human
+Status: ready-for-agent
 
 ## Scope
 
