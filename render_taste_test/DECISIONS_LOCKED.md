@@ -278,6 +278,25 @@ Read the file before you spend.
 
 ---
 
+## L10. POV camera-as-eyes register — PROVEN (2026-07-17, 60cr billing-verified, user-watch PASS)
+
+**Full record: `render_taste_test/pov_probe/PROBE_SHEET.md` (local, untracked per this dir's
+media policy). Two 10s/480p/9:16 text-only Seedance 2.0 single generations:**
+
+- **POV register HOLDS** a full 10s continuous take — no angle switch, no third-person flip,
+  no face/body leak. Load-bearing prompt lines: "the camera IS the [subject]'s eyes" +
+  "an unseen [subject]" + **"No cuts, no zooms, natural head movement only"**
+  (corpus-mandated: `methodology/15:163-169,380`).
+- **BUG-031's motion class ANIMATES in POV register:** reach → grip → vertical lift toward
+  the viewer's eyes drew beat-by-beat (probe 2, user-confirmed continuous, all beats). Does
+  NOT retroactively fix BUG-031's third-person case.
+- **Text-only worlds pass the quality bar** — zero reference images, prose-invented cave +
+  prop, user verdict "Yes, build it."
+- Motion measured (tblend): probe 1 mean 6.57, probe 2 mean 3.22, ZERO near-zero frames both.
+- 480p rate reconfirmed: 3.0cr/s (30cr per 10s clip, billing 1554→1494 for both).
+- Consumer: the POV pipeline (`.scratch/pov-pipeline/PRD.md`); grammar lands evidence-tagged
+  in `config/render_rules.yaml` `pov_grammar`.
+
 *Change policy: Tier 1 changes require a paid-render counter-evidence note (date +
 artifact path). Tier 2 changes require a spec supersession. Either way, edit THIS
 file in the same commit — it is the file other docs point at.*
