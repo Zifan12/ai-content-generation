@@ -1,20 +1,22 @@
-"""Tests for StoryPitcher (src/monitor/story_pitcher.py, Stage B)."""
+"""Tests for StoryPitcher (src/monitor/story_pitcher.py).
+
+Slice ① (staged director, 2026-07-16): the pitcher emits desire-only
+IdeaPitch slates — no beats, no dialogue, no scene staging. The story tests
+that used to live here (beat teaching, repitch, credit pricing) moved with
+those responsibilities to tests/generation/test_story_architect.py.
+"""
 import logging
 
 from src.monitor.schemas import (
-    BeatRole,
-    CaptionPolicy,
     CharacterRef,
     ContentMode,
     ContextBundle,
     GapAnalysis,
-    ShotSize,
-    StoryBeat,
-    StoryPitch,
-    StoryPitchSlate,
+    IdeaPitch,
+    IdeaPitchSlate,
     TrendingEvent,
 )
-from src.monitor.story_pitcher import StoryPitcher, estimate_pitch_credits
+from src.monitor.story_pitcher import StoryPitcher
 from src.rag.embedder import TextEmbedder
 
 SAMPLE_EVENT = TrendingEvent(
@@ -36,48 +38,21 @@ SAMPLE_GAP = GapAnalysis(
 )
 
 
-def _beat(
-    role: BeatRole = BeatRole.hook,
-    shot_size: ShotSize = ShotSize.wide,
-    hero: bool = False,
-) -> StoryBeat:
-    return StoryBeat(
-        role=role,
-        visual_line="x",
-        narration_line=None,
-        shot_size=shot_size,
-        characters_in_frame=["Eve"],
-        hero_moment=hero,
-    )
-
-
-def _default_beats() -> list[StoryBeat]:
-    return [
-        _beat(BeatRole.hook, ShotSize.wide),
-        _beat(BeatRole.turn, ShotSize.medium),
-        _beat(BeatRole.payoff, ShotSize.close_up, hero=True),
-    ]
-
-
-def _pitch(
+def _idea(
     logline: str = "The dragon finally breathes fire over Tokyo Tower",
-    beats: list[StoryBeat] | None = None,
-) -> StoryPitch:
-    return StoryPitch(
+) -> IdeaPitch:
+    return IdeaPitch(
         logline=logline,
         mode=ContentMode.wish,
         characters=[CharacterRef(name="the dragon", ip_source="original")],
         desired_moment="the fire breath fans were denied",
-        beats=beats or _default_beats(),
-        caption_policy=CaptionPolicy.hook_only,
-        hook_line="the ending they owed us",
         why_it_lands="delivers the payoff the footage cut away from",
         legal_flag=False,
     )
 
 
-def _slate(loglines: tuple[str, ...] = ("Story one", "A different story two")) -> StoryPitchSlate:
-    return StoryPitchSlate(pitches=[_pitch(logline=line) for line in loglines])
+def _slate(loglines: tuple[str, ...] = ("Story one", "A different story two")) -> IdeaPitchSlate:
+    return IdeaPitchSlate(ideas=[_idea(logline=line) for line in loglines])
 
 
 class FakeLLM:
@@ -86,6 +61,7 @@ class FakeLLM:
 
     def parse(self, prompt: str, response_model: type, **kwargs: object) -> object:
         self.prompt = prompt
+        self.response_model = response_model
         self.system = kwargs.get("system")
         return self._result
 
@@ -120,7 +96,7 @@ def _sample_bundle() -> ContextBundle:
     )
 
 
-def test_pitch_returns_slate_and_injects_playbook_gap_event() -> None:
+def test_pitch_returns_idea_slate_and_injects_playbook_gap_event() -> None:
     llm = FakeLLM(_slate())
     embedder = FakeEmbedder()
     # Opt into the playbook (default is now off, 2026-07-10) to test injection.
@@ -128,7 +104,8 @@ def test_pitch_returns_slate_and_injects_playbook_gap_event() -> None:
 
     result = pitcher.pitch(SAMPLE_EVENT, SAMPLE_GAP)
 
-    assert len(result.pitches) == 2
+    assert len(result.ideas) == 2
+    assert llm.response_model is IdeaPitchSlate
     # Both playbook modes injected when use_playbook=True (Option A: full menu).
     assert "wish" in llm.prompt
     assert "satire" in llm.prompt
@@ -160,58 +137,24 @@ def test_pitch_with_bundle_injects_context_block() -> None:
     assert bundle.summary in llm.prompt
 
 
-def test_repitch_returns_single_pitch_and_carries_failure_notes() -> None:
-    repaired = _pitch(logline="Repaired: the dragon breathes fire, earned by a clear turn")
-    llm = FakeLLM(repaired)
-    pitcher = StoryPitcher(llm=llm, embedder=FakeEmbedder())
-    failed = _pitch(logline="Flat: the dragon just stands in fire the whole time")
-
-    result = pitcher.repitch(
-        SAMPLE_EVENT, SAMPLE_GAP, failed, "no visible turn; payoff unearned"
-    )
-
-    assert isinstance(result, StoryPitch)
-    assert result.logline.startswith("Repaired")
-    assert "no visible turn" in llm.prompt
-    assert failed.logline in llm.prompt
-    assert "<failed_pitch>" in llm.prompt and "<failure_notes>" in llm.prompt
-
-
-def test_estimate_pitch_credits_scales_with_beats() -> None:
-    assert estimate_pitch_credits(_pitch()) == 40.5  # 3 beats * 3s * 4.5 cr/s
-    five = _pitch(
-        beats=[
-            _beat(BeatRole.hook, ShotSize.wide),
-            _beat(BeatRole.establish, ShotSize.establishing),
-            _beat(BeatRole.turn, ShotSize.over_shoulder),
-            _beat(BeatRole.reveal, ShotSize.close_up),
-            _beat(BeatRole.payoff, ShotSize.extreme_close_up, hero=True),
-        ]
-    )
-    assert estimate_pitch_credits(five) == 67.5  # 5 beats * 3s * 4.5 cr/s
-
-
-def test_prompt_teaches_single_scene_and_no_narration() -> None:
+def test_prompt_is_desire_only_no_beat_instruction() -> None:
+    """Slice ① boundary: the pitcher must not be taught to author story
+    structure — no beats, no shot sizes, no dialogue instruction. That craft
+    moved to the StoryArchitect, and re-teaching it here is exactly the
+    defect slice ① removed (obs 2206: the pitcher authored pitch-51's
+    beat-free action line because it owned beats without render knowledge).
+    """
     llm = FakeLLM(_slate())
     pitcher = StoryPitcher(llm=llm, embedder=FakeEmbedder())
 
     pitcher.pitch(SAMPLE_EVENT, SAMPLE_GAP)
 
-    assert "scene_setting" in llm.system
-    assert "3-5 ordered StoryBeats" in llm.system
+    assert "desired_moment" in llm.system
     assert "no caption, no voiceover, no on-screen text" in llm.system
-
-
-def test_prompt_teaches_profiled_characters_must_speak() -> None:
-    """Q3-B: rule 8 now gates dialogue on the cast_voices block, not 'default to none'."""
-    llm = FakeLLM(_slate())
-    pitcher = StoryPitcher(llm=llm, embedder=FakeEmbedder())
-
-    pitcher.pitch(SAMPLE_EVENT, SAMPLE_GAP)
-
-    assert "dialogue_line" in llm.system
-    assert "<cast_voices>" in llm.system
-    assert "stays silent" in llm.system
+    assert "StoryBeat" not in llm.system
+    assert "shot_size" not in llm.system
+    assert "dialogue_line" not in llm.system
+    assert "scene_setting" not in llm.system
 
 
 def test_low_diversity_slate_warns(caplog) -> None:

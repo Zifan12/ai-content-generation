@@ -85,7 +85,6 @@ def test_resolve_pitch_reinflates_story_json(db):
     assert isinstance(pitch, StoryPitch)
     assert pitch_id == record.id
     assert len(pitch.beats) == 4
-    assert pitch.hook_line == "the ending they cut"
 
 
 def test_null_story_json_is_a_hard_error_not_a_fallback(db):

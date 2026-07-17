@@ -195,8 +195,9 @@ class MultiShotPackage(BaseModel):
       visual_register: Visual register (source_style at launch, D1). Named
         visual_register because a bare `register` field shadows a BaseModel
         attribute (pydantic UserWarning on every import).
-      hook_text: Hook card text (from StoryPitch.hook_line), burned at assembly via
-        drawtext (D9); None = deliberately textless.
+      hook_text: LEGACY hook-card text — always None since the no-text product
+        (native-quality-v2); its StoryPitch.hook_line source field was deleted
+        in slice ① (2026-07-16).
       caption: TikTok caption posted with the video.
       hashtags: Discovery tags for the post.
       music_brief: Sonilo prompt for the BGM track, or None for no score (D8).

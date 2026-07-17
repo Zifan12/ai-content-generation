@@ -118,7 +118,6 @@ class GroundednessJudge:
             f"  logline: {pitch.logline}\n"
             f"  desired_moment: {pitch.desired_moment}\n"
             f"  why_it_lands: {pitch.why_it_lands}\n"
-            f"  hook_line: {pitch.hook_line or ''}\n"
             f"  beats:\n{beat_lines}\n\n"
             f"Score this pitch's groundedness in the evidence."
         )

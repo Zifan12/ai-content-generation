@@ -16,7 +16,6 @@ from src.generation.content_writer import (
 from src.generation.render_adapters.rules import RenderRules
 from src.monitor.schemas import (
     BeatRole,
-    CaptionPolicy,
     CharacterRef,
     ContentMode,
     ShotSize,
@@ -68,8 +67,6 @@ def _pitch(
         desired_moment="The confrontation the trailer denied.",
         scene_setting="a rain-soaked academy courtyard, dusk",
         beats=beats,
-        caption_policy=CaptionPolicy.hook_only,
-        hook_line="the ending they cut",
         why_it_lands="Fans are begging for exactly this beat.",
         legal_flag=False,
     )
@@ -103,7 +100,7 @@ def _draft_shots(
 def _plan(shots: list[DirectorShotDraft]) -> DirectorDraft:
     return DirectorDraft(
         shots=shots,
-        hook_text="DRAFT HOOK — must lose to pitch.hook_line",
+        hook_text="DRAFT HOOK — must be forced to None by the writer",
         caption="they finally rendered it",
         hashtags=["stellarblade", "fyp"],
         music_brief="slow strings, single piano hit",
@@ -381,7 +378,7 @@ def test_one_call_and_prompt_contents(rules):
     assert director_call["max_tokens"] == WRITER_MAX_TOKENS
     assert "Motion craft:" in director_call["prompt"]
     assert "Still dialect:" not in director_call["prompt"]  # scene lane writes no stills
-    assert "the ending they cut" in director_call["prompt"]  # pitch JSON present
+    assert "Eve gets the ending the fans wanted." in director_call["prompt"]  # pitch JSON present
 
 
 def test_pitch_travels_inside_the_injection_guard(rules):

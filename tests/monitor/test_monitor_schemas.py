@@ -4,14 +4,16 @@ from pydantic import ValidationError
 
 from src.monitor.schemas import (
     BeatRole,
-    CaptionPolicy,
     CharacterRef,
     ContentMode,
+    IdeaPitch,
+    IdeaPitchSlate,
+    ScriptDraft,
     ShotSize,
     StoryBeat,
     StoryCraftVerdict,
     StoryPitch,
-    StoryPitchSlate,
+    StoryScript,
 )
 
 
@@ -30,7 +32,7 @@ def _beat(
     )
 
 
-def _pitch(**overrides: object) -> StoryPitch:
+def _pitch(**overrides: object) -> StoryScript:
     defaults = {
         "logline": "x",
         "mode": ContentMode.wish,
@@ -41,13 +43,11 @@ def _pitch(**overrides: object) -> StoryPitch:
             _beat(BeatRole.turn, ShotSize.medium),
             _beat(BeatRole.payoff, ShotSize.close_up, hero=True),
         ],
-        "caption_policy": CaptionPolicy.hook_only,
-        "hook_line": "the ending they owed us",
         "why_it_lands": "x",
         "legal_flag": False,
     }
     defaults.update(overrides)
-    return StoryPitch(**defaults)
+    return StoryScript(**defaults)
 
 
 def test_dialogue_requires_speaker() -> None:
@@ -276,10 +276,25 @@ def test_character_ref_defaults_needs_reference_true() -> None:
     assert CharacterRef(name="Eve", ip_source="Stellar Blade").needs_reference is True
 
 
-def test_valid_pitch_constructs() -> None:
-    pitch = _pitch()
-    assert len(pitch.beats) == 3
-    assert pitch.caption_policy is CaptionPolicy.hook_only
+def test_valid_script_constructs() -> None:
+    script = _pitch()
+    assert len(script.beats) == 3
+
+
+def test_legacy_caption_keys_are_ignored_on_load() -> None:
+    """Old story_json rows carry caption_policy/hook_line; StoryScript's
+    extra="ignore" must absorb them silently (slice ① back-compat)."""
+    script = StoryScript.model_validate(
+        {**_pitch().model_dump(mode="json"),
+         "caption_policy": "hook_only", "hook_line": "legacy"}
+    )
+    assert not hasattr(script, "hook_line")
+    assert not hasattr(script, "caption_policy")
+
+
+def test_storypitch_alias_is_storyscript() -> None:
+    """Untouched pre-slice consumers import StoryPitch; it must BE StoryScript."""
+    assert StoryPitch is StoryScript
 
 
 def test_all_same_shot_size_rejected() -> None:
@@ -304,16 +319,6 @@ def test_two_hero_moments_rejected() -> None:
         )
 
 
-def test_hook_only_requires_hook_line() -> None:
-    with pytest.raises(ValidationError):
-        _pitch(caption_policy=CaptionPolicy.hook_only, hook_line=None)
-
-
-def test_hook_line_without_hook_only_rejected() -> None:
-    with pytest.raises(ValidationError):
-        _pitch(caption_policy=CaptionPolicy.none, hook_line="stray line")
-
-
 def test_beats_below_minimum_rejected() -> None:
     with pytest.raises(ValidationError):
         _pitch(
@@ -324,11 +329,64 @@ def test_beats_below_minimum_rejected() -> None:
         )
 
 
-def test_slate_requires_two_to_three_pitches() -> None:
+def _idea(**overrides: object) -> IdeaPitch:
+    defaults = {
+        "logline": "x",
+        "mode": ContentMode.wish,
+        "characters": [CharacterRef(name="Eve", ip_source="Stellar Blade")],
+        "desired_moment": "x",
+        "why_it_lands": "x",
+        "legal_flag": False,
+    }
+    defaults.update(overrides)
+    return IdeaPitch(**defaults)
+
+
+def test_idea_pitch_carries_no_story_structure() -> None:
+    """Slice ① boundary pin: the idea schema has no channel for beats or
+    staging — the pitcher CANNOT author story structure even if prompted to."""
+    fields = set(IdeaPitch.model_fields)
+    assert "beats" not in fields
+    assert "scene_setting" not in fields
+
+
+def test_idea_slate_requires_two_to_three_ideas() -> None:
     with pytest.raises(ValidationError):
-        StoryPitchSlate(pitches=[_pitch()])
-    slate = StoryPitchSlate(pitches=[_pitch(), _pitch()])
-    assert len(slate.pitches) == 2
+        IdeaPitchSlate(ideas=[_idea()])
+    slate = IdeaPitchSlate(ideas=[_idea(), _idea()])
+    assert len(slate.ideas) == 2
+
+
+def test_script_draft_enforces_beat_rules() -> None:
+    """ScriptDraft (the architect's LLM output) carries the same cross-beat
+    validators as StoryScript — shot-size variety and the single hero_moment."""
+    with pytest.raises(ValidationError):
+        ScriptDraft(
+            scene_setting="s",
+            beats=[
+                _beat(BeatRole.hook, ShotSize.wide),
+                _beat(BeatRole.turn, ShotSize.wide),
+                _beat(BeatRole.payoff, ShotSize.wide, hero=True),
+            ],
+        )
+    with pytest.raises(ValidationError):
+        ScriptDraft(
+            scene_setting="s",
+            beats=[
+                _beat(BeatRole.hook, ShotSize.wide, hero=True),
+                _beat(BeatRole.turn, ShotSize.medium),
+                _beat(BeatRole.payoff, ShotSize.close_up, hero=True),
+            ],
+        )
+    draft = ScriptDraft(
+        scene_setting="s",
+        beats=[
+            _beat(BeatRole.hook, ShotSize.wide),
+            _beat(BeatRole.turn, ShotSize.medium),
+            _beat(BeatRole.payoff, ShotSize.close_up, hero=True),
+        ],
+    )
+    assert len(draft.beats) == 3
 
 
 def test_verdict_passes_when_all_true() -> None:

@@ -1,3 +1,11 @@
+"""Orchestration tests for scripts/pitch_angles.py run_pitch_pipeline.
+
+Slice ① (staged director, 2026-07-16): the pitcher emits a desire-only
+IdeaPitchSlate; the human picks ONE idea; only the picked idea is developed
+by the StoryArchitect into a StoryScript, which the craft gate + dialogue
+floor (+ Path B grounding) judge with one bounded repair each. Unpicked
+ideas persist with idea_json only (story_json NULL).
+"""
 import json
 
 import pytest
@@ -12,22 +20,22 @@ from src.models.trending_event import TrendingEventRecord
 from src.monitor.pitch_grounding import GroundingVerdict
 from src.monitor.schemas import (
     BeatRole,
-    CaptionPolicy,
     CharacterRef,
     ContentMode,
     ContextBundle,
     GapAnalysis,
     IdeaFitResult,
+    IdeaPitch,
+    IdeaPitchSlate,
     ShotSize,
     StoryBeat,
     StoryCraftVerdict,
-    StoryPitch,
-    StoryPitchSlate,
+    StoryScript,
     TrendingEvent,
 )
 
 # ---------------------------------------------------------------------------
-# Sample pipeline data (one event -> one gap -> a slate of story pitches)
+# Sample pipeline data (one event -> one gap -> a slate of story IDEAS)
 # ---------------------------------------------------------------------------
 
 SAMPLE_EVENT = TrendingEvent(
@@ -52,57 +60,73 @@ SAMPLE_GAP = GapAnalysis(
 )
 
 
-def _story_pitch(
+def _idea(
     logline: str,
     *,
     mode: ContentMode = ContentMode.wish,
     legal_flag: bool = False,
-) -> StoryPitch:
-    """Build a schema-valid StoryPitch (3 beats, varied framing, one hero)."""
-    return StoryPitch(
+    characters: list[CharacterRef] | None = None,
+) -> IdeaPitch:
+    return IdeaPitch(
         logline=logline,
         mode=mode,
-        characters=[CharacterRef(name="Dragon", ip_source="Original")],
+        characters=characters or [CharacterRef(name="Dragon", ip_source="Original")],
         desired_moment="the dragon breathes fire over the tower",
-        beats=[
-            StoryBeat(
-                role=BeatRole.hook,
-                visual_line="wide aerial of the tower at dawn",
-                narration_line=None,
-                shot_size=ShotSize.establishing,
-                characters_in_frame=["Dragon"],
-                hero_moment=False,
-            ),
-            StoryBeat(
-                role=BeatRole.build,
-                visual_line="the dragon inhales, scales glowing",
-                narration_line=None,
-                shot_size=ShotSize.medium,
-                characters_in_frame=["Dragon"],
-                hero_moment=False,
-            ),
-            StoryBeat(
-                role=BeatRole.payoff,
-                visual_line="fire erupts over the tower",
-                narration_line=None,
-                shot_size=ShotSize.close_up,
-                characters_in_frame=["Dragon"],
-                hero_moment=True,
-            ),
-        ],
-        caption_policy=CaptionPolicy.hook_only,
-        hook_line="The fire they never showed you.",
         why_it_lands="Delivers the fire-breath payoff fans were denied.",
         legal_flag=legal_flag,
     )
 
 
-SAMPLE_SLATE = StoryPitchSlate(
-    pitches=[
-        _story_pitch("The dragon finally breathes fire over Tokyo Tower at dawn"),
-        _story_pitch("A rooftop crowd watches the dragon's fire erupt", legal_flag=True),
+SAMPLE_SLATE = IdeaPitchSlate(
+    ideas=[
+        _idea("The dragon finally breathes fire over Tokyo Tower at dawn"),
+        _idea("A rooftop crowd watches the dragon's fire erupt", legal_flag=True),
     ]
 )
+
+
+def _beats(cast: list[str] | None = None) -> list[StoryBeat]:
+    cast = cast or ["Dragon"]
+    return [
+        StoryBeat(
+            role=BeatRole.hook,
+            visual_line="wide aerial of the tower at dawn",
+            narration_line=None,
+            shot_size=ShotSize.establishing,
+            characters_in_frame=cast,
+            hero_moment=False,
+        ),
+        StoryBeat(
+            role=BeatRole.build,
+            visual_line="the dragon inhales, scales glowing",
+            narration_line=None,
+            shot_size=ShotSize.medium,
+            characters_in_frame=cast,
+            hero_moment=False,
+        ),
+        StoryBeat(
+            role=BeatRole.payoff,
+            visual_line="fire erupts over the tower",
+            narration_line=None,
+            shot_size=ShotSize.close_up,
+            characters_in_frame=cast,
+            hero_moment=True,
+        ),
+    ]
+
+
+def _script_for(idea: IdeaPitch, beats: list[StoryBeat] | None = None) -> StoryScript:
+    """Compose a script the way the real architect does: idea fields copied."""
+    return StoryScript(
+        logline=idea.logline,
+        mode=idea.mode,
+        characters=list(idea.characters),
+        desired_moment=idea.desired_moment,
+        scene_setting="the tower's rooftop deck at dawn",
+        beats=beats or _beats([c.name for c in idea.characters]),
+        why_it_lands=idea.why_it_lands,
+        legal_flag=idea.legal_flag,
+    )
 
 
 def _passing_verdict() -> StoryCraftVerdict:
@@ -246,50 +270,69 @@ class FakeGapAgent:
 
 
 class FakeStoryPitcher:
-    """Returns a fixed slate; repitch returns a marked repaired copy."""
+    """Returns a fixed idea slate (slice ①: no repitch — repair is the architect's)."""
 
-    def __init__(self, slate: StoryPitchSlate | None = None) -> None:
+    def __init__(self, slate: IdeaPitchSlate | None = None) -> None:
         self._slate = slate if slate is not None else SAMPLE_SLATE
         self.pitch_calls: list[tuple[TrendingEvent, GapAnalysis, ContextBundle | None]] = []
-        self.repitch_calls: list[tuple[StoryPitch, str]] = []
 
     def pitch(
         self,
         event: TrendingEvent,
         gap: GapAnalysis,
         bundle: ContextBundle | None = None,
-        cast_voices: str = "",
-    ) -> StoryPitchSlate:
+    ) -> IdeaPitchSlate:
         self.pitch_calls.append((event, gap, bundle))
         return self._slate
 
-    def repitch(
+
+class FakeStoryArchitect:
+    """develop() composes a script from the idea (like the real stage);
+    repair() returns a marked repaired copy carrying the failure notes."""
+
+    def __init__(self) -> None:
+        self.develop_calls: list[tuple[IdeaPitch, ContextBundle | None, str]] = []
+        self.repair_calls: list[tuple[StoryScript, str]] = []
+
+    def develop(
         self,
+        idea: IdeaPitch,
         event: TrendingEvent,
         gap: GapAnalysis,
-        failed_pitch: StoryPitch,
+        bundle: ContextBundle | None = None,
+        cast_voices: str = "",
+    ) -> StoryScript:
+        self.develop_calls.append((idea, bundle, cast_voices))
+        return _script_for(idea)
+
+    def repair(
+        self,
+        idea: IdeaPitch,
+        event: TrendingEvent,
+        gap: GapAnalysis,
+        failed_script: StoryScript,
         failure_notes: str,
         bundle: ContextBundle | None = None,
         cast_voices: str = "",
-    ) -> StoryPitch:
-        self.repitch_calls.append((failed_pitch, failure_notes))
-        return failed_pitch.model_copy(
-            update={"logline": f"[repaired] {failed_pitch.logline}"}
+    ) -> StoryScript:
+        self.repair_calls.append((failed_script, failure_notes))
+        return failed_script.model_copy(
+            update={"logline": f"[repaired] {failed_script.logline}"}
         )
 
 
 class FakeStoryCraftGate:
-    """Returns pass/fail per a predicate on the pitch (default: everything passes)."""
+    """Returns pass/fail per a predicate on the script (default: everything passes)."""
 
     def __init__(self, pass_predicate=None) -> None:
-        self._pass = pass_predicate or (lambda pitch: True)
-        self.calls: list[StoryPitch] = []
+        self._pass = pass_predicate or (lambda script: True)
+        self.calls: list[StoryScript] = []
 
     def evaluate(
-        self, pitch: StoryPitch, event: TrendingEvent, gap: GapAnalysis
+        self, script: StoryScript, event: TrendingEvent, gap: GapAnalysis
     ) -> StoryCraftVerdict:
-        self.calls.append(pitch)
-        return _passing_verdict() if self._pass(pitch) else _failing_verdict()
+        self.calls.append(script)
+        return _passing_verdict() if self._pass(script) else _failing_verdict()
 
 
 class FakeContextAgent:
@@ -313,20 +356,15 @@ class FakeContextAgent:
 
 
 class FakeGroundingChecker:
-    """coheres per a predicate on the pitch (default: everything coheres).
-
-    Mirrors FakeStoryCraftGate's predicate style so a test can make the original
-    pitch conflict and its repaired copy cohere. Records every checked pitch. A
-    conflict returns one fixed contradiction sentence.
-    """
+    """coheres per a predicate on the script (default: everything coheres)."""
 
     def __init__(self, cohere_predicate=None) -> None:
-        self._coheres = cohere_predicate or (lambda pitch: True)
-        self.calls: list[StoryPitch] = []
+        self._coheres = cohere_predicate or (lambda script: True)
+        self.calls: list[StoryScript] = []
 
-    def check(self, pitch, topic, embedder, session, k: int = 3) -> GroundingVerdict:
-        self.calls.append(pitch)
-        if self._coheres(pitch):
+    def check(self, script, topic, embedder, session, k: int = 3) -> GroundingVerdict:
+        self.calls.append(script)
+        if self._coheres(script):
             return GroundingVerdict(reasoning="coheres", conflicts=[])
         return GroundingVerdict(
             reasoning="clash",
@@ -350,13 +388,14 @@ _SENTINEL_EMBEDDER = object()  # only reaches the (faked) index + checker
 
 
 def pick_first() -> str:
-    """Simulated user selection: pitch [1] on the surviving slate."""
+    """Simulated user selection: idea [1] on the slate."""
     return "1"
 
 
 def test_approved_path(db, tmp_path):
     pitcher = FakeStoryPitcher()
-    gate = FakeStoryCraftGate()  # all pitches pass
+    architect = FakeStoryArchitect()
+    gate = FakeStoryCraftGate()  # the developed script passes
 
     run_pitch_pipeline(
         db,
@@ -365,19 +404,35 @@ def test_approved_path(db, tmp_path):
         FakeIdeaFitGate(),
         FakeGapAgent(),
         pitcher,
+        architect,
         gate,
         dry_run=False,
         choice_provider=pick_first,
         output_dir=tmp_path,
     )
 
+    # Only the PICKED idea was developed and judged.
+    assert len(architect.develop_calls) == 1
+    assert architect.develop_calls[0][0] is SAMPLE_SLATE.ideas[0]
+    assert len(gate.calls) == 1
+
     approved = db.query(AnglePitchRecord).filter_by(approved=True).all()
     assert len(approved) == 1
-    assert approved[0].take == SAMPLE_SLATE.pitches[0].logline
+    assert approved[0].take == SAMPLE_SLATE.ideas[0].logline
     assert approved[0].killed_by_gate is False
     assert approved[0].mode == "wish"
+    assert approved[0].idea_json is not None
     assert approved[0].story_json is not None
     assert approved[0].craft_verdict_json is not None
+    # Credits priced off the developed script's beats (3 * 3s * 4.5).
+    assert approved[0].estimated_cost_credits == pytest.approx(40.5)
+
+    # The unpicked idea persisted as idea-only: no script, no verdict, 0 cr.
+    unpicked = db.query(AnglePitchRecord).filter_by(approved=None).one()
+    assert unpicked.idea_json is not None
+    assert unpicked.story_json is None
+    assert unpicked.craft_verdict_json is None
+    assert unpicked.estimated_cost_credits == 0.0
 
     event = db.query(TrendingEventRecord).filter_by(
         id=approved[0].trending_event_id
@@ -390,12 +445,17 @@ def test_approved_path(db, tmp_path):
     data = json.loads(json_files[0].read_text())
     assert data["pitch_id"] == approved[0].id
     assert data["mode"] == "wish"
-    assert data["logline"] == SAMPLE_SLATE.pitches[0].logline
+    assert data["logline"] == SAMPLE_SLATE.ideas[0].logline
+    # The handoff carries the developed SCRIPT (beats present).
     assert isinstance(data["story"], dict)
+    assert len(data["story"]["beats"]) == 3
     assert data["trendiness_score"] == pytest.approx(0.92)
 
 
-def test_dry_run_writes_nothing(db, tmp_path):
+def test_dry_run_writes_nothing_and_never_develops(db, tmp_path):
+    architect = FakeStoryArchitect()
+    gate = FakeStoryCraftGate()
+
     run_pitch_pipeline(
         db,
         FakeScraper(),
@@ -403,7 +463,8 @@ def test_dry_run_writes_nothing(db, tmp_path):
         FakeIdeaFitGate(),
         FakeGapAgent(),
         FakeStoryPitcher(),
-        FakeStoryCraftGate(),
+        architect,
+        gate,
         dry_run=True,
         choice_provider=None,
         output_dir=tmp_path,
@@ -412,12 +473,16 @@ def test_dry_run_writes_nothing(db, tmp_path):
     assert db.query(TrendingEventRecord).count() == 0
     assert db.query(AnglePitchRecord).count() == 0
     assert len(list(tmp_path.glob("*.json"))) == 0
+    # Dry run stops at the idea slate — no paid development, no judging.
+    assert architect.develop_calls == []
+    assert gate.calls == []
 
 
-def test_failing_pitch_repitched_then_passes(db, tmp_path):
-    """Gate fails a pitch -> repitch once with the failure notes -> passes -> slate."""
-    pitcher = FakeStoryPitcher()
-    gate = FakeStoryCraftGate(pass_predicate=lambda p: "[repaired]" in p.logline)
+def test_failing_script_repaired_then_passes(db, tmp_path):
+    """Gate fails the developed script -> ONE architect repair with the failure
+    notes -> passes -> approved."""
+    architect = FakeStoryArchitect()
+    gate = FakeStoryCraftGate(pass_predicate=lambda s: "[repaired]" in s.logline)
 
     run_pitch_pipeline(
         db,
@@ -425,27 +490,27 @@ def test_failing_pitch_repitched_then_passes(db, tmp_path):
         FakeExtractor(),
         FakeIdeaFitGate(),
         FakeGapAgent(),
-        pitcher,
+        FakeStoryPitcher(),
+        architect,
         gate,
         dry_run=False,
         choice_provider=pick_first,
         output_dir=tmp_path,
     )
 
-    # Each original pitch failed once and was repitched exactly once.
-    assert len(pitcher.repitch_calls) == len(SAMPLE_SLATE.pitches)
-    # The repitch received the gate's failure notes.
-    assert pitcher.repitch_calls[0][1] == "beat 2 needs a real turn"
-    # The approved survivor is a repaired pitch, not killed.
+    # Exactly one repair, carrying the gate's failure notes.
+    assert len(architect.repair_calls) == 1
+    assert architect.repair_calls[0][1] == "beat 2 needs a real turn"
     approved = db.query(AnglePitchRecord).filter_by(approved=True).one()
-    assert "[repaired]" in approved.take
+    assert "[repaired]" in approved.story_json["logline"]
     assert approved.killed_by_gate is False
 
 
-def test_pitch_failing_twice_is_killed(db, tmp_path):
-    """Gate fails even after repair -> pitch dropped, persisted killed_by_gate=True."""
-    pitcher = FakeStoryPitcher()
-    gate = FakeStoryCraftGate(pass_predicate=lambda p: False)  # never passes
+def test_script_failing_twice_is_killed(db, tmp_path):
+    """Gate fails even after the one repair -> chosen record persisted
+    killed_by_gate=True with its verdict; nothing approved, no handoff."""
+    architect = FakeStoryArchitect()
+    gate = FakeStoryCraftGate(pass_predicate=lambda s: False)  # never passes
 
     result = run_pitch_pipeline(
         db,
@@ -453,29 +518,32 @@ def test_pitch_failing_twice_is_killed(db, tmp_path):
         FakeExtractor(),
         FakeIdeaFitGate(),
         FakeGapAgent(),
-        pitcher,
+        FakeStoryPitcher(),
+        architect,
         gate,
         dry_run=False,
         choice_provider=pick_first,
         output_dir=tmp_path,
     )
 
-    assert result is None  # wave died — nothing approved
-    pitches = db.query(AnglePitchRecord).all()
-    assert len(pitches) == len(SAMPLE_SLATE.pitches)
-    assert all(p.killed_by_gate for p in pitches)
-    assert all(p.craft_verdict_json is not None for p in pitches)
+    assert result is None  # nothing approved
+    assert len(architect.repair_calls) == 1  # bounded: exactly one repair
+    killed = db.query(AnglePitchRecord).filter_by(killed_by_gate=True).all()
+    assert len(killed) == 1
+    assert killed[0].story_json is not None
+    assert killed[0].craft_verdict_json is not None
     assert db.query(AnglePitchRecord).filter_by(approved=True).count() == 0
     assert len(list(tmp_path.glob("*.json"))) == 0  # no handoff written
 
 
 def test_topic_branch_skips_scraper_and_threads_bundle(db, tmp_path):
     """Path B: --topic -> scraper+extractor NOT called; context_agent.gather runs;
-    gap & pitcher receive the bundle; context_bundle column populated."""
+    gap, pitcher AND architect receive the bundle; context_bundle column populated."""
     scraper = FakeScraper()
     extractor = FakeExtractor()
     gap_agent = FakeGapAgent()
     pitcher = FakeStoryPitcher()
+    architect = FakeStoryArchitect()
     context_agent = FakeContextAgent()
 
     run_pitch_pipeline(
@@ -485,6 +553,7 @@ def test_topic_branch_skips_scraper_and_threads_bundle(db, tmp_path):
         FakeIdeaFitGate(),
         gap_agent,
         pitcher,
+        architect,
         FakeStoryCraftGate(),
         dry_run=False,
         choice_provider=pick_first,
@@ -497,10 +566,11 @@ def test_topic_branch_skips_scraper_and_threads_bundle(db, tmp_path):
     assert extractor.calls == 0, "extractor.extract must not run in Path B"
     assert context_agent.calls == ["Wuthering Waves Jinhsi"]
 
-    # Gap & pitcher received the bundle.
+    # Gap, pitcher, and the architect all received the bundle.
     assert gap_agent.calls[0][1] is SAMPLE_BUNDLE, "gap must receive the bundle"
     assert len(pitcher.pitch_calls) == 1
     assert pitcher.pitch_calls[0][2] is SAMPLE_BUNDLE, "pitcher must receive the bundle"
+    assert architect.develop_calls[0][1] is SAMPLE_BUNDLE, "architect must receive the bundle"
 
     # Persisted event row carries the serialized bundle.
     event_row = db.query(TrendingEventRecord).one()
@@ -535,6 +605,7 @@ def test_force_overrides_gate_kill_but_not_craft_gate(db, tmp_path):
         FakeIdeaFitGate(fit=_killing_fit()),
         gap_agent,
         pitcher,
+        FakeStoryArchitect(),
         FakeStoryCraftGate(),  # craft gate passes everything here
         dry_run=False,
         choice_provider=pick_first,
@@ -561,6 +632,7 @@ def test_gate_kill_still_kills_without_force(db, tmp_path):
         FakeIdeaFitGate(fit=_killing_fit()),
         gap_agent,
         FakeStoryPitcher(),
+        FakeStoryArchitect(),
         FakeStoryCraftGate(),
         dry_run=False,
         choice_provider=pick_first,
@@ -577,11 +649,12 @@ def test_gate_kill_still_kills_without_force(db, tmp_path):
 def test_unresolved_facts_flags_and_persists_without_running_gap_or_pitch(db, tmp_path):
     """A bundle with non-empty unresolved_facts is flagged: persisted as its own
     TrendingEventRecord row (so a human can review it later), but gap_agent/
-    story_pitcher/story_craft_gate never run for it — unlike a plain idea-fit-gate
-    kill, which persists nothing."""
+    story_pitcher/architect/craft gate never run for it — unlike a plain
+    idea-fit-gate kill, which persists nothing."""
     idea_fit_gate = FakeIdeaFitGate()
     gap_agent = FakeGapAgent()
     pitcher = FakeStoryPitcher()
+    architect = FakeStoryArchitect()
     craft_gate = FakeStoryCraftGate()
     context_agent = FakeContextAgent(event=SAMPLE_TOPIC_EVENT, bundle=FLAGGED_BUNDLE)
 
@@ -592,6 +665,7 @@ def test_unresolved_facts_flags_and_persists_without_running_gap_or_pitch(db, tm
         idea_fit_gate,
         gap_agent,
         pitcher,
+        architect,
         craft_gate,
         dry_run=False,
         choice_provider=pick_first,
@@ -604,6 +678,7 @@ def test_unresolved_facts_flags_and_persists_without_running_gap_or_pitch(db, tm
     assert len(idea_fit_gate.calls) == 0
     assert len(gap_agent.calls) == 0
     assert len(pitcher.pitch_calls) == 0
+    assert architect.develop_calls == []
     assert len(craft_gate.calls) == 0
 
     row = db.query(TrendingEventRecord).one()
@@ -617,17 +692,13 @@ def test_unresolved_facts_flags_and_persists_without_running_gap_or_pitch(db, tm
 def test_single_event_bundle_proceeds_even_when_unresolved(db, tmp_path):
     """A pre-built bundle (e.g. loaded from a stored TrendingEventRecord by
     scripts/repitch_event.py, not gathered live via topic/context_agent) is
-    NOT subject to the flag-and-skip check. That check exists to stop the
-    unattended Path B scan from silently guessing with nobody watching;
-    repitch_event.py already unconditionally prints unresolved_facts before
-    calling run_pitch_pipeline, so a human has already reviewed the flag by
-    the time single_event_bundle is passed in. A FLAGGED_BUNDLE must still
-    flow all the way through idea_fit_gate -> gap_agent -> story_pitcher ->
-    story_craft_gate, exactly like any other event."""
+    NOT subject to the flag-and-skip check — repitch_event.py already prints
+    unresolved_facts for human review before calling run_pitch_pipeline."""
     idea_fit_gate = FakeIdeaFitGate()
     gap_agent = FakeGapAgent()
     pitcher = FakeStoryPitcher()
-    craft_gate = FakeStoryCraftGate()  # all pitches pass
+    architect = FakeStoryArchitect()
+    craft_gate = FakeStoryCraftGate()
 
     result = run_pitch_pipeline(
         db,
@@ -636,6 +707,7 @@ def test_single_event_bundle_proceeds_even_when_unresolved(db, tmp_path):
         idea_fit_gate,
         gap_agent,
         pitcher,
+        architect,
         craft_gate,
         dry_run=False,
         choice_provider=pick_first,
@@ -649,7 +721,8 @@ def test_single_event_bundle_proceeds_even_when_unresolved(db, tmp_path):
     assert gap_agent.calls[0][1] is FLAGGED_BUNDLE, "gap must receive the bundle"
     assert len(pitcher.pitch_calls) == 1
     assert pitcher.pitch_calls[0][2] is FLAGGED_BUNDLE, "pitcher must receive the bundle"
-    assert len(craft_gate.calls) == len(SAMPLE_SLATE.pitches)
+    assert architect.develop_calls[0][1] is FLAGGED_BUNDLE, "architect must receive the bundle"
+    assert len(craft_gate.calls) == 1  # only the picked idea's script is judged
 
     row = db.query(TrendingEventRecord).one()
     assert row.headline == SAMPLE_TOPIC_EVENT.headline
@@ -675,6 +748,7 @@ def test_unresolved_facts_not_persisted_in_dry_run(db, tmp_path):
         FakeIdeaFitGate(),
         FakeGapAgent(),
         FakeStoryPitcher(),
+        FakeStoryArchitect(),
         FakeStoryCraftGate(),
         dry_run=True,
         choice_provider=None,
@@ -696,6 +770,7 @@ def test_topic_branch_without_context_agent_raises(db, tmp_path):
             FakeIdeaFitGate(),
             FakeGapAgent(),
             FakeStoryPitcher(),
+            FakeStoryArchitect(),
             FakeStoryCraftGate(),
             dry_run=True,
             choice_provider=None,
@@ -707,12 +782,14 @@ def test_topic_branch_without_context_agent_raises(db, tmp_path):
 
 # ---------------------------------------------------------------------------
 # Grounding check wiring (Task 1.5) — Path B only, index on gather, one repair.
+# Slice ①: grounding judges the developed SCRIPT (that's where story facts
+# now materialize), so it runs once, on the picked idea's script.
 # ---------------------------------------------------------------------------
 
 
 def test_grounding_pass_indexes_and_persists_verdict(db, tmp_path, monkeypatch):
-    """Path B with fridge machinery: raw web text is indexed on gather, each
-    craft-survivor is grounding-checked, and a cohering verdict is persisted."""
+    """Path B with fridge machinery: raw web text is indexed on gather, the
+    developed script is grounding-checked, and a cohering verdict is persisted."""
     recorder = _RecordingIndex()
     monkeypatch.setattr(pitch_angles_module, "index_web_text", recorder)
     checker = FakeGroundingChecker()  # everything coheres
@@ -725,6 +802,7 @@ def test_grounding_pass_indexes_and_persists_verdict(db, tmp_path, monkeypatch):
         FakeIdeaFitGate(),
         FakeGapAgent(),
         FakeStoryPitcher(),
+        FakeStoryArchitect(),
         FakeStoryCraftGate(),
         dry_run=False,
         choice_provider=pick_first,
@@ -737,19 +815,20 @@ def test_grounding_pass_indexes_and_persists_verdict(db, tmp_path, monkeypatch):
 
     # Raw web text indexed exactly once, scoped to the run's topic.
     assert recorder.calls == [("Wuthering Waves Jinhsi", context_agent._web_text)]
-    # Every craft-survivor was grounding-checked (slate has 2, both cohere).
-    assert len(checker.calls) == len(SAMPLE_SLATE.pitches)
+    # The picked idea's developed script was grounding-checked.
+    assert len(checker.calls) == 1
+    assert isinstance(checker.calls[0], StoryScript)
     approved = db.query(AnglePitchRecord).filter_by(approved=True).one()
     assert approved.grounding_verdict_json is not None
     assert approved.grounding_verdict_json["coheres"] is True
 
 
-def test_grounding_conflict_repitched_then_coheres(db, tmp_path, monkeypatch):
-    """A pitch that contradicts canon is repitched once with the conflicts as
-    failure notes, then coheres -> lands on the slate as the repaired copy."""
+def test_grounding_conflict_repaired_then_coheres(db, tmp_path, monkeypatch):
+    """A script that contradicts canon gets ONE architect repair with the
+    conflicts as failure notes, then coheres -> approved as the repaired copy."""
     monkeypatch.setattr(pitch_angles_module, "index_web_text", _RecordingIndex())
-    pitcher = FakeStoryPitcher()
-    checker = FakeGroundingChecker(cohere_predicate=lambda p: "[repaired]" in p.logline)
+    architect = FakeStoryArchitect()
+    checker = FakeGroundingChecker(cohere_predicate=lambda s: "[repaired]" in s.logline)
 
     run_pitch_pipeline(
         db,
@@ -757,8 +836,9 @@ def test_grounding_conflict_repitched_then_coheres(db, tmp_path, monkeypatch):
         None,
         FakeIdeaFitGate(),
         FakeGapAgent(),
-        pitcher,
-        FakeStoryCraftGate(),  # craft passes everything -> repairs are grounding-driven
+        FakeStoryPitcher(),
+        architect,
+        FakeStoryCraftGate(),  # craft passes -> the repair is grounding-driven
         dry_run=False,
         choice_provider=pick_first,
         output_dir=tmp_path,
@@ -768,20 +848,19 @@ def test_grounding_conflict_repitched_then_coheres(db, tmp_path, monkeypatch):
         grounding_checker=checker,
     )
 
-    # Each original pitch conflicted once and was repitched with the conflicts.
-    assert len(pitcher.repitch_calls) == len(SAMPLE_SLATE.pitches)
-    assert pitcher.repitch_calls[0][1] == "canon: they are siblings; pitch: they are lovers"
+    assert len(architect.repair_calls) == 1
+    assert architect.repair_calls[0][1] == "canon: they are siblings; pitch: they are lovers"
     approved = db.query(AnglePitchRecord).filter_by(approved=True).one()
-    assert "[repaired]" in approved.take
+    assert "[repaired]" in approved.story_json["logline"]
     assert approved.grounding_verdict_json["coheres"] is True
     assert approved.killed_by_gate is False
 
 
 def test_grounding_conflict_survives_repair_is_killed(db, tmp_path, monkeypatch):
-    """A canon contradiction that survives the one repair -> pitch killed,
+    """A canon contradiction that survives the one repair -> script killed,
     verdict persisted with coheres=False, nothing approved."""
     monkeypatch.setattr(pitch_angles_module, "index_web_text", _RecordingIndex())
-    checker = FakeGroundingChecker(cohere_predicate=lambda p: False)  # never coheres
+    checker = FakeGroundingChecker(cohere_predicate=lambda s: False)  # never coheres
 
     result = run_pitch_pipeline(
         db,
@@ -790,6 +869,7 @@ def test_grounding_conflict_survives_repair_is_killed(db, tmp_path, monkeypatch)
         FakeIdeaFitGate(),
         FakeGapAgent(),
         FakeStoryPitcher(),
+        FakeStoryArchitect(),
         FakeStoryCraftGate(),  # craft passes; grounding is what kills
         dry_run=False,
         choice_provider=pick_first,
@@ -801,32 +881,17 @@ def test_grounding_conflict_survives_repair_is_killed(db, tmp_path, monkeypatch)
     )
 
     assert result is None
-    pitches = db.query(AnglePitchRecord).all()
-    assert len(pitches) == len(SAMPLE_SLATE.pitches)
-    assert all(p.killed_by_gate for p in pitches)
-    assert all(
-        p.grounding_verdict_json is not None
-        and p.grounding_verdict_json["coheres"] is False
-        for p in pitches
-    )
+    killed = db.query(AnglePitchRecord).filter_by(killed_by_gate=True).all()
+    assert len(killed) == 1
+    assert killed[0].grounding_verdict_json is not None
+    assert killed[0].grounding_verdict_json["coheres"] is False
     assert db.query(AnglePitchRecord).filter_by(approved=True).count() == 0
 
 
 def test_floor_rechecked_after_grounding_repair(db, tmp_path, monkeypatch):
     """Regression (code review, Critical): a grounding repair that rewrites the
-    pitch and DROPS the profiled speaker's line must be killed by the dialogue
-    floor — even though grounding itself now coheres. Before the fix, floor_ok was
-    stale from before the grounding repitch and the silent pitch shipped.
-    """
-    from src.monitor.schemas import (
-        CaptionPolicy,
-        CharacterRef,
-        ShotSize,
-        StoryBeat,
-        StoryPitch,
-        StoryPitchSlate,
-    )
-
+    script and DROPS the profiled speaker's line must be killed by the dialogue
+    floor — even though grounding itself now coheres."""
     monkeypatch.setattr(pitch_angles_module, "index_web_text", _RecordingIndex())
     # Jinhsi (slug "jinhsi") is the sole profiled cast member.
     monkeypatch.setattr(
@@ -834,53 +899,48 @@ def test_floor_rechecked_after_grounding_repair(db, tmp_path, monkeypatch):
         lambda *a, **k: {"jinhsi": "## Fingerprint\nregal"},
     )
 
-    def _profiled_pitch(logline: str) -> StoryPitch:
+    jinhsi_idea = _idea(
+        "jinhsi one",
+        characters=[CharacterRef(name="Jinhsi", ip_source="Wuthering Waves")],
+    )
+    slate = IdeaPitchSlate(ideas=[jinhsi_idea, _idea("jinhsi two")])
+
+    def _spoken_beats() -> list[StoryBeat]:
         cast = ["Jinhsi"]
-        return StoryPitch(
-            logline=logline, mode="wish",
-            characters=[CharacterRef(name="Jinhsi", ip_source="Wuthering Waves")],
-            desired_moment="m", scene_setting="s",
-            beats=[
-                StoryBeat(role="establish", visual_line="v", narration_line=None,
-                          shot_size=ShotSize.wide, characters_in_frame=cast),
-                StoryBeat(role="build", visual_line="v", narration_line=None,
-                          shot_size=ShotSize.medium, characters_in_frame=cast),
-                StoryBeat(role="payoff", visual_line="v", narration_line=None,
-                          dialogue_line="It ends here.", speaker="Jinhsi",
-                          shot_size=ShotSize.close_up, characters_in_frame=cast,
-                          hero_moment=True),
-            ],
-            caption_policy=CaptionPolicy.none, hook_line=None, why_it_lands="w",
-            legal_flag=False,
-        )
+        return [
+            StoryBeat(role=BeatRole.establish, visual_line="v", narration_line=None,
+                      shot_size=ShotSize.wide, characters_in_frame=cast),
+            StoryBeat(role=BeatRole.build, visual_line="v", narration_line=None,
+                      shot_size=ShotSize.medium, characters_in_frame=cast),
+            StoryBeat(role=BeatRole.payoff, visual_line="v", narration_line=None,
+                      dialogue_line="It ends here.", speaker="Jinhsi",
+                      shot_size=ShotSize.close_up, characters_in_frame=cast,
+                      hero_moment=True),
+        ]
 
-    class _StripsDialogueOnRepitch:
-        """pitch() = profiled speaker with a line; repitch() drops the line
-        (simulating a grounding repair that rewrote the beats).
-        """
+    class _StripsDialogueOnRepair(FakeStoryArchitect):
+        """develop() = profiled speaker with a line; repair() drops the line
+        (simulating a grounding repair that rewrote the beats)."""
 
-        def __init__(self) -> None:
-            self._slate = StoryPitchSlate(
-                pitches=[_profiled_pitch("jinhsi one"), _profiled_pitch("jinhsi two")]
-            )
+        def develop(self, idea, event, gap, bundle=None, cast_voices=""):
+            self.develop_calls.append((idea, bundle, cast_voices))
+            return _script_for(idea, beats=_spoken_beats())
 
-        def pitch(self, event, gap, bundle=None, cast_voices=""):
-            return self._slate
-
-        def repitch(self, event, gap, failed_pitch, failure_notes, bundle=None, cast_voices=""):
+        def repair(self, idea, event, gap, failed_script, failure_notes,
+                   bundle=None, cast_voices=""):
+            self.repair_calls.append((failed_script, failure_notes))
             silent_beats = [
                 b.model_copy(update={"dialogue_line": None, "speaker": None})
-                for b in failed_pitch.beats
+                for b in failed_script.beats
             ]
-            return failed_pitch.model_copy(
-                update={"logline": f"[repaired] {failed_pitch.logline}", "beats": silent_beats}
+            return failed_script.model_copy(
+                update={"logline": f"[repaired] {failed_script.logline}",
+                        "beats": silent_beats}
             )
 
-    # Grounding coheres only once the pitch is silent — i.e. after the repair. So
-    # the ORIGINAL (with dialogue) conflicts -> grounding repitch -> silent pitch
-    # -> grounding now coheres, but the floor is violated (Jinhsi silent).
+    # Grounding coheres only once the script is silent — i.e. after the repair.
     checker = FakeGroundingChecker(
-        cohere_predicate=lambda p: all(b.dialogue_line is None for b in p.beats)
+        cohere_predicate=lambda s: all(b.dialogue_line is None for b in s.beats)
     )
 
     result = run_pitch_pipeline(
@@ -889,7 +949,8 @@ def test_floor_rechecked_after_grounding_repair(db, tmp_path, monkeypatch):
         None,
         FakeIdeaFitGate(),
         FakeGapAgent(),
-        _StripsDialogueOnRepitch(),
+        FakeStoryPitcher(slate=slate),
+        _StripsDialogueOnRepair(),
         FakeStoryCraftGate(),  # craft passes; grounding+floor are what act
         dry_run=False,
         choice_provider=pick_first,
@@ -900,11 +961,12 @@ def test_floor_rechecked_after_grounding_repair(db, tmp_path, monkeypatch):
         grounding_checker=checker,
     )
 
-    # Nothing approved; every pitch killed BY THE FLOOR even though grounding cohered.
+    # Nothing approved; the chosen script killed BY THE FLOOR even though
+    # grounding cohered on the (silent) repaired script.
     assert result is None
-    killed = db.query(AnglePitchRecord).all()
-    assert killed and all(p.killed_by_gate for p in killed)
-    assert all(p.grounding_verdict_json["coheres"] is True for p in killed)
+    killed = db.query(AnglePitchRecord).filter_by(killed_by_gate=True).all()
+    assert len(killed) == 1
+    assert killed[0].grounding_verdict_json["coheres"] is True
 
 
 def test_grounding_skipped_in_dry_run(db, tmp_path, monkeypatch):
@@ -920,6 +982,7 @@ def test_grounding_skipped_in_dry_run(db, tmp_path, monkeypatch):
         FakeIdeaFitGate(),
         FakeGapAgent(),
         FakeStoryPitcher(),
+        FakeStoryArchitect(),
         FakeStoryCraftGate(),
         dry_run=True,
         choice_provider=None,
@@ -949,6 +1012,7 @@ def test_grounding_topic_override_grounds_without_rescrape(db, tmp_path, monkeyp
         FakeIdeaFitGate(),
         FakeGapAgent(),
         FakeStoryPitcher(),
+        FakeStoryArchitect(),
         FakeStoryCraftGate(),
         dry_run=False,
         choice_provider=pick_first,
@@ -961,8 +1025,8 @@ def test_grounding_topic_override_grounds_without_rescrape(db, tmp_path, monkeyp
 
     # topic is None -> no re-scrape index fired.
     assert recorder.calls == []
-    # ...but grounding still ran, scoped to the override topic.
-    assert len(checker.calls) == len(SAMPLE_SLATE.pitches)
+    # ...but grounding still ran on the developed script, scoped to the override.
+    assert len(checker.calls) == 1
     approved = db.query(AnglePitchRecord).filter_by(approved=True).one()
     assert approved.grounding_verdict_json is not None
     assert approved.grounding_verdict_json["coheres"] is True

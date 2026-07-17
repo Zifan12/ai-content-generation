@@ -7,7 +7,6 @@ character given a line passes.
 """
 
 from src.monitor.schemas import (
-    CaptionPolicy,
     CharacterRef,
     ShotSize,
     StoryBeat,
@@ -31,7 +30,7 @@ def _mk(dialogue, speaker) -> StoryPitch:
         logline="l", mode="wish",
         characters=[CharacterRef(name="Elfaria Albis Serfort", ip_source="Wistoria")],
         desired_moment="m", scene_setting="s", beats=beats,
-        caption_policy=CaptionPolicy.none, hook_line=None, why_it_lands="w", legal_flag=False,
+        why_it_lands="w", legal_flag=False,
     )
 
 

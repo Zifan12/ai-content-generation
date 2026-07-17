@@ -1,6 +1,5 @@
 from src.monitor.schemas import (
     BeatRole,
-    CaptionPolicy,
     CharacterRef,
     ContentMode,
     ShotSize,
@@ -34,8 +33,6 @@ SAMPLE_PITCH = StoryPitch(
         _beat(BeatRole.turn, ShotSize.medium),
         _beat(BeatRole.payoff, ShotSize.close_up, hero=True),
     ],
-    caption_policy=CaptionPolicy.hook_only,
-    hook_line="the ending they owed us",
     why_it_lands="x",
     legal_flag=False,
 )

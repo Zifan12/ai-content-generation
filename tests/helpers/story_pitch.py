@@ -1,13 +1,17 @@
-"""Shared StoryPitch builder for pipeline/smoke tests (v3 multi-shot era)."""
+"""Shared StoryScript builder for pipeline/smoke tests (v3 multi-shot era).
+
+Slice ① (staged director, 2026-07-16): the story container is StoryScript —
+same shape the old StoryPitch had minus the deleted caption_policy/hook_line
+pair. The builder keeps its historical name; callers are unchanged.
+"""
 
 from src.monitor.schemas import (
     BeatRole,
-    CaptionPolicy,
     CharacterRef,
     ContentMode,
     ShotSize,
     StoryBeat,
-    StoryPitch,
+    StoryScript,
 )
 
 _SIZES = [
@@ -23,9 +27,9 @@ _SIZES = [
 def build_story_pitch(
     n_beats: int = 3,
     narrations: list[str | None] | None = None,
-) -> StoryPitch:
-    """Return a schema-valid StoryPitch with n_beats beats (varied shot sizes,
-    hook_only caption policy + hook_line, one character)."""
+) -> StoryScript:
+    """Return a schema-valid StoryScript with n_beats beats (varied shot sizes,
+    one character)."""
     if narrations is None:
         narrations = ["Narration line."] * n_beats
     beats = [
@@ -39,14 +43,12 @@ def build_story_pitch(
         )
         for i in range(n_beats)
     ]
-    return StoryPitch(
+    return StoryScript(
         logline="Eve gets the ending the fans wanted.",
         mode=ContentMode.wish,
         characters=[CharacterRef(name="Eve", ip_source="Stellar Blade")],
         desired_moment="The confrontation the trailer denied.",
         beats=beats,
-        caption_policy=CaptionPolicy.hook_only,
-        hook_line="the ending they cut",
         why_it_lands="Fans are begging for exactly this beat.",
         legal_flag=False,
     )

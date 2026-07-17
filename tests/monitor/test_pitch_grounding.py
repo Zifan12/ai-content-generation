@@ -22,7 +22,6 @@ from src.monitor.pitch_grounding import (
 )
 from src.monitor.schemas import (
     BeatRole,
-    CaptionPolicy,
     CharacterRef,
     ContentMode,
     ShotSize,
@@ -78,8 +77,8 @@ _CANON_CHUNK = "Rin and Len are twin siblings in the source, not a romantic coup
 
 
 def _sample_pitch() -> StoryPitch:
-    """A minimal valid StoryPitch (caption_policy=none avoids the hook_line rule;
-    two shot sizes satisfy the framing-variety validator)."""
+    """A minimal valid StoryPitch (two shot sizes satisfy the framing-variety
+    validator)."""
     return StoryPitch(
         logline="Rin and Len finally share the balcony kiss fans were denied.",
         mode=ContentMode.wish,
@@ -113,8 +112,6 @@ def _sample_pitch() -> StoryPitch:
                 hero_moment=True,
             ),
         ],
-        caption_policy=CaptionPolicy.none,
-        hook_line=None,
         why_it_lands="Fans mourned the couple that never was.",
         legal_flag=False,
     )

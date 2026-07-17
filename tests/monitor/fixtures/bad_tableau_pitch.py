@@ -3,9 +3,8 @@
 The whole point of this fixture is to prove that the ``StoryCraftGate`` LLM
 judge — not the Pydantic schema — is what rejects a bad pitch.  Every field
 here is deliberately constructed to satisfy every ``StoryPitch`` /
-``StoryBeat`` validator (3-6 beats, framing variety, at most one hero moment,
-hook_line present because caption_policy is hook_only) while still being a
-story with nothing underneath it:
+``StoryBeat`` validator (3-6 beats, framing variety, at most one hero moment)
+while still being a story with nothing underneath it:
 
 - **No visible turn.** All three beats are the same static tableau of
   Homelander standing on a rooftop; nothing on screen ever changes state.
@@ -31,7 +30,6 @@ Used by:
 
 from src.monitor.schemas import (
     BeatRole,
-    CaptionPolicy,
     CharacterRef,
     ContentMode,
     ShotSize,
@@ -88,8 +86,6 @@ BAD_TABLEAU_PITCH = StoryPitch(
             hero_moment=False,
         ),
     ],
-    caption_policy=CaptionPolicy.hook_only,
-    hook_line="The rampage they promised you.",
     why_it_lands="Homelander is a popular character and fans are angry.",
     legal_flag=True,
 )

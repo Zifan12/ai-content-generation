@@ -135,13 +135,6 @@ class ShotSize(str, Enum):
     over_shoulder = "over_shoulder"
 
 
-class CaptionPolicy(str, Enum):
-    """How captions are used on the rendered video."""
-
-    none = "none"  # no on-screen text
-    hook_only = "hook_only"  # a single hook card, no explainer captions
-
-
 class CharacterRef(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -286,8 +279,91 @@ class StoryBeat(BaseModel):
         return self
 
 
-class StoryPitch(BaseModel):
+class IdeaPitch(BaseModel):
+    """The pitcher's whole output for one pitch: the DESIRE, nothing staged.
+
+    Slice ① of the staged-director design (spec 2026-07-16): the pitcher names
+    the moment a reaction wave is begging to see and WHO is in it — it authors
+    no beats, no shot sizes, no dialogue, no scene staging. Story structure is
+    the StoryArchitect's job (src/generation/story_architect.py), which holds
+    the craft knowledge the pitcher never had (obs 2206: pitch-51's beat-free
+    action line was authored here, upstream of every stage that could catch it).
+
+    This IS an LLM response model (extra="forbid" so OpenRouter's strict
+    json_schema mode has a closed schema to enforce against).
+    """
+
     model_config = ConfigDict(extra="forbid")
+
+    logline: str
+    mode: ContentMode
+    characters: list[CharacterRef]
+    desired_moment: str  # the thing the reaction is begging to see
+    why_it_lands: str
+    legal_flag: bool  # True = likeness/IP concern to review before render
+
+
+class IdeaPitchSlate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ideas: list[IdeaPitch] = Field(min_length=2, max_length=3)
+
+
+def _check_beat_rules(beats: list[StoryBeat]) -> None:
+    """Cross-beat craft rules a single-field validator cannot see.
+
+    - Beats must not ALL share one shot_size (forces framing variety — the
+      BUG-002 static-shotcraft failure mode).
+    - At most one beat may be the hero_moment.
+
+    Shared by ScriptDraft (the architect's raw LLM output) and StoryScript
+    (the composed artifact) so the rule cannot drift between them.
+    """
+    if len({beat.shot_size for beat in beats}) == 1:
+        raise ValueError(
+            "all beats share one shot_size; vary framing (establish/detail/reveal)"
+        )
+    hero_count = sum(beat.hero_moment for beat in beats)
+    if hero_count > 1:
+        raise ValueError(f"at most one hero_moment beat allowed, found {hero_count}")
+
+
+class ScriptDraft(BaseModel):
+    """The StoryArchitect's raw LLM output: staging only, no idea fields.
+
+    The architect is never asked to echo the idea back — logline, mode,
+    characters, desired_moment, why_it_lands, and legal_flag are code-copied
+    from the picked IdeaPitch into the composed StoryScript (the same
+    trust-code-over-LLM doctrine as content_writer's beat-fact copying).
+    LLM response model, so extra="forbid".
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    scene_setting: str
+    beats: list[StoryBeat] = Field(min_length=3, max_length=5)
+
+    @model_validator(mode="after")
+    def _check_beats(self) -> "ScriptDraft":
+        _check_beat_rules(self.beats)
+        return self
+
+
+class StoryScript(BaseModel):
+    """The developed story: the picked idea + the architect's staging.
+
+    This is the artifact the craft gate judges, the dialogue floor and
+    grounding check read, AnglePitchRecord.story_json persists, and the
+    content writer directs from. It carries the exact shape the pre-slice-①
+    StoryPitch had MINUS caption_policy/hook_line (dead on-screen-text fields
+    of the pre-native-quality-v2 product, deleted with the slim — PRD D11).
+
+    NOT an LLM response model (it is composed in code from IdeaPitch +
+    ScriptDraft), so extra="ignore": legacy story_json rows that still carry
+    caption_policy/hook_line keys load cleanly and simply drop them.
+    """
+
+    model_config = ConfigDict(extra="ignore")
 
     logline: str
     mode: ContentMode
@@ -295,43 +371,34 @@ class StoryPitch(BaseModel):
     desired_moment: str  # the thing the reaction is begging to see
     scene_setting: str = ""  # the ONE place/time every beat stays inside; "" = pre-v2 row
     beats: list[StoryBeat] = Field(min_length=3, max_length=5)
-    caption_policy: CaptionPolicy = CaptionPolicy.hook_only
-    hook_line: str | None = None  # required iff caption_policy == hook_only
     why_it_lands: str
     legal_flag: bool  # True = likeness/IP concern to review before render
 
     @model_validator(mode="after")
-    def _check_beat_and_caption_rules(self) -> "StoryPitch":
-        """
-        Enforce cross-field craft rules a single-field validator cannot see.
-
-        - Beats must not ALL share one shot_size (forces framing variety — the
-          BUG-002 static-shotcraft failure mode).
-        - At most one beat may be the hero_moment.
-        - hook_line must be present exactly when caption_policy is hook_only.
-        """
-        if len({beat.shot_size for beat in self.beats}) == 1:
-            raise ValueError(
-                "all beats share one shot_size; vary framing (establish/detail/reveal)"
-            )
-        hero_count = sum(beat.hero_moment for beat in self.beats)
-        if hero_count > 1:
-            raise ValueError(
-                f"at most one hero_moment beat allowed, found {hero_count}"
-            )
-        has_hook = bool(self.hook_line)
-        wants_hook = self.caption_policy == CaptionPolicy.hook_only
-        if wants_hook and not has_hook:
-            raise ValueError("caption_policy=hook_only requires a hook_line")
-        if has_hook and not wants_hook:
-            raise ValueError("hook_line set but caption_policy is not hook_only")
+    def _check_beats(self) -> "StoryScript":
+        _check_beat_rules(self.beats)
         return self
 
 
-class StoryPitchSlate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+# Back-compat alias (slice ①, 2026-07-16): every pre-slice consumer that
+# type-hinted or validated StoryPitch keeps working against StoryScript —
+# same fields minus the deleted caption pair, and extra="ignore" absorbs
+# those keys on legacy rows. Migrate imports opportunistically; new code
+# says StoryScript.
+StoryPitch = StoryScript
 
-    pitches: list[StoryPitch] = Field(min_length=2, max_length=3)
+
+class StoryPitchSlate(BaseModel):
+    """LEGACY (slice ①): the live loop now emits IdeaPitchSlate (pitcher) and
+    a single StoryScript (architect). Only offline ablation scripts
+    (run_playbook_ablation.py, run_fridge_phase0.py) still reference this
+    shape; they predate the split and crash at runtime against the slim
+    pitcher regardless. Kept so their imports resolve; delete with them.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    pitches: list[StoryScript] = Field(min_length=2, max_length=3)
 
 
 class StoryCraftVerdict(BaseModel):

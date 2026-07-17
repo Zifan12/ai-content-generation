@@ -19,7 +19,6 @@ from src.evals.groundedness_check import (
 )
 from src.monitor.schemas import (
     BeatRole,
-    CaptionPolicy,
     CharacterRef,
     ContentMode,
     GapAnalysis,
@@ -93,8 +92,8 @@ def _empty_quotes_gap() -> GapAnalysis:
 
 
 def _none_fields_pitch() -> StoryPitch:
-    """A schema-valid pitch whose nullable fields are None: caption_policy=none
-    forces hook_line=None (validator), and the middle beat has narration_line=None.
+    """A schema-valid pitch whose nullable fields are None: the middle beat has
+    narration_line=None.
     Used to check the assembly's None-guards don't leak the literal string 'None'
     into the prompt.
     """
@@ -131,8 +130,6 @@ def _none_fields_pitch() -> StoryPitch:
                 hero_moment=True,
             ),
         ],
-        caption_policy=CaptionPolicy.none,  # forces hook_line=None
-        hook_line=None,
         why_it_lands="The payoff the footage denied.",
         legal_flag=False,
     )
@@ -160,7 +157,7 @@ def test_empty_quotes_gap_builds_ok():
     assert fake.last_prompt is not None
 
 def test_none_fields_dont_leak_into_prompt():
-    """When hook_line / narration_line are None, the guards must render an empty
+    """When narration_line is None, the guards must render an empty
     slot, not the literal string 'None'."""
     fake = FakeLLM(_canned_verdict())
     judge = GroundednessJudge(llm=fake)

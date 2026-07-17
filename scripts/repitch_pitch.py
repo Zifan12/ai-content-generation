@@ -1,13 +1,14 @@
 """Repair-repitch ONE stored AnglePitchRecord with explicit failure notes.
 
 Unlike scripts/repitch_event.py (fresh slate from the parent event — new gap,
-new pitches), this drives story_pitcher.repitch() on the STORED pitch itself:
-same gap, same desired moment, same cast — only the story shape changes. Built
-for the sequence-craft A/B (plan 2026-07-12, grilled Q4=(a)): regenerate
-pitch 43 under the Scene Space / pacing rules and render it against the
-incoherent render_20260712_175158 baseline with one variable changed.
+new ideas), this drives story_architect.repair() on the STORED script itself
+(slice ①: the architect owns story repair now — the pitcher has no beats to
+repair): same gap, same desired moment, same cast — only the story shape
+changes. The idea the architect repairs against comes from the row's
+idea_json when present, else it is reconstructed from the stored script's own
+idea fields (pre-slice rows have no idea_json).
 
-The repaired pitch is judged by the (upgraded, 10-dim) craft gate + dialogue
+The repaired script is judged by the (upgraded, 10-dim) craft gate + dialogue
 floor and persisted as a NEW AnglePitchRecord on the same parent event, with
 location_slug copied from the source row so smoke_content_writer --pitch-id
 works unchanged. The source row is never modified.
@@ -37,18 +38,26 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
 
 from src.database import SessionLocal  # noqa: E402
+from src.generation.story_architect import (  # noqa: E402
+    StoryArchitect,
+    estimate_script_credits,
+)
 from src.models.angle_pitch import AnglePitchRecord  # noqa: E402
 from src.models.trending_event import TrendingEventRecord  # noqa: E402
-from src.monitor.schemas import ContextBundle, GapAnalysis, StoryPitch, TrendingEvent  # noqa: E402
+from src.monitor.schemas import (  # noqa: E402
+    ContextBundle,
+    GapAnalysis,
+    IdeaPitch,
+    StoryScript,
+    TrendingEvent,
+)
 from src.monitor.story_craft_gate import StoryCraftGate  # noqa: E402
-from src.monitor.story_pitcher import StoryPitcher, estimate_pitch_credits  # noqa: E402
 from src.monitor.voice_profiles import (  # noqa: E402
     check_dialogue_floor,
     format_cast_voices,
     load_cast_profiles,
 )
 from src.providers.llm.factory import llm_for_seat  # noqa: E402
-from src.rag.embedder import BgeM3Embedder  # noqa: E402
 
 # Default failure notes = the four sequence-craft rules (plan 2026-07-12,
 # sources in config/render_rules.yaml sequence_craft). Scene Space is named
@@ -86,7 +95,22 @@ def main() -> None:
         if event_record is None:
             raise SystemExit(f"Parent event {source.trending_event_id} missing.")
 
-        failed_pitch = StoryPitch.model_validate(source.story_json)
+        failed_script = StoryScript.model_validate(source.story_json)
+        # The idea the repair holds constant: stored idea_json when the row is
+        # post-slice-①, else reconstructed from the script's own code-copied
+        # idea fields (identical values by construction).
+        idea = (
+            IdeaPitch.model_validate(source.idea_json)
+            if source.idea_json is not None
+            else IdeaPitch(
+                logline=failed_script.logline,
+                mode=failed_script.mode,
+                characters=failed_script.characters,
+                desired_moment=failed_script.desired_moment,
+                why_it_lands=failed_script.why_it_lands,
+                legal_flag=failed_script.legal_flag,
+            )
+        )
         event = TrendingEvent(
             headline=event_record.headline,
             subreddit=event_record.source,
@@ -99,7 +123,7 @@ def main() -> None:
         )
         gap = GapAnalysis(
             dominant_emotion=event_record.dominant_emotion or "unknown",
-            audience_want=event_record.audience_want or failed_pitch.desired_moment,
+            audience_want=event_record.audience_want or failed_script.desired_moment,
             evidence_quotes=[],
             reasoning="(reconstructed from stored event; quotes not persisted)",
         )
@@ -112,15 +136,14 @@ def main() -> None:
         cast_profiles = load_cast_profiles()
         cast_voices = format_cast_voices(cast_profiles)
 
-        pitcher = StoryPitcher(
-            llm=llm_for_seat("story_pitcher"), embedder=BgeM3Embedder()
-        )
+        architect = StoryArchitect(llm=llm_for_seat("story_architect"))
         gate = StoryCraftGate(llm=llm_for_seat("story_craft_gate"))
 
-        print(f"[repitch] pitch {args.pitch_id}: {failed_pitch.logline}")
+        print(f"[repitch] pitch {args.pitch_id}: {failed_script.logline}")
         print(f"[repitch] notes: {args.notes[:120]}...")
-        repaired = pitcher.repitch(
-            event, gap, failed_pitch, args.notes, bundle, cast_voices=cast_voices
+        repaired = architect.repair(
+            idea, event, gap, failed_script, args.notes, bundle,
+            cast_voices=cast_voices,
         )
 
         verdict = gate.evaluate(repaired, event, gap)
@@ -142,10 +165,11 @@ def main() -> None:
         record = AnglePitchRecord(
             trending_event_id=source.trending_event_id,
             take=repaired.logline,
-            estimated_cost_credits=estimate_pitch_credits(repaired),
+            estimated_cost_credits=estimate_script_credits(repaired),
             gap_satisfaction_rationale=repaired.why_it_lands,
             legal_flag=repaired.legal_flag,
             approved=None,
+            idea_json=idea.model_dump(mode="json"),
             story_json=repaired.model_dump(mode="json"),
             mode=repaired.mode.value,
             craft_verdict_json=verdict.model_dump(mode="json"),

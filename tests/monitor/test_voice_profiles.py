@@ -1,7 +1,6 @@
 from pathlib import Path
 
 from src.monitor.schemas import (
-    CaptionPolicy,
     CharacterRef,
     ShotSize,
     StoryBeat,
@@ -36,8 +35,6 @@ def _pitch(beats: list[StoryBeat], characters: list[CharacterRef]) -> StoryPitch
         desired_moment="m",
         scene_setting="a room, now",
         beats=beats,
-        caption_policy=CaptionPolicy.none,
-        hook_line=None,
         why_it_lands="w",
         legal_flag=False,
     )

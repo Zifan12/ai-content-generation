@@ -15,9 +15,12 @@ class AnglePitchRecord(Base):
     # (story_json/mode/craft_verdict_json) supersedes them (Stage B).
     format_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     render_backend: Mapped[str | None] = mapped_column(String, nullable=True)
-    # Story-craft columns (Stage B): the full StoryPitch, its bound mode, the
-    # gate's verdict, and whether the craft gate killed it (killed pitches are
-    # persisted as future negative examples).
+    # Story-craft columns (Stage B, reshaped by slice ① 2026-07-16): idea_json
+    # holds the pitcher's IdeaPitch (desire only); story_json holds the
+    # developed StoryScript once the StoryArchitect has run — NULL for ideas
+    # that were never picked. Pre-slice rows have idea_json NULL and a full
+    # StoryPitch in story_json (StoryScript loads it, extra="ignore").
+    idea_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     story_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     mode: Mapped[str | None] = mapped_column(String, nullable=True)
     craft_verdict_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)

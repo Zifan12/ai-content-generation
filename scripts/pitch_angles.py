@@ -30,27 +30,27 @@ from src.monitor.fridge import index_web_text
 
 
 def _print_slate(displayed: list[dict]) -> None:
-    """Render the numbered story-pitch slate to stdout for the human to choose from.
+    """Render the numbered story-IDEA slate to stdout for the human to choose from.
+
+    Slice ① (staged director): the slate is desire-only — no beats, no credits
+    yet (credits are priced off the developed script's beats, which don't exist
+    until the StoryArchitect runs on the picked idea).
 
     Args:
-        displayed: The flat, display-ordered list of surviving pitch entries (each
-            passed the craft gate). Each entry is a dict with keys ``event``
-            (TrendingEvent), ``gap`` (GapAnalysis), ``pitch`` (StoryPitch), and
-            ``verdict`` (StoryCraftVerdict). The list index + 1 is the selection
-            number the user types.
+        displayed: The flat, display-ordered list of idea entries. Each entry is
+            a dict with keys ``event`` (TrendingEvent), ``gap`` (GapAnalysis),
+            and ``idea`` (IdeaPitch). The list index + 1 is the selection number
+            the user types.
 
     Side effects:
         Prints only — does not mutate the entries or the DB. The ``⚠ LEGAL FLAG``
-        line is emitted for any pitch whose ``legal_flag`` is true. Credits are
-        computed by ``estimate_pitch_credits`` (code, never an LLM guess).
+        line is emitted for any idea whose ``legal_flag`` is true.
     """
-    from src.monitor.story_pitcher import estimate_pitch_credits
-
     last_headline = None
     for i, entry in enumerate(displayed, start=1):
         event = entry["event"]
         gap = entry["gap"]
-        pitch = entry["pitch"]
+        idea = entry["idea"]
 
         if event.headline != last_headline:
             fit = entry.get("fit")
@@ -71,17 +71,11 @@ def _print_slate(displayed: list[dict]) -> None:
             print("=" * 70)
             last_headline = event.headline
 
-        beats_line = " → ".join(
-            f"{beat.role.value}({beat.shot_size.value})" for beat in pitch.beats
-        )
-        print(f"\n[{i}] {pitch.logline}")
-        print(
-            f"     mode:   {pitch.mode.value}  (~{estimate_pitch_credits(pitch):.0f} cr)"
-        )
-        print(f"     beats:  {beats_line}")
-        if pitch.hook_line:
-            print(f'     hook:   "{pitch.hook_line}"')
-        if pitch.legal_flag:
+        print(f"\n[{i}] {idea.logline}")
+        print(f"     mode:   {idea.mode.value}")
+        print(f"     moment: {idea.desired_moment}")
+        print(f"     why:    {idea.why_it_lands}")
+        if idea.legal_flag:
             print("     ⚠ LEGAL FLAG — depends on a real person / specific IP")
 
 
@@ -92,6 +86,7 @@ def run_pitch_pipeline(
     idea_fit_gate,
     gap_agent,
     story_pitcher,
+    story_architect,
     story_craft_gate,
     *,
     dry_run: bool,
@@ -107,18 +102,23 @@ def run_pitch_pipeline(
     grounding_checker=None,
     grounding_topic: str | None = None,
 ) -> dict | None:
-    """Run the monitor pipeline, present the slate, and persist the approved angle.
+    """Run the monitor pipeline, present the idea slate, and develop the pick.
 
-    Flow: fetch raw events from ``scraper`` -> ``extractor.extract`` shortlist ->
-    (Path B only) an event whose bundle has non-empty ``unresolved_facts`` is
-    flagged and persisted for human review before ``idea_fit_gate`` even runs,
-    and never reaches gap/pitch/craft-gate -> ``idea_fit_gate.evaluate`` kills
-    stale / cheap-meme events -> for each
-    surviving event ``gap_agent.analyze`` then ``story_pitcher.pitch`` (2-3 story
-    pitches). Each pitch is judged by ``story_craft_gate.evaluate``; a failing pitch
-    gets ONE bounded repair re-pitch (``story_pitcher.repitch`` with the verdict's
-    failure_notes) then is re-judged. Pitches that pass are printed as one numbered
-    slate; pitches that fail after repair are dropped and persisted killed_by_gate.
+    Flow (slice ①, staged director — pick-at-idea-level, user decision
+    2026-07-16): fetch raw events from ``scraper`` -> ``extractor.extract``
+    shortlist -> (Path B only) an event whose bundle has non-empty
+    ``unresolved_facts`` is flagged and persisted for human review before
+    ``idea_fit_gate`` even runs -> ``idea_fit_gate.evaluate`` kills stale /
+    cheap-meme events -> for each surviving event ``gap_agent.analyze`` then
+    ``story_pitcher.pitch`` (2-3 desire-only IDEAS). All ideas print as one
+    numbered slate and persist; the human picks ONE. Only the picked idea is
+    developed: ``story_architect.develop`` turns it into a StoryScript, which
+    ``story_craft_gate.evaluate`` judges (plus the deterministic dialogue
+    floor); a failing script gets ONE bounded repair
+    (``story_architect.repair`` with the combined failure notes) then is
+    re-judged. A script that still fails is persisted ``killed_by_gate=True``
+    and nothing is approved. Path B survivors additionally get the grounding
+    check (one bounded repair of its own, same as before).
 
     Path B (--topic): when ``topic`` and ``context_agent`` are provided, the
     scraper+extractor are skipped; the agent gathers one (event, bundle) pair,
@@ -141,9 +141,12 @@ def run_pitch_pipeline(
             Unused when ``topic`` is set; may be ``None`` then.
         idea_fit_gate: Anything with ``evaluate(event) -> IdeaFitResult``.
         gap_agent: Anything with ``analyze(event, bundle=None) -> GapAnalysis``.
-        story_pitcher: Anything with ``pitch(event, gap, bundle=None) -> StoryPitchSlate``
-            and ``repitch(event, gap, failed_pitch, failure_notes, bundle=None) -> StoryPitch``.
-        story_craft_gate: Anything with ``evaluate(pitch, event, gap) -> StoryCraftVerdict``.
+        story_pitcher: Anything with ``pitch(event, gap, bundle=None) -> IdeaPitchSlate``.
+        story_architect: Anything with
+            ``develop(idea, event, gap, bundle=None, cast_voices="") -> StoryScript`` and
+            ``repair(idea, event, gap, failed_script, failure_notes, bundle=None,
+            cast_voices="") -> StoryScript``.
+        story_craft_gate: Anything with ``evaluate(script, event, gap) -> StoryCraftVerdict``.
         dry_run: When true, run + print only; persist nothing and never prompt.
         choice_provider: Zero-arg callable returning the user's selection as a
             string — ``"1"``..``"9"`` to approve that angle, ``"s"`` to skip/exit,
@@ -281,12 +284,12 @@ def run_pitch_pipeline(
             print("[dry-run] nothing persisted.")
         return None
 
-    # gap -> pitch -> craft gate (+ ONE bounded repair re-pitch). Surviving pitches
-    # go on the numbered slate; pitches that still fail after repair are dropped and
-    # persisted killed_by_gate=True as negative examples. When the event has a bundle
-    # (Path B), it is forwarded to gap + pitch/repitch so <context> gets injected.
+    # gap -> idea slate (slice ①). The craft gate no longer runs here: story
+    # structure doesn't exist yet. Every idea goes on the numbered slate; the
+    # picked one is developed by the StoryArchitect below and judged THERE.
+    # When the event has a bundle (Path B), it is forwarded to gap + pitch so
+    # <context> gets injected.
     displayed: list[dict] = []
-    killed: list[dict] = []
     # Grounding scope: the fridge topic to retrieve canon against. Defaults to the
     # Path B scrape ``topic``, but ``grounding_topic`` overrides it so a cheap
     # re-pitch (repitch_event.py — single_event_bundle, topic=None, no re-scrape)
@@ -294,104 +297,36 @@ def run_pitch_pipeline(
     # on + fridge scope" from "topic triggers a re-scrape".
     ground_topic = grounding_topic if grounding_topic is not None else topic
 
-    # Cast voices (spec 2026-07-11): load every character's voice profile once so the
-    # pitcher writes profiled characters in-character, and the dialogue floor (Q3-B)
-    # can require that a profiled character on screen actually speaks. A repair driven
-    # by a floor failure feeds the reason into the SAME bounded re-pitch path.
-    from src.monitor.voice_profiles import (
-        check_dialogue_floor,
-        format_cast_voices,
-        load_cast_profiles,
-    )
-
-    cast_profiles = load_cast_profiles()
-    cast_slugs = set(cast_profiles)
-    cast_voices = format_cast_voices(cast_profiles)
-
     for event, fit in fit_pairs:
         bundle = bundles.get(id(event))
         gap = gap_agent.analyze(event, bundle)
-        slate = story_pitcher.pitch(event, gap, bundle, cast_voices=cast_voices)
-        for pitch in slate.pitches:
-            verdict = story_craft_gate.evaluate(pitch, event, gap)
-            floor_ok, floor_reason = check_dialogue_floor(pitch, cast_slugs)
-            if not verdict.passes or not floor_ok:
-                notes = "\n".join(
-                    n for n in (verdict.failure_notes, floor_reason) if n
-                )
-                if notes:
-                    pitch = story_pitcher.repitch(
-                        event, gap, pitch, notes, bundle, cast_voices=cast_voices
-                    )
-                    verdict = story_craft_gate.evaluate(pitch, event, gap)
-                    floor_ok, _ = check_dialogue_floor(pitch, cast_slugs)
-
-            # Grounding check (Task 1.5): craft-survivors only, scoped to
-            # ``ground_topic``. A contradiction with the fridge's canon gets ONE
-            # bounded repair (repitch with the conflicts as failure notes), then
-            # grounding is re-checked — craft is NOT re-judged (ADR-0008 / Q6: the
-            # human slate backstops a craft regression from a grounding fix). The
-            # inline conditions also narrow the injected Optionals for mypy.
-            grounding = None
-            if (
-                verdict.passes
-                and grounding_checker is not None
-                and embedder is not None
-                and ground_topic is not None
-                and not dry_run
-            ):
-                grounding = grounding_checker.check(pitch, ground_topic, embedder, db)
-                if not grounding.coheres and grounding.conflicts:
-                    pitch = story_pitcher.repitch(
-                        event, gap, pitch, "; ".join(grounding.conflicts), bundle,
-                        cast_voices=cast_voices,
-                    )
-                    grounding = grounding_checker.check(
-                        pitch, ground_topic, embedder, db
-                    )
-                    # The grounding repair rewrote the pitch — re-check the dialogue
-                    # floor so passes_all reflects the FINAL pitch, not the pre-repair
-                    # one. Unlike craft (deliberately not re-judged, human backstop),
-                    # the floor is a cheap deterministic check; a repair that drops the
-                    # profiled speaker's line must kill the pitch, not slip through.
-                    floor_ok, _ = check_dialogue_floor(pitch, cast_slugs)
-
-            entry = {
-                "event": event,
-                "fit": fit,
-                "gap": gap,
-                "pitch": pitch,
-                "verdict": verdict,
-                "grounding": grounding,
-                "bundle": bundle,
-            }
-            # A pitch reaches the slate only if it passes craft AND does not
-            # contradict canon (a silent/empty fridge coheres by design).
-            passes_all = (
-                verdict.passes
-                and floor_ok
-                and (grounding is None or grounding.coheres)
+        slate = story_pitcher.pitch(event, gap, bundle)
+        for idea in slate.ideas:
+            displayed.append(
+                {
+                    "event": event,
+                    "fit": fit,
+                    "gap": gap,
+                    "idea": idea,
+                    "bundle": bundle,
+                }
             )
-            (displayed if passes_all else killed).append(entry)
 
     _print_slate(displayed)
     if not displayed:
-        print("\nWave died — every pitch failed the craft gate or contradicted canon.")
+        print("\nWave died — no ideas were pitched.")
 
     if dry_run:
         print("\n[dry-run] nothing persisted.")
         return None
 
-    # Persist every surfaced event once (keyed by object identity so all pitches of
-    # one event — survivors and gate-killed alike — share a single row), then flush
-    # to assign the PKs the FK and the handoff JSON need. When a bundle is present
-    # (Path B), serialize it into the context_bundle JSON column.
-    from src.monitor.story_pitcher import estimate_pitch_credits
-
-    all_entries = displayed + killed
+    # Persist every surfaced event once (keyed by object identity so all ideas of
+    # one event share a single row), then flush to assign the PKs the FK and the
+    # handoff JSON need. When a bundle is present (Path B), serialize it into the
+    # context_bundle JSON column.
     event_records: dict[int, TrendingEventRecord] = {}
     now = datetime.now(timezone.utc)
-    for entry in all_entries:
+    for entry in displayed:
         event = entry["event"]
         if id(event) not in event_records:
             gap = entry["gap"]
@@ -414,53 +349,45 @@ def run_pitch_pipeline(
             event_records[id(event)] = record
     db.flush()
 
-    def _pitch_record(entry: dict, *, killed_by_gate: bool) -> AnglePitchRecord:
-        """Build an AnglePitchRecord from a pitch entry.
+    def _idea_record(entry: dict) -> AnglePitchRecord:
+        """Build an AnglePitchRecord from an idea entry (slice ①).
 
-        Stores the full StoryPitch and craft verdict as JSON; ``take`` keeps the
-        logline as the inert writer bridge; legacy format_description/render_backend
-        stay NULL. ``killed_by_gate`` marks pitches the gate dropped after repair.
+        Stores the desire-only IdeaPitch in ``idea_json``; ``story_json`` stays
+        NULL until (and unless) this idea is picked and developed. Credits are
+        0.0 here — pricing needs beats, which don't exist before development;
+        the picked record's estimate is overwritten below.
         """
-        pitch = entry["pitch"]
-        verdict = entry["verdict"]
-        grounding = entry.get("grounding")
+        idea = entry["idea"]
         return AnglePitchRecord(
             trending_event_id=event_records[id(entry["event"])].id,
-            take=pitch.logline,
-            estimated_cost_credits=estimate_pitch_credits(pitch),
-            gap_satisfaction_rationale=pitch.why_it_lands,
-            legal_flag=pitch.legal_flag,
+            take=idea.logline,
+            estimated_cost_credits=0.0,
+            gap_satisfaction_rationale=idea.why_it_lands,
+            legal_flag=idea.legal_flag,
             approved=None,
-            story_json=pitch.model_dump(mode="json"),
-            mode=pitch.mode.value,
-            craft_verdict_json=verdict.model_dump(mode="json"),
-            grounding_verdict_json=(
-                grounding.model_dump(mode="json") if grounding is not None else None
-            ),
-            killed_by_gate=killed_by_gate,
+            idea_json=idea.model_dump(mode="json"),
+            story_json=None,
+            mode=idea.mode.value,
+            killed_by_gate=False,
         )
 
-    # Survivor pitches are indexable so the user's number maps straight in; killed
-    # pitches are persisted (killed_by_gate=True) as negative examples but not shown.
     pitch_records: list[AnglePitchRecord] = [
-        _pitch_record(entry, killed_by_gate=False) for entry in displayed
+        _idea_record(entry) for entry in displayed
     ]
     for pitch_record in pitch_records:
         db.add(pitch_record)
-    for entry in killed:
-        db.add(_pitch_record(entry, killed_by_gate=True))
     db.flush()
 
     if not pitch_records:
         db.commit()
-        print("\nNo surviving pitches to approve — killed pitches saved.")
+        print("\nNo ideas to approve — events saved.")
         return None
 
     choice = choice_provider().strip().lower() if choice_provider else "s"
 
     if choice in ("s", "skip", "", "q"):
         db.commit()
-        print("\nSkipped — events/pitches saved, none approved.")
+        print("\nSkipped — events/ideas saved, none approved.")
         return None
     if choice == "r":
         db.commit()
@@ -487,12 +414,104 @@ def run_pitch_pipeline(
     chosen_record = pitch_records[index]
     chosen_event_record = event_records[id(chosen_entry["event"])]
 
+    idea = chosen_entry["idea"]
+    event = chosen_entry["event"]
+    gap = chosen_entry["gap"]
+    bundle = chosen_entry.get("bundle")
+
+    # Development (D1, slice ①): the StoryArchitect turns the picked idea into
+    # a StoryScript. Cast voices load HERE now — dialogue is authored by the
+    # architect, not the pitcher — so profiled characters speak in-character
+    # and the deterministic dialogue floor (Q3-B) has something to check.
+    from src.generation.story_architect import estimate_script_credits
+    from src.monitor.voice_profiles import (
+        check_dialogue_floor,
+        format_cast_voices,
+        load_cast_profiles,
+    )
+
+    cast_profiles = load_cast_profiles()
+    cast_slugs = set(cast_profiles)
+    cast_voices = format_cast_voices(cast_profiles)
+
+    print(f"\n[develop] architect is developing: {idea.logline}")
+    script = story_architect.develop(idea, event, gap, bundle, cast_voices=cast_voices)
+
+    # Craft gate + dialogue floor, ONE bounded repair on the combined notes —
+    # the same bounded-retry convention the gate always used, re-targeted at
+    # the architect (spec 2026-07-16 decision 3).
+    verdict = story_craft_gate.evaluate(script, event, gap)
+    floor_ok, floor_reason = check_dialogue_floor(script, cast_slugs)
+    if not verdict.passes or not floor_ok:
+        notes = "\n".join(n for n in (verdict.failure_notes, floor_reason) if n)
+        if notes:
+            print("[develop] script failed the gate — one bounded repair...")
+            script = story_architect.repair(
+                idea, event, gap, script, notes, bundle, cast_voices=cast_voices
+            )
+            verdict = story_craft_gate.evaluate(script, event, gap)
+            floor_ok, _ = check_dialogue_floor(script, cast_slugs)
+
+    # Grounding check (Task 1.5): craft-survivors only, scoped to
+    # ``ground_topic``. A contradiction with the fridge's canon gets ONE
+    # bounded repair (with the conflicts as failure notes), then grounding is
+    # re-checked — craft is NOT re-judged (ADR-0008 / Q6: the human approval +
+    # watch verdict backstop a craft regression from a grounding fix). The
+    # floor IS re-checked: it's a cheap deterministic gate, and a repair that
+    # drops the profiled speaker's line must kill the script, not slip through.
+    grounding = None
+    if (
+        verdict.passes
+        and grounding_checker is not None
+        and embedder is not None
+        and ground_topic is not None
+    ):
+        grounding = grounding_checker.check(script, ground_topic, embedder, db)
+        if not grounding.coheres and grounding.conflicts:
+            script = story_architect.repair(
+                idea, event, gap, script, "; ".join(grounding.conflicts), bundle,
+                cast_voices=cast_voices,
+            )
+            grounding = grounding_checker.check(script, ground_topic, embedder, db)
+            floor_ok, _ = check_dialogue_floor(script, cast_slugs)
+
+    chosen_record.story_json = script.model_dump(mode="json")
+    chosen_record.estimated_cost_credits = estimate_script_credits(script)
+    chosen_record.craft_verdict_json = verdict.model_dump(mode="json")
+    chosen_record.grounding_verdict_json = (
+        grounding.model_dump(mode="json") if grounding is not None else None
+    )
+
+    passes_all = (
+        verdict.passes and floor_ok and (grounding is None or grounding.coheres)
+    )
+    if not passes_all:
+        chosen_record.killed_by_gate = True
+        db.commit()
+        print("\nScript failed the gates after one repair — persisted killed_by_gate.")
+        if verdict.failure_notes:
+            print(f"  craft: {verdict.failure_notes}")
+        if not floor_ok:
+            print("  floor: a profiled on-screen character never speaks")
+        if grounding is not None and not grounding.coheres:
+            print(f"  grounding: {'; '.join(grounding.conflicts)}")
+        return None
+
+    # Show the human what got developed before they tag the location.
+    print(f"\n[script] scene: {script.scene_setting}")
+    for i, beat in enumerate(script.beats):
+        line = f"  beat {i} [{beat.role.value}({beat.shot_size.value})] {beat.visual_line}"
+        if beat.dialogue_line:
+            line += f'  || {beat.speaker}: "{beat.dialogue_line}"'
+        print(line)
+    print(f"[script] ~{chosen_record.estimated_cost_credits:.0f} cr")
+
     chosen_record.approved = True
     chosen_record.approved_at = datetime.now(timezone.utc)
     chosen_event_record.selected_for_pitching = True
 
     # Location tag (spec 2026-07-11): the human declares which shared
-    # refs/_location/<slug>/ folder this pitch renders in. Blank = ungrounded
+    # refs/_location/<slug>/ folder this script renders in. Blank = ungrounded
     # location; the render's reference check reads this back and --location can
     # still backfill it later.
     slug = location_provider().strip() if location_provider else ""
@@ -508,7 +527,7 @@ def run_pitch_pipeline(
         "pitch_id": chosen_record.id,
         "logline": chosen_record.take,
         "mode": chosen_record.mode,
-        "story": chosen_entry["pitch"].model_dump(mode="json"),
+        "story": script.model_dump(mode="json"),
         "trendiness_score": chosen_entry["event"].trendiness_score,
     }
     db.commit()
@@ -710,6 +729,7 @@ def main() -> None:
             )
 
     from src.database import SessionLocal
+    from src.generation.story_architect import StoryArchitect
     from src.monitor.event_extractor import EventExtractor
     from src.monitor.gap_agent import GapAgent
     from src.monitor.idea_fit_gate import IdeaFitGate
@@ -758,6 +778,7 @@ def main() -> None:
     # (index + grounding retrieval) — a second BgeM3Embedder would reload ~2.27GB.
     embedder = BgeM3Embedder()
     story_pitcher = StoryPitcher(llm=llm_for_seat("story_pitcher"), embedder=embedder)
+    story_architect = StoryArchitect(llm=llm_for_seat("story_architect"))
     story_craft_gate = StoryCraftGate(llm=llm_for_seat("story_craft_gate"))
 
     if args.topic is not None:
@@ -786,6 +807,7 @@ def main() -> None:
             idea_fit_gate,
             gap_agent,
             story_pitcher,
+            story_architect,
             story_craft_gate,
             dry_run=args.dry_run,
             choice_provider=(

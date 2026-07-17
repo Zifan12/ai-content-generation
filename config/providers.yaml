@@ -32,6 +32,7 @@ llm:
   idea_fit_gate:       {provider: openrouter, model: "google/gemini-2.5-flash"}
   gap_agent:           {provider: openrouter, model: "deepseek/deepseek-v4-pro"}
   story_pitcher:       {provider: openrouter, model: "deepseek/deepseek-v4-pro"}
+  story_architect:     {provider: openrouter, model: "deepseek/deepseek-v4-pro"}  # D1: picked idea -> StoryScript (slice ①, 2026-07-16); same tier as pitcher (user decision)
   story_craft_gate:    {provider: openrouter, model: "deepseek/deepseek-v4-pro"}
   pitch_grounding:     {provider: openrouter, model: "deepseek/deepseek-v4-pro"}
   content_writer:      {provider: openrouter, model: "deepseek/deepseek-v4-pro"}
