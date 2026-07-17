@@ -13,6 +13,7 @@ world-prose craft).
 
 from src.generation.pov.schemas import POVBeat, POVPitch, POVScript
 from src.generation.pov.script_writer import (
+    POV_SCRIPT_REPAIR_SYSTEM_PROMPT,
     POV_SCRIPT_SYSTEM_PROMPT,
     POVScriptWriter,
 )
@@ -137,3 +138,43 @@ def test_prompt_teaches_beat_free_action_lines_fail() -> None:
     writer.develop(SAMPLE_PITCH)
 
     assert "ZERO FRAMES" in llm.system
+
+
+# --- repair() (ticket 04) ----------------------------------------------------
+# Mirrors tests/generation/test_story_architect.py's
+# test_repair_returns_composed_script_and_carries_failure_notes — the named
+# exemplar's own repair coverage. Everything that exercises repair() via
+# craft_enforcement.develop_valid_script (tests/generation/pov/
+# test_craft_enforcement.py) uses a FakeScriptWriter, so the real prompt
+# assembly (system/response_model/max_tokens, and the violation +
+# failed_script actually reaching the LLM prompt) is only proven here.
+
+
+def test_repair_calls_llm_with_pov_script_response_model_and_repair_system_prompt() -> None:
+    llm = FakeLLM(_script())
+    writer = POVScriptWriter(llm=llm)
+    failed = _script()
+
+    result = writer.repair(SAMPLE_PITCH, failed, ["duration_seconds must be 10 or 15, got 12"])
+
+    assert result is llm._result
+    assert llm.response_model is POVScript
+    assert llm.system == POV_SCRIPT_REPAIR_SYSTEM_PROMPT
+    assert llm.system != POV_SCRIPT_SYSTEM_PROMPT
+    assert isinstance(llm.max_tokens, int) and llm.max_tokens > 0
+
+
+def test_repair_injects_pitch_failed_script_and_violations_into_the_prompt() -> None:
+    llm = FakeLLM(_script())
+    writer = POVScriptWriter(llm=llm)
+    failed = _script()
+    violation = "the last beat carries a dialogue_line; dialogue must never land on the final beat"
+
+    writer.repair(SAMPLE_PITCH, failed, [violation])
+
+    assert "<pitch>" in llm.prompt
+    assert SAMPLE_PITCH.who in llm.prompt
+    assert "<failed_script>" in llm.prompt
+    assert failed.model_dump_json(indent=2) in llm.prompt
+    assert "<violations>" in llm.prompt
+    assert violation in llm.prompt
