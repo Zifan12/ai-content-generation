@@ -26,11 +26,12 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
 
 from scripts.pitch_angles import run_pitch_pipeline  # noqa: E402
 from src.database import SessionLocal  # noqa: E402
+from src.generation.story_architect import StoryArchitect  # noqa: E402
 from src.models.trending_event import TrendingEventRecord  # noqa: E402
 from src.monitor.gap_agent import GapAgent  # noqa: E402
 from src.monitor.idea_fit_gate import IdeaFitGate  # noqa: E402
 from src.monitor.pitch_grounding import PitchGroundingChecker  # noqa: E402
-from src.monitor.schemas import ContextBundle, TrendingEvent  # noqa: E402
+from src.monitor.schemas import ContextBundle, GapAnalysis, TrendingEvent  # noqa: E402
 from src.monitor.story_craft_gate import StoryCraftGate  # noqa: E402
 from src.monitor.story_pitcher import StoryPitcher  # noqa: E402
 from src.providers.llm.factory import llm_for_seat  # noqa: E402
@@ -80,6 +81,53 @@ def load_event(db, event_id: int) -> TrendingEvent:
     )
 
 
+def load_pinned_gap(db, event_id: int) -> GapAnalysis | None:
+    """Reconstruct the event's STORED audience read, or None if never analyzed.
+
+    The gap (dominant_emotion + audience_want) is a per-EVENT fact about a
+    FIXED reaction thread, but gap_agent.analyze re-rolls it on every run —
+    measured 2026-07-16 on the Wistoria thread: six stored runs of the SAME
+    event read the audience six different ways ("playful longing", "gleeful
+    comedic longing", "morbid amusement", "glee"...), and the worst roll
+    steered the whole slate into mean satire the audience never asked for.
+    A re-pitch must reuse the read its event already has, not roll a new one.
+
+    evidence_quotes/reasoning are not persisted on TrendingEventRecord (only
+    the two columns are), so the reconstruction carries empty quotes and a
+    provenance note — the same documented weakness as repitch_pitch.py's gap
+    reconstruction, accepted for the same reason.
+
+    Returns None when the stored read is missing (e.g. a row persisted by the
+    flagged-unresolved path, which never ran the gap agent) — the caller falls
+    back to a live analyze in that case.
+    """
+    record = db.get(TrendingEventRecord, event_id)
+    if record is None:
+        raise SystemExit(f"No TrendingEventRecord with id={event_id}.")
+    if not record.dominant_emotion or not record.audience_want:
+        return None
+    return GapAnalysis(
+        dominant_emotion=record.dominant_emotion,
+        audience_want=record.audience_want,
+        evidence_quotes=[],
+        reasoning="(pinned from stored event read; quotes not persisted)",
+    )
+
+
+class _PinnedGapAgent:
+    """Gap agent that returns the event's stored read instead of re-analyzing.
+
+    Injected into run_pitch_pipeline in place of the live GapAgent when the
+    stored read exists, so the pipeline code stays untouched.
+    """
+
+    def __init__(self, gap: GapAnalysis):
+        self._gap = gap
+
+    def analyze(self, event: TrendingEvent, bundle: ContextBundle | None = None) -> GapAnalysis:
+        return self._gap
+
+
 def load_bundle(db, event_id: int) -> ContextBundle | None:
     """Reconstruct the stored ContextBundle for event_id, or None if the
     record has no context_bundle (e.g. a Path A / scraped-only event, or an
@@ -119,6 +167,7 @@ def main() -> None:
     try:
         event = load_event(db, args.event_id)
         bundle = load_bundle(db, args.event_id)
+        pinned_gap = load_pinned_gap(db, args.event_id)
     finally:
         db.close()
 
@@ -133,11 +182,19 @@ def main() -> None:
         print(f"\nEvent {args.event_id} has no stored context_bundle (Path A event, or pre-dates this column).")
 
     idea_fit_gate = IdeaFitGate(llm=llm_for_seat("idea_fit_gate"))
-    gap_agent = GapAgent(llm=llm_for_seat("gap_agent"))
+    # Pin the audience read (2026-07-16): a re-pitch reuses the event's stored
+    # gap instead of re-rolling it — see load_pinned_gap. Live analyze only
+    # when the row has no stored read.
+    if pinned_gap is not None:
+        print(f"[gap pinned] {pinned_gap.dominant_emotion}: {pinned_gap.audience_want[:100]}")
+        gap_agent = _PinnedGapAgent(pinned_gap)
+    else:
+        gap_agent = GapAgent(llm=llm_for_seat("gap_agent"))
     # One embedder, shared by the pitcher's RAG and the grounding retrieval — a
     # second BgeM3Embedder would reload ~2.27GB.
     embedder = BgeM3Embedder()
     story_pitcher = StoryPitcher(llm=llm_for_seat("story_pitcher"), embedder=embedder)
+    story_architect = StoryArchitect(llm=llm_for_seat("story_architect"))
     story_craft_gate = StoryCraftGate(llm=llm_for_seat("story_craft_gate"))
     # Grounding check scoped to this event's topic (event.headline) so a cheap
     # re-pitch grounds against the fridge chunks a prior live run already indexed
@@ -159,6 +216,7 @@ def main() -> None:
             idea_fit_gate,
             gap_agent,
             story_pitcher,
+            story_architect,
             story_craft_gate,
             dry_run=False,
             choice_provider=choice_provider,
