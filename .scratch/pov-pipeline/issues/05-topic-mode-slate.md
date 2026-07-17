@@ -4,10 +4,10 @@
 
 **Blocked by:** 03 — Idea mode end-to-end.
 
-**Status:** ready-for-agent
+**Status:** closed
 
-- [ ] Topic mode with a fake pitcher seat: slate of 3-5 pitches produced, pick honored, downstream artifacts identical in shape to idea mode
-- [ ] Picked pitch fields code-copied downstream (never LLM-echoed)
-- [ ] --topic and --idea together = loud argument error
-- [ ] Slate persisted in the run directory (unpicked pitches kept for post-mortem)
-- [ ] Tests green at seam 1; ruff/mypy clean
+- [x] Topic mode with a fake pitcher seat: slate of 3-5 pitches produced, pick honored, downstream artifacts identical in shape to idea mode
+- [x] Picked pitch fields code-copied downstream (never LLM-echoed)
+- [x] --topic and --idea together = loud argument error
+- [x] Slate persisted in the run directory (unpicked pitches kept for post-mortem)
+- [x] Tests green at seam 1; ruff/mypy clean

@@ -1,7 +1,8 @@
 """
-POV pipeline driver (ticket 03) — idea mode end-to-end (the tracer bullet).
+POV pipeline driver (tickets 03 + 05) — idea mode and topic mode end-to-end.
 
     uv run python scripts/pov.py --idea "<full story concept>"
+    uv run python scripts/pov.py --topic "<bare topic seed>"
 
 Idea mode: the operator's ``--idea`` text becomes the picked pitch VERBATIM —
 no pitcher call, no slate (PRD Solution: "operator's text IS the pitch, slate
@@ -16,25 +17,38 @@ names); who/where/turn carry a fixed pointer-back note instead. This is
 ticket 03's own call — ticket 02's schema docstring explicitly left the
 who-derivation open.
 
-Topic mode (``--topic``, ticket 05) is NOT built here — there is no
-``--topic`` flag on this CLI yet. ``run_pov_pipeline``'s ``pitcher``
-parameter exists ONLY so idea mode's own test can assert it is never called;
-it is a forward seam for ticket 05 to wire real calls into, not a stub
-implementation.
+Topic mode (ticket 05): the pitcher LLM seat (``src/generation/pov/
+pitcher.py``) proposes a 3-5 pitch POVPitchSlate for the operator's bare
+``--topic`` text; the operator picks ONE by number (interactively via
+``choice_provider``). The picked ``POVPitch`` is code-copied into every
+downstream artifact exactly like idea mode's — the pitcher's OWN output is
+naturally an LLM authorship (it is the pitch stage), but nothing past the
+pick re-derives or paraphrases it. The full slate (picked + unpicked) is
+persisted as ``slate.json`` in the run directory for post-mortem.
 
-Flow: operator idea -> POVPitch (code, no LLM) -> craft_enforcement.
+``--idea`` and ``--topic`` are mutually exclusive on the CLI (argparse's own
+mutually-exclusive group, required — enforced natively, no custom check
+needed); ``run_pov_pipeline`` re-checks the same exactly-one invariant at the
+function seam so a direct/test caller gets the same loud failure.
+
+Flow (both modes converge after the pitch is picked): POVPitch -> craft_enforcement.
 develop_valid_script (POVScriptWriter.develop, ONE structural check, and — on
 a violation — ONE bounded POVScriptWriter.repair call, ticket 04) -> POVScript
 -> compile_pov_prompt (ticket 02, deterministic code) -> CompiledPOVPrompt ->
-build_render_sheet (ticket 03, deterministic code) -> four files written
-under a slug-named run directory: pitch.json, script.json, prompt.txt,
-render_sheet.md.
+build_render_sheet (ticket 03, deterministic code) -> files written under a
+slug-named run directory: (topic mode only) slate.json, then pitch.json,
+script.json, prompt.txt, render_sheet.md.
 
 Structural validation (per-beat action count, beat-count budget,
 dialogue-never-final-beat, duration in {10, 15}) now runs on every script via
 ``develop_valid_script`` (ticket 04) — a script that still violates a rule
 after its one bounded repair raises ``POVStructuralViolationError`` and this
-driver lets it surface loud (no silent pass-through into the compiler).
+driver lets it surface loud (no silent pass-through into the compiler). A
+failure at this point loses the slate that was already paid for
+(``slate.json`` is written only on success, matching the existing
+writes-nothing-on-failure invariant idea mode already has) — a deliberate,
+narrow scope call: durability of a slate across a downstream crash is a
+separate feature this ticket does not ask for.
 compile_pov_prompt's own word-budget check (60-100 words) is a separate,
 unrelated failure that can still surface loud here too.
 
@@ -49,6 +63,7 @@ import argparse
 import re
 import sys
 import uuid
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
@@ -61,7 +76,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.generation.pov.compiler import compile_pov_prompt  # noqa: E402
 from src.generation.pov.craft_enforcement import develop_valid_script  # noqa: E402
 from src.generation.pov.render_sheet import build_render_sheet  # noqa: E402
-from src.generation.pov.schemas import POVPitch  # noqa: E402
+from src.generation.pov.schemas import POVPitch, POVPitchSlate  # noqa: E402
 from src.generation.render_adapters.rules import RenderRules  # noqa: E402
 
 # The operator's --idea text carries the whole concept; who/where/turn exist
@@ -89,6 +104,48 @@ def _pitch_from_idea(idea_text: str) -> POVPitch:
     )
 
 
+def _print_slate(slate: POVPitchSlate) -> None:
+    """Print the numbered POV pitch slate for the operator to choose from."""
+    for i, pitch in enumerate(slate.pitches, start=1):
+        print(f"\n[{i}] who:  {pitch.who}")
+        print(f"     where: {pitch.where}")
+        print(f"     what:  {pitch.what_happens}")
+        print(f"     turn:  {pitch.turn}")
+
+
+def _pick_pitch(slate: POVPitchSlate, choice_provider: Callable[[], str] | None) -> POVPitch:
+    """
+    Read the operator's numeric pick from ``choice_provider`` and return that pitch.
+
+    Single-call, loud-fail (mirrors the ticket's silence on a retry UX — a
+    skip/re-pitch menu is scripts/pitch_angles.py's scope, not this ticket's):
+    an unset ``choice_provider``, a non-numeric answer, or a number outside
+    the slate's range all raise ``ValueError`` naming the problem rather than
+    re-prompting or silently defaulting.
+
+    Args:
+        slate: The pitcher's full slate (3-5 pitches).
+        choice_provider: Zero-arg callable returning the operator's typed
+            pick as a string (real: ``lambda: input(...)``; tests: a fake
+            returning a fixed string).
+
+    Returns:
+        The picked ``POVPitch``.
+
+    Raises:
+        ValueError: if ``choice_provider`` is None, or its answer is not a
+            valid 1-based index into ``slate.pitches``.
+    """
+    if choice_provider is None:
+        raise ValueError("choice_provider is required for topic mode (interactive pick)")
+    choice = choice_provider().strip()
+    if not choice.isdigit() or not (1 <= int(choice) <= len(slate.pitches)):
+        raise ValueError(
+            f"invalid pick {choice!r} — enter a pitch number 1-{len(slate.pitches)}"
+        )
+    return slate.pitches[int(choice) - 1]
+
+
 def _run_slug(idea_text: str) -> str:
     """
     Build a filesystem-safe, collision-free run directory name.
@@ -108,20 +165,29 @@ def _run_slug(idea_text: str) -> str:
 def run_pov_pipeline(
     script_writer,
     rules: RenderRules,
-    idea: str,
+    idea: str | None = None,
     *,
     pitcher=None,
+    topic: str | None = None,
+    choice_provider: Callable[[], str] | None = None,
     output_dir: str | Path = "output/pov",
 ) -> Path:
     """
-    Run idea mode end-to-end and write its run directory.
+    Run idea mode OR topic mode end-to-end and write its run directory.
 
-    Flow: operator idea -> POVPitch (code-copy, no LLM) ->
+    Exactly one of ``idea`` (idea mode, ticket 03) or ``topic`` (topic mode,
+    ticket 05) must be given. Idea mode wraps the operator's text verbatim as
+    the picked pitch (no LLM call). Topic mode calls ``pitcher.pitch(topic)``
+    for a 3-5 pitch slate, prints it, reads the operator's numeric pick via
+    ``choice_provider`` (see ``_pick_pitch``), and code-copies that one pitch
+    forward — identical to idea mode from that point on.
+
+    Flow after the pitch is picked (both modes): POVPitch ->
     ``craft_enforcement.develop_valid_script`` (``script_writer.develop``,
     one structural check, and on a violation ONE bounded
     ``script_writer.repair`` call, ticket 04) -> POVScript ->
     ``compile_pov_prompt`` -> CompiledPOVPrompt -> ``build_render_sheet`` ->
-    four files on disk.
+    files on disk.
 
     Args:
         script_writer: Anything with ``develop(pitch: POVPitch) -> POVScript``
@@ -130,29 +196,56 @@ def run_pov_pipeline(
         rules: A loaded RenderRules instance (pov_grammar + scene_lane).
         idea: The operator's ``--idea`` text — wrapped verbatim as the
             picked pitch (see ``_pitch_from_idea`` for the who/where/turn
-            placeholder rationale).
-        pitcher: UNUSED in idea mode — reserved for ticket 05's topic mode.
-            Idea mode never calls it; a test may inject a call-counting fake
-            here to prove that (module docstring).
+            placeholder rationale). Mutually exclusive with ``topic``.
+        pitcher: Anything with ``pitch(topic: str) -> POVPitchSlate`` (real:
+            ``POVPitcher``; tests: a fake recording calls). REQUIRED when
+            ``topic`` is set; unused (and never called — a test may inject a
+            call-counting fake to prove that) in idea mode.
+        topic: The operator's bare ``--topic`` text — triggers topic mode.
+            Mutually exclusive with ``idea``.
+        choice_provider: Zero-arg callable returning the operator's typed
+            pick as a string. REQUIRED when ``topic`` is set (see
+            ``_pick_pitch``); unused in idea mode.
         output_dir: Parent directory the run's slug-named subdirectory is
             created under.
 
     Returns:
-        The created run directory (``output_dir/<slug>/``), containing
-        ``pitch.json``, ``script.json``, ``prompt.txt``, ``render_sheet.md``.
+        The created run directory (``output_dir/<slug>/``), containing (topic
+        mode only) ``slate.json``, then ``pitch.json``, ``script.json``,
+        ``prompt.txt``, ``render_sheet.md``.
 
     Raises:
+        ValueError: if neither or both of ``idea``/``topic`` are given, if
+            ``topic`` is set with no ``pitcher``, or if the operator's pick
+            (via ``choice_provider``) is missing or invalid.
         POVStructuralViolationError: if the script still violates a
             structural rule after its one bounded repair (ticket 04) —
             surfaces loud, no run directory is written.
     """
-    pitch = _pitch_from_idea(idea)
+    if (idea is None) == (topic is None):
+        raise ValueError("exactly one of idea or topic must be given to run_pov_pipeline")
+
+    slate: POVPitchSlate | None = None
+    if topic is not None:
+        if pitcher is None:
+            raise ValueError("pitcher is required when topic is set (topic mode)")
+        slate = pitcher.pitch(topic)
+        _print_slate(slate)
+        pitch = _pick_pitch(slate, choice_provider)
+    else:
+        assert idea is not None  # narrowed by the exactly-one check above
+        pitch = _pitch_from_idea(idea)
+
     script = develop_valid_script(script_writer, pitch, rules)
     compiled = compile_pov_prompt(script, rules)
     sheet = build_render_sheet(pitch, script, compiled, rules)
 
-    run_dir = Path(output_dir) / _run_slug(idea)
+    slug_source = idea if idea is not None else topic
+    assert slug_source is not None  # narrowed by the exactly-one check above
+    run_dir = Path(output_dir) / _run_slug(slug_source)
     run_dir.mkdir(parents=True, exist_ok=True)
+    if slate is not None:
+        (run_dir / "slate.json").write_text(slate.model_dump_json(indent=2), encoding="utf-8")
     (run_dir / "pitch.json").write_text(pitch.model_dump_json(indent=2), encoding="utf-8")
     (run_dir / "script.json").write_text(script.model_dump_json(indent=2), encoding="utf-8")
     (run_dir / "prompt.txt").write_text(compiled.prompt_text, encoding="utf-8")
@@ -160,8 +253,39 @@ def run_pov_pipeline(
     return run_dir
 
 
+def _build_parser() -> argparse.ArgumentParser:
+    """
+    Build the CLI arg parser (idea mode + topic mode).
+
+    Split out from ``main()`` so it can be unit-tested (mutually-exclusive /
+    required-group behavior) without dragging in ``dotenv``, real LLM seats,
+    or stdout reconfiguration. ``--idea`` and ``--topic`` live in a required
+    mutually-exclusive group — argparse itself enforces "exactly one of the
+    two" and raises (``SystemExit``, exit code 2) with a loud message on
+    either "both given" or "neither given"; no custom check is needed here
+    (``run_pov_pipeline`` re-checks the same invariant at the function seam
+    for direct/test callers that bypass this parser entirely).
+    """
+    parser = argparse.ArgumentParser(description="POV pipeline driver (idea mode + topic mode).")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument(
+        "--idea",
+        help="Full story concept — becomes the picked pitch verbatim, no slate.",
+    )
+    group.add_argument(
+        "--topic",
+        help="Bare topic seed — the pitcher seat proposes a 3-5 pitch slate to pick from.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default="output/pov",
+        help="Parent directory the run's slug-named subdirectory is created under.",
+    )
+    return parser
+
+
 def main() -> None:
-    """Parse CLI args and run idea mode with the real script writer + render rules."""
+    """Parse CLI args and run idea mode or topic mode with the real seats + render rules."""
     from dotenv import load_dotenv
 
     load_dotenv("config/.env")
@@ -171,25 +295,32 @@ def main() -> None:
     if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
 
-    parser = argparse.ArgumentParser(description="POV pipeline driver (idea mode).")
-    parser.add_argument(
-        "--idea",
-        required=True,
-        help="Full story concept — becomes the picked pitch verbatim, no slate.",
-    )
-    parser.add_argument(
-        "--output-dir",
-        default="output/pov",
-        help="Parent directory the run's slug-named subdirectory is created under.",
-    )
-    args = parser.parse_args()
+    args = _build_parser().parse_args()
 
     from src.generation.pov.script_writer import POVScriptWriter
     from src.providers.llm.factory import llm_for_seat
 
     script_writer = POVScriptWriter(llm=llm_for_seat("pov_script"))
     rules = RenderRules()
-    run_dir = run_pov_pipeline(script_writer, rules, args.idea, output_dir=args.output_dir)
+
+    if args.topic is not None:
+        from src.generation.pov.pitcher import POVPitcher
+
+        pitcher = POVPitcher(llm=llm_for_seat("pov_pitcher"))
+        choice_provider = lambda: input("\nPick a pitch by number: ")  # noqa: E731
+    else:
+        pitcher = None
+        choice_provider = None
+
+    run_dir = run_pov_pipeline(
+        script_writer,
+        rules,
+        args.idea,
+        pitcher=pitcher,
+        topic=args.topic,
+        choice_provider=choice_provider,
+        output_dir=args.output_dir,
+    )
     print(f"\nRun directory: {run_dir}")
     print(f"Next: open {run_dir / 'render_sheet.md'} and follow the MANDATORY 480p pass.")
 

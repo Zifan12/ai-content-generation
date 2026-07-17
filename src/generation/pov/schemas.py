@@ -34,7 +34,7 @@ line needs a speaker, a speaker needs a line), not a craft rule. It mirrors
 verbatim in shape.
 """
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class POVPitch(BaseModel):
@@ -53,6 +53,22 @@ class POVPitch(BaseModel):
     where: str  # the single continuous place the scene happens
     what_happens: str  # the scene's action, in a sentence or two
     turn: str  # the surprise/twist beat the pitch exists to deliver
+
+
+class POVPitchSlate(BaseModel):
+    """Topic mode's pitcher output (ticket 05): a slate of 3-5 distinct POVPitch entries.
+
+    The operator picks ONE by number (``scripts/pov.py``); every pitch,
+    picked or not, is persisted to the run directory's ``slate.json`` for
+    post-mortem (PRD Testing Decisions / ticket 05 acceptance criteria) —
+    the picked entry is additionally code-copied, byte-for-byte, into
+    ``pitch.json`` and every downstream artifact rather than re-derived from
+    the slate at any later stage.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    pitches: list[POVPitch] = Field(min_length=3, max_length=5)
 
 
 class POVBeat(BaseModel):

@@ -1,4 +1,4 @@
-"""Orchestration tests for scripts/pov.py run_pov_pipeline (ticket 03, seam 1).
+"""Orchestration tests for scripts/pov.py run_pov_pipeline (tickets 03 + 05, seam 1).
 
 Idea mode's tracer bullet: fake script seat, no network, no renders, no DB
 (the POV pipeline has none — plain files only, PRD Implementation
@@ -20,6 +20,12 @@ against ``craft_enforcement.develop_valid_script``
 (``test_a_structurally_invalid_script_is_repaired_before_writing``) only
 proves the CLI driver actually routes through that enforcement rather than
 bypassing it.
+
+Ticket 05 adds topic mode: a fake pitcher seat produces a slate, a fake
+``choice_provider`` picks by number, and the picked pitch flows through the
+SAME downstream as idea mode. ``FakePitcher`` now returns a real
+``POVPitchSlate`` (not an empty list) so it can stand in for
+``src.generation.pov.pitcher.POVPitcher`` on this wiring seam.
 """
 
 import json
@@ -27,7 +33,7 @@ import json
 import pytest
 
 from src.generation.pov.craft_enforcement import POVStructuralViolationError
-from src.generation.pov.schemas import POVBeat, POVPitch, POVScript
+from src.generation.pov.schemas import POVBeat, POVPitch, POVPitchSlate, POVScript
 from src.generation.render_adapters.rules import RenderRules
 from scripts.pov import run_pov_pipeline
 
@@ -90,15 +96,50 @@ class FakeScriptWriter:
         return self._repaired
 
 
-class FakePitcher:
-    """A call-counting fake proving idea mode never touches the pitcher seam."""
+def _slate() -> POVPitchSlate:
+    """A 3-pitch slate of CLEARLY DISTINCT entries (different who/where/what_happens)
+    so a pick-index test can only pass if the correct entry — not merely A
+    valid-looking entry — reached the artifacts (advisor review: near-identical
+    fixture pitches would let an off-by-one index bug pass silently)."""
+    return POVPitchSlate(
+        pitches=[
+            POVPitch(
+                who="a cave explorer",
+                where="a flooded limestone cave",
+                what_happens="the explorer's headlamp catches something moving in the water",
+                turn="it is their own reflection, delayed by half a second",
+            ),
+            POVPitch(
+                who="a deep-sea diver",
+                where="the flooded corridor of a sunken WWII wreck",
+                what_happens="the diver sweeps silt aside and reaches for a door handle",
+                turn="a still-ticking pocket watch is wedged in the hinge",
+            ),
+            POVPitch(
+                who="a night-shift mechanic",
+                where="an abandoned observatory dome",
+                what_happens="the mechanic climbs a ladder toward a jammed telescope mount",
+                turn="the dome slit is already open, aimed at something on the ground",
+            ),
+        ]
+    )
 
-    def __init__(self) -> None:
+
+class FakePitcher:
+    """A call-counting fake standing in for src.generation.pov.pitcher.POVPitcher.
+
+    Idea mode uses this only to prove it is NEVER called (zero calls
+    recorded); topic mode uses it to prove the driver actually calls
+    ``pitch(topic)`` and routes its slate onward.
+    """
+
+    def __init__(self, slate: POVPitchSlate | None = None) -> None:
+        self._slate = slate if slate is not None else _slate()
         self.calls: list[str] = []
 
-    def pitch(self, topic: str) -> list[POVPitch]:
+    def pitch(self, topic: str) -> POVPitchSlate:
         self.calls.append(topic)
-        return []
+        return self._slate
 
 
 def _rules() -> RenderRules:
@@ -231,3 +272,123 @@ def test_unrepairable_script_raises_loud_and_writes_nothing(tmp_path) -> None:
         run_pov_pipeline(writer, _rules(), SAMPLE_IDEA, output_dir=tmp_path)
 
     assert list(tmp_path.iterdir()) == []
+
+
+# --- topic mode (ticket 05) --------------------------------------------------
+
+
+def test_topic_mode_requires_pitcher_and_topic(tmp_path) -> None:
+    writer = FakeScriptWriter(_script())
+
+    with pytest.raises(ValueError):
+        run_pov_pipeline(writer, _rules(), output_dir=tmp_path)  # neither idea nor topic
+
+    with pytest.raises(ValueError):
+        run_pov_pipeline(  # both idea and topic
+            writer, _rules(), SAMPLE_IDEA, topic="deep sea", output_dir=tmp_path
+        )
+
+    with pytest.raises(ValueError):
+        run_pov_pipeline(  # topic with no pitcher
+            writer, _rules(), topic="deep sea", output_dir=tmp_path
+        )
+
+
+def test_topic_mode_calls_pitcher_with_the_topic(tmp_path) -> None:
+    writer = FakeScriptWriter(_script())
+    pitcher = FakePitcher()
+
+    run_pov_pipeline(
+        writer, _rules(), pitcher=pitcher, topic="deep sea",
+        choice_provider=lambda: "1", output_dir=tmp_path,
+    )
+
+    assert pitcher.calls == ["deep sea"]
+
+
+def test_topic_mode_pick_is_honored_and_code_copied_downstream(tmp_path) -> None:
+    """The advisor-flagged discriminating test: 3 DISTINCT fixture pitches,
+    pick "2" (1-based) must resolve to slate.pitches[1] specifically — proving
+    the index map is right, not just "some" pitch reached the artifacts, and
+    that the script writer developed the PICKED pitch, not a different one."""
+    writer = FakeScriptWriter(_script())
+    slate = _slate()
+    pitcher = FakePitcher(slate)
+    expected = slate.pitches[1]
+
+    run_dir = run_pov_pipeline(
+        writer, _rules(), pitcher=pitcher, topic="deep sea",
+        choice_provider=lambda: "2", output_dir=tmp_path,
+    )
+
+    assert writer.pitches == [expected]
+
+    pitch_data = json.loads((run_dir / "pitch.json").read_text(encoding="utf-8"))
+    assert pitch_data["who"] == expected.who
+    assert pitch_data["where"] == expected.where
+    assert pitch_data["what_happens"] == expected.what_happens
+    assert pitch_data["turn"] == expected.turn
+    # And NOT the other two pitches' distinguishing content — guards against a
+    # pass-through bug that always writes pitches[0] regardless of the pick.
+    assert pitch_data["what_happens"] != slate.pitches[0].what_happens
+    assert pitch_data["what_happens"] != slate.pitches[2].what_happens
+
+    sheet_text = (run_dir / "render_sheet.md").read_text(encoding="utf-8")
+    assert expected.what_happens in sheet_text
+
+
+def test_topic_mode_persists_the_full_slate_including_unpicked_pitches(tmp_path) -> None:
+    writer = FakeScriptWriter(_script())
+    slate = _slate()
+    pitcher = FakePitcher(slate)
+
+    run_dir = run_pov_pipeline(
+        writer, _rules(), pitcher=pitcher, topic="deep sea",
+        choice_provider=lambda: "2", output_dir=tmp_path,
+    )
+
+    slate_data = json.loads((run_dir / "slate.json").read_text(encoding="utf-8"))
+    assert len(slate_data["pitches"]) == 3
+    for original, persisted in zip(slate.pitches, slate_data["pitches"], strict=True):
+        assert persisted["what_happens"] == original.what_happens
+
+
+def test_idea_mode_writes_no_slate_file(tmp_path) -> None:
+    writer = FakeScriptWriter(_script())
+
+    run_dir = run_pov_pipeline(writer, _rules(), SAMPLE_IDEA, output_dir=tmp_path)
+
+    assert not (run_dir / "slate.json").exists()
+
+
+def test_topic_mode_invalid_pick_raises_loud(tmp_path) -> None:
+    writer = FakeScriptWriter(_script())
+    pitcher = FakePitcher()
+
+    with pytest.raises(ValueError):
+        run_pov_pipeline(
+            writer, _rules(), pitcher=pitcher, topic="deep sea",
+            choice_provider=lambda: "99", output_dir=tmp_path,
+        )
+
+    with pytest.raises(ValueError):
+        run_pov_pipeline(
+            writer, _rules(), pitcher=pitcher, topic="deep sea",
+            choice_provider=lambda: "not a number", output_dir=tmp_path,
+        )
+
+
+def test_topic_and_idea_are_mutually_exclusive_on_the_cli() -> None:
+    import scripts.pov as pov_module
+
+    parser = pov_module._build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--idea", "x", "--topic", "y"])
+
+
+def test_topic_or_idea_is_required_on_the_cli() -> None:
+    import scripts.pov as pov_module
+
+    parser = pov_module._build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args([])
