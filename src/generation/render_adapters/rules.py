@@ -111,6 +111,25 @@ class RenderRules:
 
         return output
 
+    def pov_grammar(self) -> dict:
+        """Return the ``pov_grammar`` block (ticket 01, POV pipeline).
+
+        Holds the fixed POV skeleton clauses (camera-as-eyes, unseen
+        protagonist, hands visible, anti-drift constraint, constraints
+        block), the kill list (dead intensifiers, bare "cinematic",
+        glow/glimmer), the per-duration beat budget, the dialogue placement
+        rules, and the world-prose craft rules. Every leaf entry carries its
+        own ``evidence`` field (probe artifact, corpus citation, or an
+        explicit ``candidate`` marker) — this accessor is a plain
+        passthrough, the evidence trail lives in the YAML itself, not here.
+
+        The POV prompt compiler (``src/generation/pov/compiler.py``) is the
+        sole reader: it composes the fixed clauses verbatim and scrubs the
+        kill list from LLM-authored script prose so a proven rule can never
+        drift with LLM phrasing (PRD user story 13/14).
+        """
+        return self.data["pov_grammar"]
+
     def scene_model(self) -> str:
         """Return the scene lane's model cli_id from the ``scene_lane`` block.
 

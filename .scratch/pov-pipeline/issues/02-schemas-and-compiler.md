@@ -6,11 +6,11 @@ TDD at seam 2 (the agreed pure-function seam): tests feed fixture scripts and as
 
 **Blocked by:** 01 — POV grammar block in render rules config.
 
-**Status:** ready-for-agent
+**Status:** closed
 
-- [ ] Models follow house conventions (extra="forbid", multi-line docstrings)
-- [ ] Compiler output contains every fixed skeleton clause byte-verbatim from config
-- [ ] Kill-list words in input prose never survive to output (test proves scrub, not prompt discipline)
-- [ ] No bracketed timestamps in output under any input
-- [ ] CLI command + cost line match the chosen duration and measured rate table
-- [ ] Tests green at seam 2; ruff/mypy clean on new modules
+- [x] Models follow house conventions (extra="forbid", multi-line docstrings)
+- [x] Compiler output contains every fixed skeleton clause byte-verbatim from config
+- [x] Kill-list words in input prose never survive to output (test proves scrub, not prompt discipline)
+- [x] No bracketed timestamps in output under any input
+- [x] CLI command + cost line match the chosen duration and measured rate table
+- [x] Tests green at seam 2; ruff/mypy clean on new modules
