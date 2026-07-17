@@ -1,6 +1,6 @@
 # Slice ① — Slim pitcher, D1 director-script stage, craft-gate relocation
 
-Status: ready-for-human (implemented 2026-07-16; awaiting user review + commit)
+Status: closed (shipped 2026-07-16 — commit 7b54edc, feat(pipeline): staged director slice 1: desire-only pitcher + StoryArchitect D1 stage)
 
 ## Validation evidence (2026-07-16)
 

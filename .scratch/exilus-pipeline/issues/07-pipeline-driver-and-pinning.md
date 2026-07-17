@@ -1,6 +1,6 @@
 # 07: Pipeline driver and pinning
 
-Status: ready-for-agent
+Status: closed (shipped 2026-07-17 — commit 6e971e2, scripts/exilus.py driver: pinning, --refresh, --dump/--import-artifacts, 706/706 tests green)
 
 ## Scope
 

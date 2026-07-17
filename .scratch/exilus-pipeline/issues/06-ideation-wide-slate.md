@@ -1,6 +1,6 @@
 # 06: Ideation stage — reshape the slim pitcher into a wide idea slate
 
-Status: ready-for-agent
+Status: closed (shipped 2026-07-17 — commit 6e971e2, Ideator producing 8-15 idea slate with bounded coverage retry, 706/706 tests green)
 
 ## Scope
 

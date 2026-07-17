@@ -1,6 +1,6 @@
 # 01: TopicBrief typed schema + per-topic persistence
 
-Status: ready-for-agent
+Status: closed (shipped 2026-07-17 — commit 6e971e2, TopicBrief model + migration dbac9327ac96, 706/706 tests green)
 
 ## Scope
 

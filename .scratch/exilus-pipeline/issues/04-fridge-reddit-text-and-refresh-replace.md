@@ -1,6 +1,6 @@
 # 04: Fridge — index Reddit text alongside web text + refresh-replace semantics
 
-Status: ready-for-agent
+Status: closed (shipped 2026-07-17 — commit 6e971e2, Fridge.replace_topic_material() for per-topic web/Reddit indexing, 706/706 tests green)
 
 ## Scope
 

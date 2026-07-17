@@ -1,6 +1,6 @@
 # Director stage — merge PLAN+SCENE, protect the story spine
 
-Status: ready-for-agent
+Status: closed (superseded 2026-07-16 by staged-director-brain design; 01-03 shipped via `.scratch/staged-director-slice1` commit 7b54edc, 04's spine check rejected — see issues/04 comments)
 Date: 2026-07-15
 Design doc: `docs/superpowers/specs/2026-07-15-plan-fidelity-seam-design.md` (gitignored; this PRD is the durable record)
 

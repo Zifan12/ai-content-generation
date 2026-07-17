@@ -1,6 +1,6 @@
 # 05: FactionMap schema + faction reader stage
 
-Status: ready-for-agent
+Status: closed (shipped 2026-07-17 — commit 6e971e2, FactionReader emergent camps, 5-cap, budget-aware top-up, 706/706 tests green)
 
 ## Scope
 

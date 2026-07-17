@@ -1,6 +1,6 @@
 # 03: Topic Brief checker — two-layer grading + bounded repair loop
 
-Status: ready-for-agent
+Status: closed (shipped 2026-07-17 — commit 6e971e2, two-layer brief_checker: deterministic citation checks + LLM specificity judge, max 2 repair rounds, 706/706 tests green)
 
 ## Scope
 

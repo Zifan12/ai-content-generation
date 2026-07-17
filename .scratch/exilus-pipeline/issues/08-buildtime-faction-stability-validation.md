@@ -1,6 +1,6 @@
 # 08: Build-time faction-map shuffle-stability validation
 
-Status: ready-for-agent
+Status: ready-for-human (harness shipped 2026-07-17 — commit 6e971e2, scripts/validate_faction_stability.py, 706/706 tests green; the actual paid validation run + user camp-comparison judgment is still outstanding)
 
 ## Scope
 
