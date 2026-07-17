@@ -4,9 +4,9 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** closed
 
-- [ ] New `pov_grammar` block present in the render rules config; yaml parses; existing consumers of the file unaffected (full test suite green)
-- [ ] Every line/entry has an evidence tag (probe sheet path, corpus citation, or explicit `candidate` marker)
-- [ ] First-person camera vocabulary marked validated-by-probe (2026-07-17 probes), superseding its CORPUS-ONLY status
-- [ ] The two probe prompts are reproducible from the block's clauses (manual cross-check documented in the block's header comment)
+- [x] New `pov_grammar` block present in the render rules config; yaml parses; existing consumers of the file unaffected (full test suite green)
+- [x] Every line/entry has an evidence tag (probe sheet path, corpus citation, or explicit `candidate` marker)
+- [x] First-person camera vocabulary marked validated-by-probe (2026-07-17 probes), superseding its CORPUS-ONLY status
+- [x] The two probe prompts are reproducible from the block's clauses (manual cross-check documented in the block's header comment)

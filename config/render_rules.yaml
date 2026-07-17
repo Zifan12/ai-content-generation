@@ -492,6 +492,114 @@ escalation:
     how: "Re-route per `routing:` to a model whose strength matches (impossible physics -> minimax_hailuo)."
 
 # ---------------------------------------------------------------------------
+# POV GRAMMAR — camera-as-eyes first-person register for the generic-topic
+# POV pipeline (slice ①). Spec: .scratch/pov-pipeline/PRD.md. Consumed by
+# ticket 02's deterministic compiler (script in -> final prompt text out);
+# nothing here is LLM-phrased — every skeleton clause is fixed text the
+# compiler code injects verbatim (PRD user story 13).
+#
+# PROBE-VALIDATED 2026-07-17 (Tier-1 evidence: two paid Seedance 2.0 renders
+# + USER WATCH CONFIRMED PASS on both, render_taste_test/pov_probe/
+# PROBE_SHEET.md). This SUPERSEDES the prior CORPUS-ONLY status of
+# first-person camera vocabulary (methodology/15 Format 3 was a documented-
+# but-untested-on-our-stack claim before this probe; it is now measured).
+#
+# Every entry below carries its own `evidence:` field: a `probe:` artifact
+# path (Tier-1, paid render + user watch), a corpus `file:line` citation
+# (verified by direct Read, not grep-inferred), or the literal marker
+# `candidate` (untested inference — ticket 02+ should not treat it as load-
+# bearing the way it treats a probe- or corpus-backed entry).
+#
+# `[PROTAGONIST]` is a bracket-substitution placeholder, the same convention
+# global_constraints uses for `[STYLE]` (see RenderRules.global_constraints
+# in src/generation/render_adapters/rules.py) — the compiler fills in the
+# script's protagonist noun (e.g. "explorer", "diver"). Substituting that one
+# noun is the ONLY variation the skeleton clauses ever undergo; the wording
+# around it is fixed, which is what "verbatim" means in the PRD.
+#
+# Manual cross-check (ticket 01 acceptance criterion — both probes decompose
+# byte-for-byte into these clauses; verified by direct comparison against
+# render_taste_test/pov_probe/probe1_prompt.txt and probe2_prompt.txt):
+#   skeleton_clauses.camera_as_eyes      -> opens BOTH probes verbatim
+#   "Subject: an unseen [PROTAGONIST]..." -> unseen_protagonist + hands_visible
+#                                            composed into one Subject: sentence
+#                                            (probe 1: "...with a headlamp, gloved
+#                                            hands occasionally visible at the
+#                                            bottom of frame."; probe 2: "...
+#                                            kneeling..., bare hands visible in
+#                                            frame.")
+#   [[Action: / Scene: / Light: / Camera: — script-specific, not fixed clauses]]
+#   skeleton_clauses.anti_drift_constraint -> "No cuts, no zooms, natural head
+#                                              movement only." appears verbatim,
+#                                              mid-prompt, in BOTH probes
+#   [[Style: / Audio: — script-specific]]
+#   skeleton_clauses.constraints_block   -> closes BOTH probes verbatim
+# ---------------------------------------------------------------------------
+pov_grammar:
+  skeleton_clauses:
+    camera_as_eyes:
+      text: "Single continuous shot, first-person POV perspective, the camera IS the [PROTAGONIST]'s eyes. First-person handheld footage with slight natural shake."
+      evidence: "probe:render_taste_test/pov_probe/PROBE_SHEET.md (probe 1 + probe 2, both opening line, USER WATCH CONFIRMED PASS 2026-07-17: 'Stays first-person the ENTIRE clip') + corpus lanshu methodology/15-seedance-masterclass.md:161 ('Seedance's advantage: almost the only model that stably holds first-person POV, hands visible + realistic reactions') + all-prompts.json:8176 (sd-067, 'the camera IS her eyes')"
+    unseen_protagonist:
+      text: "Subject: an unseen [PROTAGONIST],"
+      note: "The compiler appends the script's own gear/pose detail after this fixed fragment to complete the Subject: sentence (e.g. probe 1: '...with a headlamp, gloved hands occasionally visible at the bottom of frame.') — that trailing detail is script-specific content, not part of the fixed clause, so it carries no bracket token of its own; only [PROTAGONIST] is a substitution token in this block."
+      evidence: "probe:render_taste_test/pov_probe/PROBE_SHEET.md provenance section ('an unseen explorer' device = sd-020's mechanism for keeping the POV-holder's body out of frame while hands stay visible; explicitly NOT the Dan Kieft Film Director Brain body-part exclusion list, which is for the opposite other-person-POV configuration, Brain.md:224) + all-prompts.json:7038 (sd-020, 'an unseen explorer with a headlamp')"
+    hands_visible:
+      text: "hands visible in frame during any hand action, gloved or bare as the story requires."
+      evidence: "probe:render_taste_test/pov_probe/PROBE_SHEET.md (probe 1: 'gloved hands occasionally visible at the bottom of frame'; probe 2: 'bare hands visible in frame'; watch checklist 'Hands correct — no extra hands, no warped fingers', USER WATCH CONFIRMED PASS) + corpus lanshu methodology/15-seedance-masterclass.md:161 ('hands visible + realistic reactions')"
+    anti_drift_constraint:
+      text: "No cuts, no zooms, natural head movement only."
+      evidence: "corpus lanshu methodology/15-seedance-masterclass.md:163-169 (Format 3, mandatory constraint: 'without this line, Seedance defaults to switching camera angles, breaking immersion') + :380 (pitfall table row: 'POV mid-switch of angle' -> fix is this exact line); validated-by-probe 2026-07-17 (PROBE_SHEET.md watch checklist, both probes 'Stays first-person the ENTIRE clip — no angle switch', USER WATCH CONFIRMED PASS) — this is the clause the ticket-01 acceptance criterion means by 'superseding its CORPUS-ONLY status'"
+    constraints_block:
+      text: "Constraints: no watermark, no logo, no on-screen text, no extra hands. Generate the video without subtitles."
+      evidence: "probe:render_taste_test/pov_probe/PROBE_SHEET.md (both probes, verbatim closing sentence; USER WATCH CONFIRMED PASS, no text/watermark/subtitle leak observed) — restates global_constraints.always_append (this file) in POV-specific wording so the compiler (ticket 02) never has to cross-read an unrelated block for this fixed clause"
+  kill_list:
+    dead_intensifiers:
+      words: ["stunning", "breathtaking", "ultra-detailed", "masterpiece", "best quality", "8K"]
+      evidence: "corpus image-video-director/04-visual-vocabulary.md:94 ('Generic intensifiers: stunning, breathtaking, ultra-detailed, best quality, masterpiece') + 05-运镜词典 L9 — same list already promoted in motion_craft.anti_intensifiers (this file); duplicated here (not referenced) so the POV compiler scrubs LLM-authored script prose without a cross-block read"
+    cinematic_without_specifics:
+      word: "cinematic"
+      rule: "A bare 'cinematic' with no paired camera/light/lens specifics gets scrubbed; a 'cinematic' already paired with a specific (e.g. 'cinematic film tone, 35mm, golden hour') is left alone."
+      evidence: "corpus image-video-director/04-visual-vocabulary.md:94 ('Cinematic alone without props, light sources, and placement is insufficient') + video_model_system_guide.md:175,300,675 (same finding stated three separate times in the Seedance-adjacent playbook: 'cinematic alone is too vague, the model guesses — pair with specifics')"
+    glow_glimmer:
+      replace: { "glow": "steady-intensity light", "glimmer": "diffuse light" }
+      evidence: "candidate — flagged candidate-strength in .scratch/pov-pipeline/PRD.md Implementation Decisions; no direct corpus citation found for this specific substitution. Kept because both words read as a flicker/strobe cue and probe 2's script deliberately used a continuous, non-flickering 'glow brightens' rather than 'glimmer' to avoid an unwanted strobe rendering — a single probe data point, not a corpus rule, hence candidate not corpus-cited"
+  beat_budget:
+    at_10s:
+      min: 4
+      max: 6
+      evidence: "interpolated — no worked 10s single-take POV corpus example was found; linearly scaled down from the 15s corpus-counted figure below (~7 beats * 10/15 ≈ 4.7), per PRD Implementation Decisions ('interpolated from corpus, labeled as such') — this range is NOT itself corpus-measured"
+    at_15s:
+      min: 5
+      max: 8
+      evidence: "corpus-counted from all-prompts.json:8176 (sd-067, 'Electro POV', params.duration '15s', single continuous shot) — ~7 countable physical beats in its 15s body (reach-catch-crush the sphere / energy surges through the arms / lunge and slam a radial surge / catch and redirect the beam / sprint at the titan / drive both hands into its core / core fractures into slow motion), falling inside 5-8"
+  dialogue_rules:
+    never_final_beat:
+      rule: "A dialogue line never lands on the script's last beat."
+      evidence: "corpus lanshu methodology/08-避坑12问.md:139-141 (pitfall #10, '视频结尾有噪音' / video-end-noise: 'when the video contains narration, the clip's tail end tends to produce abrupt clicking / truncation noise') — dialogue placed at the very end sits in this documented audio-artifact zone; the PRD's own flagged open tension on whether 15s generations degrade in their final seconds (.scratch/pov-pipeline/PRD.md Further Notes) makes end-placement doubly risky, hence the rule applies at both durations"
+    length_fits_seconds:
+      rule: "A dialogue line's spoken length must fit the beat's seconds — never more than can be said naturally in the beat's share of the clip."
+      evidence: "corpus lanshu methodology/12-veo-公式.md:76-81 ('8-second rule': 'keep dialogue short — it should be something that can be said in just about 8 seconds, as trying to pack too much in can result in characters speaking way too fast') — cross-model craft rule, already reused on this exact basis by veo3_1.dialect.dialogue_length_rule in this file"
+    plain_quoted_prose:
+      rule: "Dialogue is written as plain quoted prose (e.g. the voice says, 'line here'), never the native-platform ()/<>/{} audio-type symbols."
+      evidence: "measured — seedance_2_0.dialect.bracket_ban + prose_chain_grammar (this file; render_taste_test/seedance_motion_test/FINDINGS.md, 2026-07-06): the Higgsfield CLI is confirmed prose-only text, no special-character syntax exposed. The special_chars block (this file, source methodology/07) documents the native-platform ( ) < > { } 【 】 encoding but is explicitly flagged low-priority/unconfirmed on Higgsfield outside Chinese-dialogue models — plain prose is the only MEASURED-working form"
+  world_prose_craft:
+    light_time_source_emitter_tone:
+      rule: "Name the light in up to four parts — time of day (when relevant), physical source, the named emitter object, and its tonal quality — e.g. 'hard headlamp beam as the only key light' names source + emitter + tone; 'soft side lighting during the golden hour' names time + direction + quality. Never 'dramatic lighting' alone."
+      evidence: "corpus image-video-director/04-visual-vocabulary.md:20-24 (Motivated Practicals: 'naming the source object helps the model place the light logically in the scene'; Combined Direction/Quality/Temperature: 'soft side lighting during the golden hour carries direction, quality, and color temperature in a single phrase — the most efficient lighting prompting pattern') + probe:render_taste_test/pov_probe/PROBE_SHEET.md (both probes' Light: line names source + emitter + tone: 'hard headlamp beam as the only key light' / 'hard headlamp beam plus the rising blue glow of the shard')"
+    depth_layered_nouns:
+      rule: "Stage the world in foreground / midground / background with concrete named objects assigned to each layer, not a flat single-plane description."
+      evidence: "corpus image-video-director/04-visual-vocabulary.md:98-99 ('foreground, mid-ground, background with concrete objects assigned to each layer — multi-model tests confirm correct placement even when models fail other criteria')"
+    particulates:
+      rule: "Give the air something physical to render — dust, damp haze, drifting motes, breath fog — rather than leaving the space visually empty."
+      evidence: "corpus image-video-director/04-visual-vocabulary.md:78-79 (Particulate and Air as Renderable Objects: 'dust particles dancing in a single beam of light' ... 'these give the model physical material to render')"
+    body_word_target:
+      min_words: 60
+      max_words: 100
+      excludes: "the fixed skeleton_clauses and constraints_block text — the target applies only to the script-specific body (Subject/Action/Scene/Light/Style/Audio prose)"
+      evidence: "corpus video_model_system_guide.md:138-148 ('Prompt length' table: 'Official Volcengine guide | 60-100 words' — Volcengine is Seedance's vendor cloud, i.e. this is the model's own official guidance)"
+
+# ---------------------------------------------------------------------------
 # OPEN / UNVERIFIED — rules from guides not yet confirmed by our own renders.
 # Promote to the blocks above once a manual render gives evidence.
 # ---------------------------------------------------------------------------
