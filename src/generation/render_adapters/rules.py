@@ -115,10 +115,12 @@ class RenderRules:
         """Return the ``pov_grammar`` block (ticket 01, POV pipeline).
 
         Holds the fixed POV skeleton clauses (camera-as-eyes, unseen
-        protagonist, hands visible, anti-drift constraint, constraints
-        block), the kill list (dead intensifiers, bare "cinematic",
-        glow/glimmer), the per-duration beat budget, the dialogue placement
-        rules, and the world-prose craft rules. Every leaf entry carries its
+        protagonist, anti-drift constraint, constraints block — hands
+        visibility is deliberately NOT a clause; it lives in
+        ``protagonist_detail_craft`` as a script-stage authoring rule), the
+        kill list (dead intensifiers, bare "cinematic", glow/glimmer), the
+        per-duration beat budget, the dialogue placement rules, the audio
+        rule, and the world-prose craft rules. Every leaf entry carries its
         own ``evidence`` field (probe artifact, corpus citation, or an
         explicit ``candidate`` marker) — this accessor is a plain
         passthrough, the evidence trail lives in the YAML itself, not here.

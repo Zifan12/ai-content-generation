@@ -74,7 +74,14 @@ Return a POVPitchSlate of 3-5 POVPitch objects that differ meaningfully from one
 
 
 class POVPitcher:
-    """Generates a 3-5 pitch POV story slate for an operator-supplied topic."""
+    """Generates a 3-5 pitch POV story slate for an operator-supplied topic.
+
+    Topic mode's first stage (ticket 05): the operator's vague seed becomes
+    a slate of distinct, judgeable-in-seconds POV pitches (who you are /
+    where / what happens / the turn), printed for an interactive pick. Idea
+    mode never constructs this class. Seat: ``pov_pitcher``
+    (config/providers.yaml), traced, per-caller max_tokens override.
+    """
 
     def __init__(self, llm: AnthropicLLM | OpenRouterLLM):
         self.llm = llm

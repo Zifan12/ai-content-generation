@@ -208,7 +208,8 @@ def compile_pov_prompt(script: POVScript, rules: RenderRules) -> CompiledPOVProm
     world_sentence = _ensure_terminal_period(f"World: {world_prose}")
     # Empty audio_items (no beat authored an audio event) must not compose into
     # "Audio: , no music." — a malformed leading comma reaching a paid render.
-    audio_sentence = f"Audio: {', '.join([*audio_items, 'no music'])}."
+    closing_term = grammar["audio_rule"]["closing_term"]
+    audio_sentence = f"Audio: {', '.join([*audio_items, closing_term])}."
 
     prompt_text = " ".join(
         [
@@ -225,7 +226,20 @@ def compile_pov_prompt(script: POVScript, rules: RenderRules) -> CompiledPOVProm
     prompt_text = re.sub(r"\s+", " ", prompt_text).strip()
 
     model_id = rules.scene_model()
-    rate = rules.model(model_id)["limits"]["cost_estimate_credits"][f"per_second_{_SANITY_RESOLUTION}"]
+    # Loud, named failure over a bare KeyError: the sheet PROMISES a cost (L7
+    # cost-governance), so an unmeasured sanity-tier rate must halt compilation
+    # with the missing config key spelled out — never silently re-rate at
+    # another tier (executor's 720p fallback is the wrong semantic here).
+    try:
+        rate = rules.model(model_id)["limits"]["cost_estimate_credits"][
+            f"per_second_{_SANITY_RESOLUTION}"
+        ]
+    except KeyError as exc:
+        raise ValueError(
+            f"no measured {_SANITY_RESOLUTION} rate for {model_id} in "
+            f"render_rules.yaml limits.cost_estimate_credits — the render sheet "
+            f"cannot state a cost (L7) without it"
+        ) from exc
     cost = script.duration_seconds * rate
     # _sanitize_prompt (src/generation/executor.py) strips the shell-hostile
     # characters the Windows .cmd-shim CreateProcess quirk can't reliably

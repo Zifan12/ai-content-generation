@@ -62,3 +62,11 @@ def test_pov_script_rejects_unknown_fields() -> None:
             world_prose="Damp stone, faint light.",
             unexpected_field="nope",  # type: ignore[call-arg]
         )
+
+
+def test_pov_beat_rejects_empty_actions() -> None:
+    """An empty-actions beat IS the beat-free action line that renders in zero
+    frames (BUG-031 class, PRD user story 5) — it must fail at parse, never
+    reach the compiler or a paid render. Spec-axis review finding 2026-07-17."""
+    with pytest.raises(ValidationError):
+        POVBeat(actions=[])

@@ -567,7 +567,7 @@ pov_grammar:
       evidence: "corpus image-video-director/04-visual-vocabulary.md:94 ('Generic intensifiers: stunning, breathtaking, ultra-detailed, best quality, masterpiece') + 05-运镜词典 L9 — same list already promoted in motion_craft.anti_intensifiers (this file); duplicated here (not referenced) so the POV compiler scrubs LLM-authored script prose without a cross-block read"
     cinematic_without_specifics:
       word: "cinematic"
-      rule: "A bare 'cinematic' with no paired camera/light/lens specifics gets scrubbed; a 'cinematic' already paired with a specific (e.g. 'cinematic film tone, 35mm, golden hour') is left alone."
+      rule: "The compiler scrubs 'cinematic' unconditionally (blanket, no paired-usage carve-out): the corpus carve-out ('cinematic film tone, 35mm, golden hour' is legitimate) exists, but no POV probe or corpus POV example uses the word, and a comma-proximity heuristic could false-negative on a paid render — safe simplification, revisit if a real script legitimately wants the paired form."
       evidence: "corpus image-video-director/04-visual-vocabulary.md:94 ('Cinematic alone without props, light sources, and placement is insufficient') + video_model_system_guide.md:175,300,675 (same finding stated three separate times in the Seedance-adjacent playbook: 'cinematic alone is too vague, the model guesses — pair with specifics')"
     glow_glimmer:
       replace: { "glow": "steady-intensity light", "glimmer": "diffuse light" }
@@ -581,6 +581,10 @@ pov_grammar:
       min: 5
       max: 8
       evidence: "corpus-counted from all-prompts.json:8176 (sd-067, 'Electro POV', params.duration '15s', single continuous shot) — ~7 countable physical beats in its 15s body (reach-catch-crush the sphere / energy surges through the arms / lunge and slam a radial surge / catch and redirect the beam / sprint at the titan / drive both hands into its core / core fractures into slow motion), falling inside 5-8"
+  audio_rule:
+    closing_term: "no music"
+    rule: "The compiled Audio: sentence always ends with this term — diegetic in-scene sound only, never a score. The compiler reads it from here (one-source-of-truth rule, render_adapters/rules.py module docstring), never hardcodes it."
+    evidence: "probe:render_taste_test/pov_probe/PROBE_SHEET.md (both probes' Audio: line ends 'no music'; USER WATCH CONFIRMED PASS) + seedance_2_0.dialect.audio_rule (this file) — same closing-term convention the scene lane already uses; PRD Implementation Decisions: no narrator, native in-scene audio"
   dialogue_rules:
     never_final_beat:
       rule: "A dialogue line never lands on the script's last beat."

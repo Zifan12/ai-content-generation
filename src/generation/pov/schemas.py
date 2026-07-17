@@ -88,7 +88,11 @@ class POVBeat(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    actions: list[str]  # 1-2 physical actions this beat shows, in order
+    # 1-2 physical actions this beat shows, in order. min_length=1 is structural:
+    # an empty-actions beat IS the "beat-free action line" that measurably
+    # renders in zero frames (BUG-031 class) — it must never parse, not merely
+    # fail a downstream gate (PRD user story 5).
+    actions: list[str] = Field(min_length=1)
     audio_events: list[str] = []  # diegetic sound cues co-occurring with this beat
     dialogue_line: str | None = None  # optional spoken line, plain quoted prose
     speaker: str | None = None  # who says dialogue_line; required iff it is set
@@ -124,8 +128,10 @@ class POVScript(BaseModel):
     ``camera_as_eyes`` and ``unseen_protagonist`` skeleton clauses (e.g.
     "explorer", "diver"); ``protagonist_detail`` is the trailing gear/pose
     clause the compiler appends after the fixed "Subject: an unseen
-    [PROTAGONIST]," fragment (e.g. "with a headlamp, gloved hands
-    occasionally visible at the bottom of frame").
+    [PROTAGONIST]" fragment (no trailing comma — probe 1 byte pattern), and
+    it must carry the hands-visibility phrasing inline
+    (``pov_grammar.protagonist_detail_craft``, e.g. "with a headlamp, gloved
+    hands occasionally visible at the bottom of frame").
 
     ``protagonist_role`` is derived from the picked ``POVPitch.who`` by
     whatever composes this script (ticket 03's call — a short substitution

@@ -156,18 +156,37 @@ Return one repaired POVScript."""
 
 
 def _pitch_block(pitch: POVPitch) -> str:
-    """Render the picked pitch as a tagged <pitch> data block."""
+    """Render the picked pitch as a tagged <pitch> data block.
+
+    The tag wrapper marks the pitch as untrusted DATA inside the LLM prompt
+    (house untrusted-data-tagging convention) — the model develops it, never
+    treats its content as instructions.
+    """
     return f"<pitch>\n{pitch.model_dump_json(indent=2)}\n</pitch>"
 
 
 def _violations_block(violations: list[str]) -> str:
-    """Render structural violations as a tagged <violations> data block, one per line."""
+    """Render structural violations as a tagged <violations> data block, one per line.
+
+    Feeds the bounded repair call (ticket 04): each named violation tells
+    the model exactly what to fix; the tag wrapper keeps the list as DATA,
+    not instructions.
+    """
     lines = "\n".join(f"- {v}" for v in violations)
     return f"<violations>\n{lines}\n</violations>"
 
 
 class POVScriptWriter:
-    """Develops a picked POVPitch into a POVScript (the compiler's sole input)."""
+    """Develops a picked POVPitch into a POVScript (the compiler's sole input).
+
+    The lane's only creative-development seat (``pov_script``,
+    config/providers.yaml): countable beats, world-in-prose, diegetic audio
+    events, dialogue placement — everything the compiler then assembles
+    deterministically. ``develop()`` is the first call;
+    ``repair()`` is ticket 04's single bounded re-call with the structural
+    violations named. Pitch fields are never echoed back into downstream
+    artifacts — code copies them (trust-code-over-LLM doctrine).
+    """
 
     def __init__(self, llm: AnthropicLLM | OpenRouterLLM):
         self.llm = llm
