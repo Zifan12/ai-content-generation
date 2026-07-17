@@ -270,6 +270,16 @@ Each scene_line must contain, in this order:
    static adjective stacked onto the shot ("a fierce, determined glare"), which
    renders as a generic pleasant expression and inverts the register you asked
    for. Most shots carry no facial description at all.
+   Whenever a shot's meaning depends on where a character LOOKS, write the gaze as
+   that character's own action, with an explicit target: "she looks down at his
+   face", "he glances at the door". A CAMERA instruction never sets a gaze — "slow
+   tilt up to her face" moves the lens, and says nothing about where her eyes go.
+   Write nothing and the reference photo decides for you: an identity ref is shot
+   looking into the lens, so an unwritten gaze renders as the character staring
+   down the barrel at the viewer, which breaks any moment played between two
+   characters. (Measured 2026-07-16: the payoff prompted a camera tilt to her face
+   and never wrote her gaze; she delivered the line straight into camera. Adding
+   "she looks down at his face, never at the camera" fixed it.)
    Refer to each character by the EXACT same name in every shot line — never swap
    to a pronoun or a generic noun ("the man", "she") between lines; name drift
    causes role swaps and merged faces. Never write unqualified "fast" or "lots of
@@ -281,19 +291,39 @@ Each scene_line must contain, in this order:
    non-verbal sounds only). A beat with no dialogue_line stays purely physical —
    never invent a line.
 3. SPACE — WHERE IN the location this happens and any spatial change, in a few
-   words ("beside the workbench", "at the door on the far wall"). When a location
+   words ("beside the workbench", "at the door opposite the bed"). When a location
    is given, it is a REAL PHOTOGRAPHED ROOM attached to the render: never
    describe its materials, its architecture, or what kind of room it is — the
    photo carries all of that, and text that disagrees with it makes the model
    blend the two or flip between them shot to shot. Use the location's own
-   written layout to place the action in it. With NO location given, describe the
-   setting in a few words as usual. Name the physical light SOURCE lighting THIS
-   scene (a bedside lamp, sunlight through the windows, a phone screen's glow) —
-   that is the story's to choose and changes shot to shot; never a bare mood
-   adjective with no visible source. When nothing in the story changes the
-   background this shot, add "background stays unchanged" to this clause; SKIP it
-   on shots that legitimately change the space (a door opens, a threshold is
-   crossed).
+   written layout to place the action in it.
+   Never assert a STATE for anything the photo already shows — a door's open or
+   shut, a lamp's on or off, a window's raised or closed. The photo has already
+   fixed every one of those, and a state your text asserts against it does not
+   override the photo: the model renders BOTH and the room grows a second door.
+   (Measured 2026-07-16: the text said "the open doorway" beside a photo of one
+   closed door, and the render contained two doors.) A state may only ENTER the
+   text as a CHANGE somebody performs on camera — "she shoves the door open" is
+   an action with a visible cause and is allowed; "the open doorway" is a claim
+   about the room and is not.
+   Spatial language must be RELATIONAL — placed against another named thing in
+   the room ("the door opposite the bed", "the table beside the windows"). Never
+   camera-relative: "far wall", "left side", "the right of the room" are only
+   true from the one viewpoint the location photo happens to occupy, and they
+   invert the moment the camera moves anywhere else. (Measured 2026-07-16: the
+   phrase "far wall" was carried out of the location's layout text and used as a
+   camera position, which put the camera where the photographer stood and flipped
+   every direction in the room.)
+   With NO location given, describe the setting in a few words as usual. When a
+   location IS given, the photo owns the light: never name or change the light
+   source, because the room was photographed at one time of day and your text
+   cannot relight it — a "candlelit" line against a sunlit photo is the same
+   contradiction as the door. With NO location given, name the physical light
+   SOURCE lighting THIS scene (a bedside lamp, sunlight through the windows, a
+   phone screen's glow) — never a bare mood adjective with no visible source.
+   When nothing in the story changes the background this shot, add "background
+   stays unchanged" to this clause; SKIP it on shots that legitimately change the
+   space (a door opens, a threshold is crossed).
 4. CAMERA — one camera behavior for the shot, written separately from the
    subject's action so the model never confuses who moves ("Camera: slow
    push-in", "Camera: static, shallow depth of field", "Camera: slow tilt from

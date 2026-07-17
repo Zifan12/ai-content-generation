@@ -75,6 +75,19 @@ _STORYPITCH_FIELD_SPEC = """For each StoryPitch produce:
     see, is a failed pitch — the render model cannot hold an unseen space
     consistent. Longer history may be IMPLIED by what characters say or carry;
     it is never SHOWN as its own beat.
+    Name the KIND of place and what the story needs it to contain — never how it
+    looks. A real photographed room gets attached downstream, and you have not
+    seen it: every look you invent (a material, a colour, a light, whether a door
+    stands open) is a guess that the photo will contradict, and the render then
+    shows BOTH your guess and the photo. "Elfaria's bedroom, a door she can reach
+    for and a bed" is a setting. "Elfaria's candlelit bedroom, stone floor, one
+    open doorway" is three guesses about a room that turned out to be sunlit
+    marble with a closed door — all three shipped into the render (measured
+    2026-07-16). Say what the space must CONTAIN for the story to happen; leave
+    what it looks like to the photograph.
+    Spatial language must be RELATIONAL — against another named thing ("the door
+    opposite the bed"). Never camera-relative ("the far wall", "the left side"):
+    there is no camera yet, so those words mean nothing here and invert downstream.
 - beats: 3-5 ordered StoryBeats. Each beat has:
     role: its function in the arc (hook, establish, build, turn, escalate, reveal, payoff, tag).
     visual_line: what the camera SEES this beat — concrete, shootable, render-facing.
@@ -102,6 +115,14 @@ _STORYPITCH_FIELD_SPEC = """For each StoryPitch produce:
         the move, and a bare verb phrase is a story fact thrown away. Copy the
         whole move and every sub-motion of it. This is the other non-negotiable,
         held the same way.
+        When destination is set, this motion must physically CLOSE ON IT — a
+        displacement, a direction of travel, a shrinking distance. An in-place
+        gesture performed AT a location is not movement toward it: with
+        destination "the doorway's threshold", "clawing weakly at the floor just
+        inside the doorway" is a man lying still and scratching, and that is what
+        renders. "dragging himself toward the door, hand over hand" is the same
+        story with the travel written in. If the beat's motion genuinely goes
+        nowhere, that is fine — but then destination is null, not decorative.
         MOTION ONLY — never a face, an expression, or a mood. "hauls the crate up
         onto the tailgate" belongs here; "hauls the crate up onto the tailgate,
         grinning with grim satisfaction" does not — cut the grin, keep the haul.
@@ -122,6 +143,12 @@ _STORYPITCH_FIELD_SPEC = """For each StoryPitch produce:
         is null.
     shot_size: the framing (establishing, wide, medium, close_up, extreme_close_up, over_shoulder). \
 VARY it across beats; a slate of identical framings is a failure.
+        The framing must FIT this beat's own required_action — the whole motion
+        has to survive inside it. An extreme_close_up cannot carry a body
+        travelling across a room; it shows a hand, and the journey the beat exists
+        for happens off-screen. Pick the widest framing the beat's emotion can
+        afford, then check: can a viewer SEE the required_action happen in this
+        frame? If not, the beat is invisible no matter how well it renders.
     characters_in_frame: which character names appear this beat.
     hero_moment: mark exactly ONE beat (the payoff) true.
 - caption_policy: hook_only (a single hook card) by default; none if the video needs no text.

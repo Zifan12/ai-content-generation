@@ -411,9 +411,24 @@ global_constraints:
   always_append:
     kinds: [still, motion]
     rules:
-      - "locked camera, fixed position, no shake, no sudden zoom"
       - "no clipping, no stutter, no flicker"
       - "no watermark, no logo, no on-screen text or subtitles"
+  # SPLIT OUT of always_append 2026-07-16, and scoped to still-only. "locked camera,
+  # fixed position" directly contradicts the motion-native lane, where the director
+  # writes a camera move into every scene_line ("Camera: slow push-in", "Camera:
+  # tracks sideways matching the pull"). Sending both would be the same text-vs-text
+  # contradiction that rendered two doors on pitch-51 (bugs.md BUG-030 forensics):
+  # the model satisfies both instructions badly instead of picking one.
+  #
+  # This never shipped — global_constraints() was written and never called (wired
+  # into the adapter 2026-07-16) — so retiring the clause from motion changes no
+  # past render. It stays declared for `still` because a still genuinely has no
+  # camera motion to permit; if the still lane ever wants a deliberate motion-blur
+  # look, delete this bucket rather than widening it back to motion.
+  camera_lock:
+    kinds: [still]
+    rules:
+      - "locked camera, fixed position, no shake, no sudden zoom"
   stability:
     kinds: [still, motion]
     rules:

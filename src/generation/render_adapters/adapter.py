@@ -184,9 +184,29 @@ def _scene_prompt(package: MultiShotPackage, rules: RenderRules) -> str:
         for i, shot in enumerate(package.shots)
     )
     quality_suffix = " ".join(model_block["dialect"]["quality_suffix"].split())
+    # global_constraints() has existed in rules.py since the yaml was written and was
+    # never called — the tail hand-duplicated a subset of it instead, so the yaml was
+    # decorative and the real constraints lived in this literal. Wired 2026-07-16.
+    # Reading from the yaml makes it the single source of truth: a new bucket there
+    # now reaches the render without a code change, which is the whole point of the
+    # kinds-scoped design.
+    #
+    # "motion" is the only kind this lane emits — the scene job is one Seedance
+    # single-generation, no still (that was the retired still-first i2v paradigm), so
+    # the still-only buckets (style_consistency, camera_lock) are correctly skipped by
+    # the kinds filter rather than by anything here. style="" because the style anchor
+    # is already stated once in the preamble; passing it again would collapse the
+    # [STYLE] token into a duplicate of text the prompt already carries (the i2v rule:
+    # never restate what another block already said).
+    constraints = " ".join(f"{c}." for c in rules.global_constraints("motion", style=""))
+    # The no-text line that used to sit here as a literal is GONE: it was a hand-copy
+    # of the yaml's always_append rule (its own comment said so), and now that the
+    # yaml is actually read, keeping the copy would state the same constraint twice in
+    # one prompt. "No music" stays hardcoded — it is a D5 assembly-side decision, not
+    # a render constraint, so it has no bucket in the yaml to come from.
     tail = (
-        "No on-screen text, no subtitles, no watermark, no logo. "  # yaml always_append no-text rule
         "No music. "  # D5: music + narration are assembly-side
+        f"{constraints} "
         f"{quality_suffix}"
     )
     # Setting block sits in the identity zone (after identity, before the action

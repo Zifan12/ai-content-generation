@@ -244,6 +244,47 @@ class StoryBeat(BaseModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def _check_spine_pair_rule(self) -> "StoryBeat":
+        """
+        A destination requires a motion to reach for it — but not the reverse.
+
+        The implication runs ONE WAY: ``destination`` set means ``required_action``
+        must be set too. A target with no motion aimed at it is incoherent — the
+        beat names somewhere to go and shows nobody going.
+
+        The reverse is legal and load-bearing: an action with NO destination is a
+        motion that genuinely goes nowhere ("she smirks straight down the lens"),
+        which ``destination``'s own docstring names as a deliberate null. Both null
+        is also legal — pre-2026-07-15 ``story_json`` rows have neither field and
+        must still load.
+
+        NOT symmetric, unlike the sibling dialogue/speaker rule above. That one is
+        a true pair (a line needs a mouth, a mouth needs a line). This one is an
+        implication, and an early draft of this validator got it wrong by copying
+        the dialogue rule's shape — caught by
+        ``test_beat_with_no_destination_is_legitimate``, which pins exactly the
+        case the symmetric version banned.
+
+        Deliberately NARROW, and the limit is worth stating: this catches SILENT
+        OMISSION only. It does NOT catch the pitch-51 failure (2026-07-16), where
+        both fields were filled and disagreed in KIND — destination "the doorway's
+        threshold" against required_action "clawing weakly at the floor", a
+        stationary gesture that never travels. Whether prose actually closes on a
+        noun phrase is a semantic question, and the rejected spine check
+        (2026-07-15: "a synonym and a dropped fact are both just different words")
+        is the evidence that code cannot answer it. That rule lives in the
+        pitcher's field spec — a prompt rule, weak by construction, and knowingly
+        so.
+        """
+        if self.destination is not None and self.required_action is None:
+            raise ValueError(
+                f"destination {self.destination!r} is set but required_action is "
+                "None — a destination is where a motion is AIMED; name the motion "
+                "or drop the destination"
+            )
+        return self
+
 
 class StoryPitch(BaseModel):
     model_config = ConfigDict(extra="forbid")
