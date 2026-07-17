@@ -140,6 +140,29 @@ def _scrub(text: str, kill_list: dict) -> str:
     return cleaned
 
 
+def count_body_words(script: POVScript) -> int:
+    """Count the script-authored body words the 60-100 budget governs.
+
+    Counts RAW (pre-scrub) text: protagonist detail, scene setting, world
+    prose, and every beat's actions, dialogue lines, and audio events —
+    excluding the fixed skeleton clauses and constraints block, per
+    ``pov_grammar.world_prose_craft.body_word_target.excludes``. Shared by
+    this compiler's hard backstop and ``craft_enforcement``'s repairable
+    budget check so the two can never disagree on what "body" means. The
+    compiler's own post-scrub count can only be <= this one (scrubbing only
+    removes words), so a script passing here cannot fail the backstop's
+    lower bound spuriously — and an over-budget raw script is a script-stage
+    defect regardless of what scrubbing might shave off.
+    """
+    parts = [script.protagonist_detail, script.scene_setting, script.world_prose]
+    for beat in script.beats:
+        parts.extend(beat.actions)
+        parts.extend(beat.audio_events)
+        if beat.dialogue_line is not None:
+            parts.append(beat.dialogue_line)
+    return sum(len(part.split()) for part in parts)
+
+
 def _flatten_actions(script: POVScript) -> tuple[list[str], list[str]]:
     """Flatten every beat's actions/dialogue and audio events into two ordered lists.
 

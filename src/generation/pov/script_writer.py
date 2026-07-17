@@ -108,7 +108,14 @@ hold on without cutting — see the actions rule above. A story told in static p
 nothing moving between them is the failure mode, not a pass.
 5. VISUALLY SELF-EVIDENT TO A ZERO-CONTEXT VIEWER. There is no caption and no voiceover — \
 a viewer who has never heard the pitch must grasp what is happening FROM THE ACTIONS \
-ALONE."""
+ALONE.
+6. WORD ECONOMY IS A HARD BUDGET. Everything you author — protagonist detail, scene \
+setting, world prose, every beat's actions, dialogue, and audio events — must total \
+between 60 and 100 words COMBINED. The render model responds to dense concrete nouns, \
+not elaboration; every word must earn its place on screen. Count as you write: a typical \
+passing script spends ~10 words on the subject detail, ~10 on scene, ~15 on world prose, \
+and ~8-12 per beat across 4-6 beats. Overwriting is a structural failure that gets \
+bounced back to you."""
 
 
 POV_SCRIPT_SYSTEM_PROMPT = f"""You are the script stage for a POV (first-person, \

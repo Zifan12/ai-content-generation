@@ -23,6 +23,7 @@ never a silent pass-through of a structurally broken script into the
 compiler.
 """
 
+from src.generation.pov.compiler import count_body_words
 from src.generation.pov.schemas import POVPitch, POVScript
 from src.generation.render_adapters.rules import RenderRules
 
@@ -87,6 +88,21 @@ def check_structure(script: POVScript, rules: RenderRules) -> list[str]:
     if script.beats and script.beats[-1].dialogue_line is not None:
         violations.append(
             "the last beat carries a dialogue_line; dialogue must never land on the final beat"
+        )
+
+    # Word budget joins the repairable set (first live run 2026-07-17: a
+    # 318-word body died at the compiler's hard backstop with no repair
+    # chance — a budget breach is exactly the kind of named, fixable defect
+    # the bounded repair exists for). Shares the compiler's own counter so
+    # the two layers can never disagree on what "body" means.
+    word_budget = rules.pov_grammar()["world_prose_craft"]["body_word_target"]
+    body_words = count_body_words(script)
+    if not (word_budget["min_words"] <= body_words <= word_budget["max_words"]):
+        violations.append(
+            f"the authored body totals {body_words} words; the word budget is "
+            f"{word_budget['min_words']}-{word_budget['max_words']} combined across "
+            f"protagonist detail, scene setting, world prose, and every beat's "
+            f"action/dialogue/audio text — cut or expand to fit"
         )
 
     return violations

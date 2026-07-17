@@ -278,3 +278,16 @@ def test_unrepairable_violation_lists_every_surviving_violation(rules: RenderRul
 
     assert "beat 0" in str(exc_info.value)
     assert "actions" in str(exc_info.value)
+
+
+def test_word_budget_breach_is_a_repairable_violation(rules: RenderRules) -> None:
+    """First live run (2026-07-17): a 318-word body died at the compiler's
+    hard backstop with no repair chance. The budget is now part of the
+    repairable structural set — an over-budget script must produce a named
+    violation here, not only a compiler error."""
+    script = _valid_script(10)
+    script = script.model_copy(
+        update={"world_prose": " ".join(["word"] * 400)}
+    )
+    violations = check_structure(script, rules)
+    assert any("word budget" in v for v in violations)
