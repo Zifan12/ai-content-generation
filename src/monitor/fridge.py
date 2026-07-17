@@ -1,15 +1,28 @@
 """
-The web-research "fridge": persist the raw web text the ContextAgent gathers so a
-downstream stage can retrieve a specific detail on demand, instead of losing it to
-the summary compression.
+The research "fridge": persist the raw material the ContextAgent gathers — both
+web text and Reddit reaction text — so a downstream stage can retrieve a specific
+detail on demand, instead of losing it to the summary compression.
 
-``index_web_text`` chunks the raw web text, embeds each chunk (BGE-M3), and writes
-one :class:`WebResearchChunk` row per chunk. Chunking follows the structural-first
+``index_web_text`` chunks raw text, embeds each chunk (BGE-M3), and writes one
+:class:`WebResearchChunk` row per chunk. Chunking follows the structural-first
 strategy (Huyen Ch.6, via the 2026-07-09 Second Brain consult): split on the
 ``\\n\\n`` block boundaries already in the text, keep the small clean search
 snippets whole, and only sentence-pack the oversized full-page (firecrawl) blocks
 with a little overlap so a fact never straddles a boundary. Light markdown cleanup
 runs first so formatting cruft does not become junk chunks.
+
+Reddit's ``reddit_text`` (``[POST | N upvotes]`` / ``[COMMENT | N upvotes]``
+blocks, see ``src/monitor/tools/reddit_search.py``) uses the same chunker —
+``_clean_block``'s regexes only touch markdown link/emphasis/bullet syntax, never
+the ``[``/``]`` bracket characters, so upvote tags survive chunking verbatim.
+No separate Reddit-specific chunker or ORM column was needed (Exilus PRD ticket
+04): the chunker is shape-based, not source-based, and the tag text already
+distinguishes a Reddit-sourced chunk from a web-sourced one at retrieval time.
+
+``replace_topic_material`` is the delete-then-index refresh entry point: it
+DELETEs a topic's existing rows before indexing its (possibly re-gathered) web
+and Reddit text, so an explicit research refresh replaces the topic's fridge
+contents instead of stacking duplicates on top of them.
 """
 
 from __future__ import annotations
@@ -17,7 +30,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from src.models.web_research_chunk import WebResearchChunk
@@ -151,6 +164,40 @@ def index_web_text(
     session.add_all(rows)
     session.commit()
     return len(rows)
+
+
+def replace_topic_material(
+    topic: str,
+    web_text: str,
+    reddit_text: str,
+    embedder: TextEmbedder,
+    session: Session,
+) -> int:
+    """Delete ``topic``'s existing fridge rows, then index its web + Reddit text.
+
+    The refresh entry point for the Exilus research stage (PRD "Pinning
+    semantics": an explicit refresh REPLACES a topic's fridge rows rather than
+    stacking duplicates on top of a prior run's). The delete is scoped to
+    ``topic`` only — other topics' rows are untouched — and is committed before
+    either text is indexed, so the delete always lands even if both texts
+    happen to be empty (an all-empty refresh still clears stale rows).
+
+    ``web_text`` and ``reddit_text`` are indexed via :func:`index_web_text`
+    (same chunker for both — see module docstring for why Reddit text needs no
+    separate chunking path). Either may be empty; an empty source simply
+    contributes 0 rows without affecting the other.
+
+    Returns the total number of rows written across both sources.
+    """
+    # ponytail: delete is committed before either index call, not wrapped in one
+    # transaction with them — a crash between delete and index leaves the topic's
+    # fridge empty rather than rolled back. Acceptable: the fridge is a
+    # re-derivable scrape cache, not a source of truth; a re-run repopulates it.
+    session.execute(delete(WebResearchChunk).where(WebResearchChunk.topic == topic))
+    session.commit()
+    written = index_web_text(topic, web_text, embedder, session)
+    written += index_web_text(topic, reddit_text, embedder, session)
+    return written
 
 
 def retrieve(

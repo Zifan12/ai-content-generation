@@ -6,11 +6,15 @@ import numpy as np
 import pytest
 from sqlalchemy.orm import Session
 
+from sqlalchemy import select
+
 from src.database import engine
+from src.models.web_research_chunk import WebResearchChunk
 from src.monitor.fridge import (
     _TARGET_CHUNK_CHARS,
     _chunk_web_text,
     index_web_text,
+    replace_topic_material,
     retrieve,
 )
 
@@ -103,3 +107,85 @@ def test_retrieve_scopes_by_topic_and_ranks_nearest(db):
 def test_retrieve_empty_topic_returns_empty(db):
     """A topic with no indexed chunks returns an empty list, not an error."""
     assert retrieve("unseen-topic", "anything", _FakeEmbedder(), db) == []
+
+
+def test_upvote_tags_survive_chunking():
+    """Reddit-shaped `[POST | N upvotes]` / `[COMMENT | N upvotes]` tags come
+    through the same chunker verbatim (AC2) — _clean_block's regexes only touch
+    markdown link/emphasis/bullet syntax, never the bracket characters."""
+    reddit_block = (
+        "[POST | 244 upvotes] Fans debate the finale twist\n"
+        "  [COMMENT | 37 upvotes] I did not expect that reveal at all."
+    )
+    chunks = _chunk_web_text(reddit_block)
+    assert any("[POST | 244 upvotes]" in c and "[COMMENT | 37 upvotes]" in c for c in chunks)
+
+
+def test_replace_topic_material_indexes_both_sources_retrievable(db):
+    """AC1: reddit-only and web-only content for one topic are both indexed and
+    separately retrievable by a query matching only one source's content."""
+    emb = _FakeEmbedder()
+    reddit_text = "[POST | 100 upvotes] The dragon-riders finally reunite on screen."
+    web_text = "A wiki summary explains the kingdom's ancient naval treaty in detail."
+
+    written = replace_topic_material("topic-mixed", web_text, reddit_text, emb, db)
+    assert written == 2
+
+    # k=1 (not 5): with only 2 chunks total, a wide k would return both rows for
+    # either query regardless of relevance — asserting the nearest hit proves the
+    # query actually discriminated by content, not merely that both rows exist.
+    reddit_hits = retrieve("topic-mixed", reddit_text, emb, db, k=1)
+    web_hits = retrieve("topic-mixed", web_text, emb, db, k=1)
+    assert reddit_hits == [reddit_text]
+    assert web_hits == [web_text]
+
+
+def test_replace_topic_material_replaces_not_stacks(db):
+    """AC3: a second replace leaves only the second run's chunk count — the
+    first run's rows are gone, not just outnumbered."""
+    emb = _FakeEmbedder()
+    first_reddit = "[POST | 10 upvotes] First run reddit content about the show."
+    first_web = "First run web content describing the show's setting."
+    replace_topic_material("topic-refresh", first_web, first_reddit, emb, db)
+
+    second_reddit = "[POST | 20 upvotes] Second run reddit content, totally different."
+    written = replace_topic_material("topic-refresh", "", second_reddit, emb, db)
+
+    count = db.execute(
+        select(WebResearchChunk).where(WebResearchChunk.topic == "topic-refresh")
+    ).scalars().all()
+    assert len(count) == written
+    assert not any("First run" in row.chunk_text for row in count)
+
+
+def test_replace_topic_material_scoped_to_one_topic(db):
+    """AC4: refreshing topic A never deletes or alters topic B's rows."""
+    emb = _FakeEmbedder()
+    replace_topic_material("topic-A", "web A content about castles.", "", emb, db)
+    replace_topic_material(
+        "topic-B", "", "[POST | 5 upvotes] reddit B content about spaceships.", emb, db
+    )
+
+    # Refresh topic A again — topic B must be untouched.
+    replace_topic_material("topic-A", "new web A content about castles again.", "", emb, db)
+
+    b_rows = db.execute(
+        select(WebResearchChunk).where(WebResearchChunk.topic == "topic-B")
+    ).scalars().all()
+    assert len(b_rows) == 1
+    assert "spaceships" in b_rows[0].chunk_text
+
+
+def test_replace_topic_material_empty_source_does_not_block_other(db):
+    """AC6: one empty source contributes 0 rows without erroring or blocking
+    the other source's indexing."""
+    emb = _FakeEmbedder()
+    written = replace_topic_material(
+        "topic-empty-reddit", "only web content here, nothing from reddit.", "", emb, db
+    )
+    assert written == 1
+
+    written = replace_topic_material(
+        "topic-empty-web", "", "[POST | 8 upvotes] only reddit content here.", emb, db
+    )
+    assert written == 1

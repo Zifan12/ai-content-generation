@@ -1,11 +1,19 @@
 
-from src.monitor.schemas import ContextBundle, ContextSynthesis, PlanDecision
+from src.monitor.schemas import (
+    BriefFieldDraft,
+    ContextBundle,
+    ContextSynthesis,
+    PlanDecision,
+    TopicBrief,
+    TopicBriefDraft,
+)
 from src.monitor.tools import estimate_cost
 from src.monitor.tools._types import ToolResult
 import src.monitor.context_agent as context_agent_module
 from src.monitor.context_agent import (
     ContextAgent,
     build_context_bundle,
+    compose_topic_brief,
     decide_next_step,
     ContextAgentState,
     PLAN_SYSTEM_PROMPT,
@@ -869,3 +877,249 @@ def test_run_floor_override_uses_topic_not_empty_query(monkeypatch):
         f"floor-override tavily call must use the topic, not empty next_query; "
         f"got {recorded_tavily_queries!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Exilus lane (PRD ticket 02): _finalize_brief / gather_brief / reenter_with_query
+# ---------------------------------------------------------------------------
+
+
+def _sample_brief_draft() -> TopicBriefDraft:
+    return TopicBriefDraft(
+        identity=BriefFieldDraft(
+            content="Wistoria: Wand and Sword is a fantasy anime.",
+            citations=["https://reddit.com/r/x/comments/1"],
+        ),
+        recent_events=BriefFieldDraft(
+            content="Season 2 finale aired June 28.",
+            citations=["https://example.com/article"],
+        ),
+        key_characters=BriefFieldDraft(
+            content="Elfaria and Will are the central pair.",
+            citations=["https://reddit.com/r/x/comments/1"],
+        ),
+        why_people_care=BriefFieldDraft(
+            content="Fans wanted the long-teased reunion and didn't get it.",
+            citations=["https://example.com/article"],
+        ),
+        open_unknowns=["whether the showrunner's quote was sarcastic"],
+    )
+
+
+class FakeBriefLLM:
+    """Same single-call fake pattern as FakeFinalizeLLM, for _finalize_brief."""
+
+    def __init__(self, draft: TopicBriefDraft) -> None:
+        self._draft = draft
+
+    def parse(self, prompt: str, response_model: type, **kwargs) -> TopicBriefDraft:
+        self.prompt = prompt
+        return self._draft
+
+
+class FakeBriefSequenceLLM:
+    """Drives gather_brief()/reenter_with_query() end-to-end: queued
+    PlanDecisions for _plan's calls (dispatched by response_model), then a
+    fixed TopicBriefDraft for _finalize_brief's call(s).
+    """
+
+    def __init__(self, plan_decisions: list[PlanDecision], draft: TopicBriefDraft) -> None:
+        self._plan_decisions = list(plan_decisions)
+        self._draft = draft
+
+    def parse(self, prompt: str, response_model: type, **kwargs):
+        if response_model is PlanDecision:
+            return self._plan_decisions.pop(0)
+        return self._draft
+
+
+def test_finalize_brief_returns_composed_draft():
+    """AC1: _finalize_brief produces a brief_draft carrying exactly the five
+    TopicBrief fields (identity/recent_events/key_characters/why_people_care/
+    open_unknowns)."""
+    draft = _sample_brief_draft()
+    fake = FakeBriefLLM(draft=draft)
+    agent = ContextAgent(llm=fake)
+    state = _fresh_state("Wistoria season 2 finale")
+
+    result = agent._finalize_brief(state)
+
+    assert result == {"brief_draft": draft}
+
+
+def test_finalize_brief_prompt_includes_citable_urls():
+    """AC5: the finalize-brief node's prompt must include the full set of
+    URLs gathered during the run (state.urls) as the citable source list —
+    same grounding discipline _plan's prompt already applies elsewhere."""
+    fake = FakeBriefLLM(draft=_sample_brief_draft())
+    agent = ContextAgent(llm=fake)
+    state = _fresh_state("Wistoria season 2 finale").model_copy(
+        update={"urls": ["https://reddit.com/r/x/comments/1", "https://example.com/article"]}
+    )
+
+    agent._finalize_brief(state)
+
+    assert "https://reddit.com/r/x/comments/1" in fake.prompt
+    assert "https://example.com/article" in fake.prompt
+
+
+def test_compose_topic_brief_maps_all_fields_and_citations():
+    """AC1/AC2: composition carries every field's content AND citations
+    through untouched, with verified defaulting True (no checker yet)."""
+    draft = _sample_brief_draft()
+
+    brief = compose_topic_brief(draft)
+
+    assert isinstance(brief, TopicBrief)
+    assert brief.identity.content == draft.identity.content
+    assert brief.identity.citations == draft.identity.citations
+    assert brief.identity.verified is True
+    assert brief.recent_events.citations == draft.recent_events.citations
+    assert brief.key_characters.citations == draft.key_characters.citations
+    assert brief.why_people_care.citations == draft.why_people_care.citations
+    assert brief.open_unknowns == draft.open_unknowns
+    # AC2: each of these four fields carries at least one citation in this
+    # canned draft, and composition must not drop them.
+    for field in (brief.identity, brief.recent_events, brief.key_characters, brief.why_people_care):
+        assert len(field.citations) >= 1
+
+
+def test_topic_brief_has_no_wave_status_or_visual_fields():
+    """AC3/AC4 regression guard: the PRD explicitly rejected a wave_status
+    field and any visual/lore-dump field on this artifact."""
+    field_names = set(TopicBrief.model_fields.keys())
+    assert "wave_status" not in field_names
+    assert not any("visual" in name or "lore" in name for name in field_names)
+
+
+def test_gather_brief_wire(monkeypatch):
+    """Driver-level wire test (topic in -> TopicBrief out), all fakes injected
+    — mirrors the existing test_run_full_loop convention for the brief lane."""
+    monkeypatch.setattr(
+        context_agent_module,
+        "reddit_search",
+        lambda query, within_community=None, **kwargs: ToolResult(
+            text="top comment: robbed", urls=["https://reddit.com/r/x/comments/1"]
+        ),
+    )
+    monkeypatch.setattr(
+        context_agent_module,
+        "tavily_search",
+        lambda query: ToolResult(
+            text="background: finale aired June 28", urls=["https://example.com/article"]
+        ),
+    )
+    monkeypatch.setattr(context_agent_module, "search_subreddits", lambda topic: [])
+
+    plan_decisions = [
+        PlanDecision(next_action="reddit_search", next_query="finale reaction"),
+        PlanDecision(next_action="tavily_search", next_query="finale background"),
+        PlanDecision(next_action="stop", next_query=""),
+    ]
+    draft = _sample_brief_draft()
+    fake = FakeBriefSequenceLLM(plan_decisions=plan_decisions, draft=draft)
+    agent = ContextAgent(llm=fake, max_tool_calls=5)
+
+    brief, bundle, web_text, final_state = agent.gather_brief("Wistoria season 2 finale")
+
+    assert brief == compose_topic_brief(draft)
+    assert web_text == "background: finale aired June 28"
+    assert bundle.references == [
+        "https://reddit.com/r/x/comments/1",
+        "https://example.com/article",
+    ]
+    assert final_state.reddit_calls == 1
+    assert final_state.tavily_calls == 1
+
+
+def test_reenter_with_query_carries_budget_cumulatively(monkeypatch):
+    """AC8: re-entering with a forced follow-up query must respect the
+    REMAINING budget, not a fresh ceiling — total calls across the initial
+    run and the re-entry pass together never exceed max_tool_calls."""
+    call_log: list[str] = []
+
+    def fake_reddit_search(query, within_community=None, **kwargs):
+        call_log.append(query)
+        return ToolResult(text="more reaction", urls=[f"https://reddit.com/r/x/comments/{len(call_log)}"])
+
+    monkeypatch.setattr(context_agent_module, "reddit_search", fake_reddit_search)
+
+    # After the forced reddit_search call, _drive_loop calls _plan again
+    # (mirrors build_graph's act -> plan edge) — queue a "stop" for it. The
+    # ceiling (reddit_calls now 3 == max_tool_calls) would force a stop
+    # regardless, but _plan must still return something typed as a
+    # PlanDecision, not the brief draft.
+    fake = FakeBriefSequenceLLM(
+        plan_decisions=[PlanDecision(next_action="stop", next_query="")],
+        draft=_sample_brief_draft(),
+    )
+    agent = ContextAgent(llm=fake, max_tool_calls=3)
+
+    # Simulate a finished initial run that already consumed 2 of the 3
+    # allowed tool calls (reddit_calls=2), with next_action="stop" (as a
+    # real finished run's last _plan call would leave it).
+    state = _fresh_state("Wistoria season 2 finale").model_copy(
+        update={"reddit_calls": 2, "tavily_calls": 0, "next_action": "stop"}
+    )
+
+    final_state = agent.reenter_with_query(state, action="reddit_search", query="follow-up query")
+
+    # Only ONE more reddit_search call was allowed (2 already spent, cap=3) —
+    # the forced call runs once, then decide_next_step's ceiling stops the
+    # loop before a second one fires.
+    assert call_log == ["follow-up query"]
+    assert final_state.reddit_calls == 3
+    assert final_state.brief_draft is not None
+
+
+def test_reenter_with_query_refuses_when_budget_already_exhausted(monkeypatch):
+    """AC8 edge: if the passed-in state already sits at the ceiling, the
+    forced call must not run at all — decide_next_step's hard ceiling is
+    checked before the forced action, same as any other loop iteration."""
+    call_log: list[str] = []
+    monkeypatch.setattr(
+        context_agent_module,
+        "reddit_search",
+        lambda query, within_community=None, **kwargs: call_log.append(query)
+        or ToolResult(text="x", urls=["https://reddit.com/r/x/comments/new"]),
+    )
+
+    agent = ContextAgent(llm=FakeBriefLLM(draft=_sample_brief_draft()), max_tool_calls=2)
+    state = _fresh_state("Wistoria season 2 finale").model_copy(
+        update={"reddit_calls": 2, "tavily_calls": 0, "next_action": "stop"}
+    )
+
+    final_state = agent.reenter_with_query(state, action="reddit_search", query="follow-up")
+
+    assert call_log == []
+    assert final_state.reddit_calls == 2
+    assert final_state.brief_draft is not None
+
+
+def test_reenter_with_query_refuses_when_apify_cost_already_at_ceiling(monkeypatch):
+    """AC8, other half: the cumulative Apify-cost ceiling must also be carried
+    forward and checked BEFORE the forced action fires — not just the
+    tool-call ceiling. decide_next_step checks apify_cost_estimate before
+    next_action, so this isolates that clause specifically."""
+    call_log: list[str] = []
+    monkeypatch.setattr(
+        context_agent_module,
+        "reddit_search",
+        lambda query, within_community=None, **kwargs: call_log.append(query)
+        or ToolResult(text="x", urls=["https://reddit.com/r/x/comments/new"]),
+    )
+
+    agent = ContextAgent(
+        llm=FakeBriefLLM(draft=_sample_brief_draft()),
+        max_tool_calls=20,
+        max_run_apify_cost=1.00,
+    )
+    state = _fresh_state("Wistoria season 2 finale").model_copy(
+        update={"reddit_calls": 1, "apify_cost_estimate": 1.00, "next_action": "stop"}
+    )
+
+    final_state = agent.reenter_with_query(state, action="reddit_search", query="follow-up")
+
+    assert call_log == []
+    assert final_state.apify_cost_estimate == 1.00
+    assert final_state.brief_draft is not None

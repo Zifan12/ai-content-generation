@@ -117,6 +117,183 @@ class ContextBundle(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Exilus lane models (PRD 2026-07-17): topic-to-slate front-end. TopicBrief is
+# the pinned research artifact — five fixed fields, each independently citable
+# and independently markable UNVERIFIED (checker-exhaustion path, ticket 03/04).
+# TopicBriefDraft is the LLM's raw output (content+citations only, no verified
+# flags — the LLM that authored a field is never the one that grades it); code
+# composes TopicBrief from the draft plus the checker's per-field verdicts, the
+# same ScriptDraft -> StoryScript composition-in-code precedent used above.
+# ---------------------------------------------------------------------------
+
+
+class BriefFieldDraft(BaseModel):
+    """One TopicBrief field as the LLM writes it: content + its citations.
+
+    No ``verified`` flag here — the researching LLM never grades its own
+    work. A separate cross-family checker (ticket 03/04) decides pass/fail
+    per field; code then composes the matching :class:`BriefField` with
+    ``verified`` set from that verdict.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    content: str
+    citations: list[str] = Field(default_factory=list)  # source URLs
+
+
+class TopicBriefDraft(BaseModel):
+    """The LLM's raw synthesis of the five TopicBrief fields (pre-checker)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    identity: BriefFieldDraft
+    recent_events: BriefFieldDraft
+    key_characters: BriefFieldDraft
+    why_people_care: BriefFieldDraft
+    open_unknowns: list[str] = Field(default_factory=list)
+
+
+class BriefField(BaseModel):
+    """One TopicBrief field: its written content, the source citation(s) it
+    draws on, and whether it has passed the checker.
+
+    ``citations`` and ``content`` are kept as separate, independently
+    inspectable fields (never concatenated into one string) so a downstream
+    checker can verify "every citation URL is in the gathered URL set"
+    without parsing prose. ``verified`` defaults ``True`` because most
+    fields are composed straight from a passing checker verdict; the
+    checker-exhaustion repair path (ticket 03/04) is the one place that
+    constructs a field with ``verified=False`` — the brief's UNVERIFIED
+    stamp, held per-field rather than as one brief-wide flag, since one
+    field failing must not discard the other four fields' good citations.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    content: str
+    citations: list[str] = Field(default_factory=list)  # source URLs
+    verified: bool = True
+
+
+class TopicBrief(BaseModel):
+    """The pinned research artifact for one Exilus topic (PRD's five fixed
+    questions): what is this; what recently happened; key characters and
+    relationships; why people care; open unknowns.
+
+    Persisted once per topic in ``ExilusTopicRecord.brief_json`` and REPLACED
+    (never merged) on an explicit refresh. ``open_unknowns`` is
+    citation-free by design — it mirrors the existing
+    ``unresolved_facts``/``ContextSynthesis.unresolved_facts`` concept: a
+    list of gaps the research loop could not close, not claims that need a
+    source.
+
+    No ``wave_status`` field (user decision — freshness is out of scope for
+    this artifact) and no visual/lore-dump fields (those belong to the
+    downstream director, not the brief).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    identity: BriefField
+    recent_events: BriefField
+    key_characters: BriefField
+    why_people_care: BriefField
+    open_unknowns: list[str] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Faction Map models (PRD ticket 05): the audience-camp artifact that replaces
+# the single-consensus GapAnalysis for the Exilus lane. Camp emergence is
+# UNCONSTRAINED during generation (FactionMapDraft, the LLM's raw output);
+# code caps the emerged camps to 5 (highest weight first) when composing the
+# pinned FactionMap -- the same "unconstrained draft, code-composed final
+# artifact" precedent as ScriptDraft -> StoryScript above.
+# ---------------------------------------------------------------------------
+
+
+class EvidenceQuote(BaseModel):
+    """One verbatim audience quote backing a camp, paired with its source upvote count.
+
+    ``upvotes`` defaults to 0 rather than being optional -- mirrors
+    ``reddit_search``'s own missing-score fallback (a comment whose tag
+    degraded to a bare ``[COMMENT]``, no readable score, still needs a
+    sortable/reportable number, and "unknown reads as 0" is the convention
+    ``reddit_search.py``'s own ``_upvotes`` helper already uses).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    quote: str
+    upvotes: int = 0
+
+
+class Camp(BaseModel):
+    """One audience camp within a FactionMap.
+
+    ``surface_want`` is what the audience said, in their own words.
+    ``deeper_desire`` is Exilus's own INFERRED guess at what's underneath
+    that -- always a best-effort inference from unprompted forum text (no
+    follow-up questions were possible), never to be read as a confirmed fact
+    just because it sits next to ``surface_want`` in the same record (Indi
+    Young's surface-vs-interior-want distinction; PRD Further Notes' "depth
+    ceiling accepted" doctrine). ``weight`` is this camp's share of the
+    surviving (>=5-upvote) comments the map was built from -- a triage
+    signal, not a scientific poll; the PRD leaves whether weights across a
+    map must sum to 1.0 unspecified, so this is an independently-computed
+    per-camp share, not a validated total.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    feeling: str
+    surface_want: str
+    deeper_desire: str  # INFERRED -- see class docstring; never conflate with surface_want
+    evidence_quotes: list[EvidenceQuote] = Field(default_factory=list)
+    weight: float
+
+
+class FactionMapDraft(BaseModel):
+    """The LLM's raw camp emergence: UNCONSTRAINED camp count.
+
+    Camp emergence must not be forced into a preset count (PRD User Story
+    12) -- the 5-camp cap is a POST-generation filter code applies when
+    composing the pinned ``FactionMap``, never a schema constraint on this
+    draft.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    camps: list[Camp]
+
+
+class FactionMap(BaseModel):
+    """The pinned Exilus audience-camp artifact (PRD ticket 05), replacing
+    the single-consensus ``GapAnalysis`` for this lane.
+
+    ``camps`` is capped to 5 (composed in code from a ``FactionMapDraft``,
+    kept by weight descending) -- a single surviving camp is legal, not an
+    error or a padding target (PRD User Story 13). ``thin_data`` is stamped
+    True when the map was built on fewer than the ~30-surviving-comment
+    floor even after the one permitted top-up call; False otherwise.
+
+    ``min_length=1``: an EMPTY map must never validate here -- it would let
+    ideation's per-camp coverage check pass vacuously (zero camps to cover is
+    trivially "every camp covered"), silently shipping a slate with no real
+    audience grounding. ``FactionMapDraft`` (the LLM's raw, pre-cap output)
+    is deliberately left unconstrained -- a draft emerging zero camps is the
+    reader's OWN signal to retry, not a shape this schema should forbid at
+    the LLM boundary; see ``FactionReader.read``'s bounded retry.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    camps: list[Camp] = Field(min_length=1, max_length=5)
+    thin_data: bool = False
+
+
+# ---------------------------------------------------------------------------
 # Story-craft models (Stage B, spec 06-27). These are THE monitor content models:
 # a pitch is a shootable story (protagonist + ordered beats), judged on craft.
 # The routing-era classes (GapType / RenderBackend / AnglePitch / AnglePitchSlate /
@@ -307,6 +484,49 @@ class IdeaPitchSlate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     ideas: list[IdeaPitch] = Field(min_length=2, max_length=3)
+
+
+# ---------------------------------------------------------------------------
+# Ideation stage (PRD ticket 06/D7): the Exilus lane's wide idea slate. This
+# is a NEW schema pair, not a widened IdeaPitchSlate in place -- StoryPitcher
+# / IdeaPitchSlate stay exactly as they are for the legacy Path A/repitch lane
+# (scripts/pitch_angles.py, scripts/repitch_event.py), which the global rules
+# forbid breaking. ExilusIdea subclasses IdeaPitch so every pre-existing
+# field (logline/mode/characters/desired_moment/why_it_lands/legal_flag)
+# reaches StoryArchitect/the craft gate/the writer completely unchanged
+# (AC6) -- only target_camp is new.
+# ---------------------------------------------------------------------------
+
+
+class ExilusIdea(IdeaPitch):
+    """One idea in an Exilus wide-ideation slate (PRD ticket 06/D7).
+
+    Every ``IdeaPitch`` field is unchanged in name and type -- this is a
+    strict addition, not a reshape, so nothing downstream of the pick
+    (StoryArchitect, the craft gate, the writer) needs to change (AC6).
+    ``target_camp`` is the one new field: the exact ``Camp.name`` (from the
+    ``FactionMap`` this idea was built from) the idea targets, which is what
+    makes a whole slate's camp coverage externally checkable -- compare the
+    set of every idea's ``target_camp`` against the set of camp names in the
+    map, never trusted from the model's own say-so alone (``Ideator.generate``
+    is what actually checks this in code).
+    """
+
+    target_camp: str
+
+
+class ExilusSlate(BaseModel):
+    """The Exilus ideation stage's whole output (PRD ticket 06/D7): a WIDE
+    slate of 8-15 :class:`ExilusIdea` entries, replacing ``IdeaPitchSlate``'s
+    2-3 for this lane only. The one-camp-per-idea-or-more coverage rule
+    cannot be expressed as a schema field bound (a bound only constrains
+    total count, not which camp names appear) -- ``Ideator.generate``
+    enforces coverage in code after the LLM call.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    ideas: list[ExilusIdea] = Field(min_length=8, max_length=15)
 
 
 def _check_beat_rules(beats: list[StoryBeat]) -> None:
