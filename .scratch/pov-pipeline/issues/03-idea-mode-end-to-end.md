@@ -6,11 +6,11 @@ TDD at seam 1 (the agreed driver seam): fake LLM seats, no network, no renders. 
 
 **Blocked by:** 02 — POV schemas + prompt compiler.
 
-**Status:** ready-for-agent
+**Status:** closed
 
-- [ ] Idea mode runs end-to-end with a fake seat in tests: run directory created with pitch, script, prompt, sheet artifacts
-- [ ] Fake records ZERO pitcher calls in idea mode
-- [ ] Pitch fields byte-identical between operator input and sheet (code-copy proof)
-- [ ] Render sheet contains: verbatim prompt, CLI command, cost line, mandatory-ladder wording, watch checklist, escalation lever
-- [ ] Live smoke path documented in the driver docstring (not run in CI)
-- [ ] Tests green at seam 1; ruff/mypy clean
+- [x] Idea mode runs end-to-end with a fake seat in tests: run directory created with pitch, script, prompt, sheet artifacts
+- [x] Fake records ZERO pitcher calls in idea mode
+- [x] Pitch fields byte-identical between operator input and sheet (code-copy proof)
+- [x] Render sheet contains: verbatim prompt, CLI command, cost line, mandatory-ladder wording, watch checklist, escalation lever
+- [x] Live smoke path documented in the driver docstring (not run in CI)
+- [x] Tests green at seam 1; ruff/mypy clean

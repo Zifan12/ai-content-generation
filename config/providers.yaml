@@ -45,6 +45,7 @@ llm:
   brief_checker:       {provider: openrouter, model: "anthropic/claude-sonnet-5"}  # Exilus ticket 03: TopicBrief specificity judge. Cross-family from context_agent (google/gemini-2.5-flash, the seat that authors brief content) -- NOT groundedness_judge's model, since that seat is ALSO gemini-2.5-flash and would be same-family self-grading here. Mirrors eval_judge instead (see src/monitor/brief_checker.py module docstring).
   faction_reader:      {provider: openrouter, model: "deepseek/deepseek-v4-pro"}  # Exilus ticket 05/07: audience-camp emergence. Same tier as story_pitcher/gap_agent (creative-analysis core), wired at the driver (ticket 07) since ticket 05 itself named no seat.
   ideator:             {provider: openrouter, model: "deepseek/deepseek-v4-pro"}  # Exilus ticket 06/07: wide idea slate. Same tier as story_pitcher (the legacy lane's equivalent stage), wired at the driver (ticket 07) since ticket 06 itself named no seat.
+  pov_script:          {provider: openrouter, model: "deepseek/deepseek-v4-pro"}  # POV pipeline ticket 03: picked POVPitch -> POVScript. Same tier as story_architect (creative-analysis core, same standing cost decision); pov_pitcher (topic mode) is ticket 05's to add.
 
 image:
   active: null

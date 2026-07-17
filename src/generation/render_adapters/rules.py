@@ -130,6 +130,21 @@ class RenderRules:
         """
         return self.data["pov_grammar"]
 
+    def retake_ladder(self) -> str:
+        """Return the ``scene_lane.retake_ladder`` wording (480p -> 720p -> 1080p).
+
+        A single sentence documenting the mandatory sanity-then-quality-then-
+        finals render sequence (D6). The POV render sheet
+        (``src/generation/pov/render_sheet.py``, POV pipeline ticket 03) is
+        the current reader: it states this verbatim as the sheet's MANDATORY
+        render-ladder wording (PRD user story 16) rather than re-authoring
+        the sequence in its own words, so the two can never drift apart.
+
+        Raises:
+            KeyError: if the YAML has no ``scene_lane.retake_ladder`` entry.
+        """
+        return self.data["scene_lane"]["retake_ladder"]
+
     def scene_model(self) -> str:
         """Return the scene lane's model cli_id from the ``scene_lane`` block.
 

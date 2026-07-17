@@ -205,6 +205,33 @@ def test_cli_command_matches_chosen_duration(rules: RenderRules, duration: int) 
     assert "480p" in compiled.cli_command
 
 
+def test_subject_sentence_is_punctuated_before_hands_visible(rules: RenderRules) -> None:
+    """A protagonist_detail with no trailing punctuation must not run on into
+    the hands_visible clause ("...visible in frame hands visible in frame
+    during...") — a real defect found eyeballing a produced render sheet
+    (ticket 03). The compiler must insert a period, not rely on the script's
+    own prose ending cleanly."""
+    script = _script(protagonist_detail="with a headlamp, gloved hands occasionally visible")
+    compiled = compile_pov_prompt(script, rules)
+
+    clauses = rules.pov_grammar()["skeleton_clauses"]
+    hands_visible = clauses["hands_visible"]["text"]
+    assert f"visible. {hands_visible}" in compiled.prompt_text
+    assert "visible hands visible" not in compiled.prompt_text
+
+
+def test_world_sentence_is_punctuated_before_anti_drift(rules: RenderRules) -> None:
+    """Same run-on class, the other splice point: world_prose with no
+    trailing punctuation must not run into the anti_drift_constraint clause."""
+    filler = " ".join(["word"] * 8)
+    script = _script(world_prose=f"Foreground rubble glistens with damp {filler} moss")
+    compiled = compile_pov_prompt(script, rules)
+
+    clauses = rules.pov_grammar()["skeleton_clauses"]
+    anti_drift = clauses["anti_drift_constraint"]["text"]
+    assert f"moss. {anti_drift}" in compiled.prompt_text
+
+
 @pytest.mark.parametrize("duration", [10, 15])
 def test_cost_line_matches_measured_rate(rules: RenderRules, duration: int) -> None:
     compiled = compile_pov_prompt(_script(duration_seconds=duration), rules)

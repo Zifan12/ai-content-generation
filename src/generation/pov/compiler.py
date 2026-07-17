@@ -60,6 +60,25 @@ class POVWordBudgetError(ValueError):
     """
 
 
+def _ensure_terminal_period(text: str) -> str:
+    """Guarantee ``text`` ends with sentence-terminal punctuation.
+
+    ``subject_sentence`` and ``world_sentence`` are spliced directly before a
+    fixed clause that starts a new sentence (``hands_visible``,
+    ``anti_drift_constraint``) with only a single space between them (the
+    ``" ".join(...)`` in :func:`compile_pov_prompt`). Script-authored prose
+    (``protagonist_detail`` / ``world_prose``) is not guaranteed to end in a
+    period — when it doesn't, the two sentences run together unpunctuated
+    (e.g. "...visible in frame hands visible in frame during..."), which
+    reads as a single garbled clause rather than two sentences to both a
+    human proofreading the sheet and the render model reading the prompt.
+    A no-op when the text already ends in ``.``/``!``/``?``.
+    """
+    if text and not text.endswith((".", "!", "?")):
+        return f"{text}."
+    return text
+
+
 def _sub_protagonist(text: str, role: str) -> str:
     """Substitute the shared ``[PROTAGONIST]`` bracket token with ``role``.
 
@@ -177,10 +196,12 @@ def compile_pov_prompt(script: POVScript, rules: RenderRules) -> CompiledPOVProm
             f"(excludes fixed skeleton clauses and the constraints block)"
         )
 
-    subject_sentence = f"{unseen_protagonist} {protagonist_detail}".strip()
+    subject_sentence = _ensure_terminal_period(
+        f"{unseen_protagonist} {protagonist_detail}".strip()
+    )
     action_sentence = f"Action, in order: {'; '.join(action_items)}."
     scene_sentence = f"Scene: {scene_setting}."
-    world_sentence = f"World: {world_prose}"
+    world_sentence = _ensure_terminal_period(f"World: {world_prose}")
     # Empty audio_items (no beat authored an audio event) must not compose into
     # "Audio: , no music." — a malformed leading comma reaching a paid render.
     audio_sentence = f"Audio: {', '.join([*audio_items, 'no music'])}."
