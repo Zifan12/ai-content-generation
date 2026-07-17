@@ -116,15 +116,27 @@ def test_scene_manifest_resume_skips_completed_takes(tmp_path, rules):
     assert len(result.clips) == 2
 
 
-def test_scene_resolution_override_walks_the_ladder(tmp_path, capsys, rules):
+def test_scene_resolution_override_uses_measured_480p_rate(tmp_path, capsys, rules):
     cli = FakeCLI()
     result = execute_scene(
         _scene_job(), str(tmp_path), takes=1, resolution="480p", dry_run=True,
         run_cli=cli, rules=rules,
     )
     out = capsys.readouterr().out
-    # 480p has no measured rate yet -> falls back to the 720p rate, loudly
-    assert "no measured credit rate for 480p" in out
+    # 480p rate measured 2026-07-16 (45cr/15s -> 3.0cr/s) -> no fallback caveat
+    assert "no measured credit rate" not in out
+    assert result.credits_spent == 30.0
+
+
+def test_scene_resolution_override_walks_the_ladder(tmp_path, capsys, rules):
+    cli = FakeCLI()
+    result = execute_scene(
+        _scene_job(), str(tmp_path), takes=1, resolution="4k", dry_run=True,
+        run_cli=cli, rules=rules,
+    )
+    out = capsys.readouterr().out
+    # 4k has no measured rate yet -> falls back to the 720p rate, loudly
+    assert "no measured credit rate for 4k" in out
     assert result.credits_spent == 45.0
 
 
