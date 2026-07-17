@@ -3,9 +3,12 @@
 Deterministic code, never an LLM (PRD Implementation Decisions): the fixed
 POV skeleton clauses (ticket 01, ``config/render_rules.yaml``'s
 ``pov_grammar`` block) are injected byte-verbatim so the load-bearing
-grammar — camera-IS-eyes, the unseen-protagonist device, hands-visible,
+grammar — camera-IS-eyes, the unseen-protagonist device,
 "No cuts, no zooms, natural head movement only", the constraints block — can
-never drift with LLM phrasing (PRD user story 13). Everything the script
+never drift with LLM phrasing (PRD user story 13). Hands-visibility is NOT a
+fixed clause: the probes express it inline in the script-authored Subject:
+detail (``pov_grammar.protagonist_detail_craft``), enforced at the
+script-writer prompt level. Everything the script
 stage authored (protagonist detail, beat actions/dialogue, world prose) is
 scrubbed of kill-list vocabulary and bracketed timestamps BEFORE it is
 spliced next to a fixed clause, so scrubbing can never touch — and drift —
@@ -18,11 +21,14 @@ Composition order (mirrors the probe-proven structure,
 stage to author separately-labelled Scene/Light/Style fields the PRD's
 script-stage contract never names):
 
-    camera_as_eyes -> Subject (unseen_protagonist + protagonist_detail) ->
-    hands_visible -> Action, in order (beats flattened, dialogue interleaved
-    at its beat's position) -> Scene -> World -> anti_drift_constraint ->
-    Audio (beats' audio events, "no music" per the seedance dialect's
-    audio_rule) -> constraints_block
+    camera_as_eyes -> Subject (unseen_protagonist + protagonist_detail; the
+    detail carries hands-visibility inline per
+    pov_grammar.protagonist_detail_craft — there is NO standalone hands
+    clause, the slice-1 verifier killed that as probe-unvalidated) ->
+    Action, in order (beats flattened, dialogue interleaved at its beat's
+    position) -> Scene -> World -> anti_drift_constraint -> Audio (beats'
+    audio events, "no music" per the seedance dialect's audio_rule) ->
+    constraints_block
 
 Deliberately OUT of this module's scope (ticket 04): dialogue-never-final
 -beat, per-beat action count, the beat-count budget, duration in {10, 15} —
@@ -63,15 +69,14 @@ class POVWordBudgetError(ValueError):
 def _ensure_terminal_period(text: str) -> str:
     """Guarantee ``text`` ends with sentence-terminal punctuation.
 
-    ``subject_sentence`` and ``world_sentence`` are spliced directly before a
-    fixed clause that starts a new sentence (``hands_visible``,
-    ``anti_drift_constraint``) with only a single space between them (the
-    ``" ".join(...)`` in :func:`compile_pov_prompt`). Script-authored prose
+    ``subject_sentence`` and ``world_sentence`` are spliced directly before
+    the next sentence (``Action, in order:`` / ``anti_drift_constraint``)
+    with only a single space between them (the ``" ".join(...)`` in
+    :func:`compile_pov_prompt`). Script-authored prose
     (``protagonist_detail`` / ``world_prose``) is not guaranteed to end in a
-    period — when it doesn't, the two sentences run together unpunctuated
-    (e.g. "...visible in frame hands visible in frame during..."), which
-    reads as a single garbled clause rather than two sentences to both a
-    human proofreading the sheet and the render model reading the prompt.
+    period — when it doesn't, the two sentences run together unpunctuated,
+    which reads as a single garbled clause rather than two sentences to both
+    a human proofreading the sheet and the render model reading the prompt.
     A no-op when the text already ends in ``.``/``!``/``?``.
     """
     if text and not text.endswith((".", "!", "?")):
@@ -174,7 +179,6 @@ def compile_pov_prompt(script: POVScript, rules: RenderRules) -> CompiledPOVProm
 
     camera_as_eyes = _sub_protagonist(clauses["camera_as_eyes"]["text"], role)
     unseen_protagonist = _sub_protagonist(clauses["unseen_protagonist"]["text"], role)
-    hands_visible = clauses["hands_visible"]["text"]
     anti_drift = clauses["anti_drift_constraint"]["text"]
     constraints_block = clauses["constraints_block"]["text"]
 
@@ -210,7 +214,6 @@ def compile_pov_prompt(script: POVScript, rules: RenderRules) -> CompiledPOVProm
         [
             camera_as_eyes,
             subject_sentence,
-            hands_visible,
             action_sentence,
             scene_sentence,
             world_sentence,

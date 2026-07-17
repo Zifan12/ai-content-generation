@@ -62,8 +62,10 @@ different room, day, or time — the whole story lives inside ONE continuous spa
 - protagonist_role: a SHORT noun phrase substituting for "an unseen ___" (e.g. \
 "explorer", "diver", "mechanic") — not a sentence.
 - protagonist_detail: the trailing gear/pose clause completing "Subject: an unseen \
-[protagonist_role]," (e.g. "with a headlamp, gloved hands occasionally visible at the \
-bottom of frame").
+[protagonist_role]" — it MUST express hands-visibility inline, in story-specific wording \
+(e.g. "with a headlamp, gloved hands occasionally visible at the bottom of frame" or \
+"kneeling on the deck, bare hands visible in frame"). Hands are the viewer's only body \
+anchor; a detail clause without them breaks the register.
 - duration_seconds: choose 10 or 15 FROM the beat count your story needs — never force a \
 fixed default. 10s stories need 4-6 beats; 15s stories need 5-8 beats (interpolated/\
 counted from corpus POV examples). Pick the shorter duration unless the story genuinely \

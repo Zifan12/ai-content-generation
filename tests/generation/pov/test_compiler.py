@@ -84,9 +84,12 @@ def test_fixed_clauses_present_byte_verbatim(rules: RenderRules) -> None:
         in compiled.prompt_text
     )
     # Non-templated clauses: exact config string, untouched.
-    assert clauses["hands_visible"]["text"] in compiled.prompt_text
     assert clauses["anti_drift_constraint"]["text"] in compiled.prompt_text
     assert clauses["constraints_block"]["text"] in compiled.prompt_text
+    # hands_visible must NOT exist as a skeleton clause — the slice-1 verifier
+    # killed it as probe-unvalidated boilerplate; hands live inline in the
+    # script-authored protagonist_detail (pov_grammar.protagonist_detail_craft).
+    assert "hands_visible" not in clauses
 
 
 def test_kill_list_words_never_survive(rules: RenderRules) -> None:
@@ -205,19 +208,16 @@ def test_cli_command_matches_chosen_duration(rules: RenderRules, duration: int) 
     assert "480p" in compiled.cli_command
 
 
-def test_subject_sentence_is_punctuated_before_hands_visible(rules: RenderRules) -> None:
+def test_subject_sentence_is_punctuated_before_action(rules: RenderRules) -> None:
     """A protagonist_detail with no trailing punctuation must not run on into
-    the hands_visible clause ("...visible in frame hands visible in frame
-    during...") — a real defect found eyeballing a produced render sheet
-    (ticket 03). The compiler must insert a period, not rely on the script's
-    own prose ending cleanly."""
+    the next sentence — a real defect class found eyeballing a produced render
+    sheet (ticket 03). The compiler must insert a period, not rely on the
+    script's own prose ending cleanly."""
     script = _script(protagonist_detail="with a headlamp, gloved hands occasionally visible")
     compiled = compile_pov_prompt(script, rules)
 
-    clauses = rules.pov_grammar()["skeleton_clauses"]
-    hands_visible = clauses["hands_visible"]["text"]
-    assert f"visible. {hands_visible}" in compiled.prompt_text
-    assert "visible hands visible" not in compiled.prompt_text
+    assert "visible. Action, in order:" in compiled.prompt_text
+    assert "visible Action, in order:" not in compiled.prompt_text
 
 
 def test_world_sentence_is_punctuated_before_anti_drift(rules: RenderRules) -> None:

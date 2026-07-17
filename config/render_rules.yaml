@@ -517,12 +517,19 @@ escalation:
 # noun is the ONLY variation the skeleton clauses ever undergo; the wording
 # around it is fixed, which is what "verbatim" means in the PRD.
 #
-# Manual cross-check (ticket 01 acceptance criterion — both probes decompose
-# byte-for-byte into these clauses; verified by direct comparison against
+# Manual cross-check (ticket 01 acceptance criterion; re-verified 2026-07-17
+# after the slice-1 verifier FAILED the original claim — an earlier revision
+# carried a fifth "hands_visible" fixed clause whose text appears in NEITHER
+# probe; hands-visibility is expressed INLINE in each probe's Subject: detail,
+# so it is a script-stage authoring rule (protagonist_detail_craft below),
+# not a fixed clause. Direct comparison against
 # render_taste_test/pov_probe/probe1_prompt.txt and probe2_prompt.txt):
 #   skeleton_clauses.camera_as_eyes      -> opens BOTH probes verbatim
-#   "Subject: an unseen [PROTAGONIST]..." -> unseen_protagonist + hands_visible
-#                                            composed into one Subject: sentence
+#   "Subject: an unseen [PROTAGONIST]"    -> unseen_protagonist fragment,
+#                                            verbatim in both probes; the
+#                                            script's own detail completes the
+#                                            sentence and carries the
+#                                            hands-visibility phrasing
 #                                            (probe 1: "...with a headlamp, gloved
 #                                            hands occasionally visible at the
 #                                            bottom of frame."; probe 2: "...
@@ -541,18 +548,19 @@ pov_grammar:
       text: "Single continuous shot, first-person POV perspective, the camera IS the [PROTAGONIST]'s eyes. First-person handheld footage with slight natural shake."
       evidence: "probe:render_taste_test/pov_probe/PROBE_SHEET.md (probe 1 + probe 2, both opening line, USER WATCH CONFIRMED PASS 2026-07-17: 'Stays first-person the ENTIRE clip') + corpus lanshu methodology/15-seedance-masterclass.md:161 ('Seedance's advantage: almost the only model that stably holds first-person POV, hands visible + realistic reactions') + all-prompts.json:8176 (sd-067, 'the camera IS her eyes')"
     unseen_protagonist:
-      text: "Subject: an unseen [PROTAGONIST],"
-      note: "The compiler appends the script's own gear/pose detail after this fixed fragment to complete the Subject: sentence (e.g. probe 1: '...with a headlamp, gloved hands occasionally visible at the bottom of frame.') — that trailing detail is script-specific content, not part of the fixed clause, so it carries no bracket token of its own; only [PROTAGONIST] is a substitution token in this block."
+      text: "Subject: an unseen [PROTAGONIST]"
+      note: "No trailing comma — probe 1 reads 'an unseen explorer with a headlamp,' (no comma after the role noun); the script's own gear/pose detail follows with its own connective and completes the Subject: sentence. That trailing detail is script-specific content, not part of the fixed clause, and MUST carry the hands-visibility phrasing (protagonist_detail_craft.hands_visible below); only [PROTAGONIST] is a substitution token in this block."
       evidence: "probe:render_taste_test/pov_probe/PROBE_SHEET.md provenance section ('an unseen explorer' device = sd-020's mechanism for keeping the POV-holder's body out of frame while hands stay visible; explicitly NOT the Dan Kieft Film Director Brain body-part exclusion list, which is for the opposite other-person-POV configuration, Brain.md:224) + all-prompts.json:7038 (sd-020, 'an unseen explorer with a headlamp')"
-    hands_visible:
-      text: "hands visible in frame during any hand action, gloved or bare as the story requires."
-      evidence: "probe:render_taste_test/pov_probe/PROBE_SHEET.md (probe 1: 'gloved hands occasionally visible at the bottom of frame'; probe 2: 'bare hands visible in frame'; watch checklist 'Hands correct — no extra hands, no warped fingers', USER WATCH CONFIRMED PASS) + corpus lanshu methodology/15-seedance-masterclass.md:161 ('hands visible + realistic reactions')"
     anti_drift_constraint:
       text: "No cuts, no zooms, natural head movement only."
       evidence: "corpus lanshu methodology/15-seedance-masterclass.md:163-169 (Format 3, mandatory constraint: 'without this line, Seedance defaults to switching camera angles, breaking immersion') + :380 (pitfall table row: 'POV mid-switch of angle' -> fix is this exact line); validated-by-probe 2026-07-17 (PROBE_SHEET.md watch checklist, both probes 'Stays first-person the ENTIRE clip — no angle switch', USER WATCH CONFIRMED PASS) — this is the clause the ticket-01 acceptance criterion means by 'superseding its CORPUS-ONLY status'"
     constraints_block:
       text: "Constraints: no watermark, no logo, no on-screen text, no extra hands. Generate the video without subtitles."
       evidence: "probe:render_taste_test/pov_probe/PROBE_SHEET.md (both probes, verbatim closing sentence; USER WATCH CONFIRMED PASS, no text/watermark/subtitle leak observed) — restates global_constraints.always_append (this file) in POV-specific wording so the compiler (ticket 02) never has to cross-read an unrelated block for this fixed clause"
+  protagonist_detail_craft:
+    hands_visible:
+      rule: "The script stage's protagonist_detail MUST express hands-visibility inline in the Subject: sentence, in story-specific wording (e.g. 'gloved hands occasionally visible at the bottom of frame' / 'bare hands visible in frame') — it is NOT a fixed clause the compiler injects. Enforced at the script-writer prompt level only; no lexical code check (a synonym like 'gauntleted fingers' is valid — lexical checks can't read prose, see memory project_spine_check_rejected_lexical)."
+      evidence: "probe:render_taste_test/pov_probe/PROBE_SHEET.md (probe 1: 'gloved hands occasionally visible at the bottom of frame'; probe 2: 'bare hands visible in frame' — both INLINE in the Subject: sentence, neither probe carries a standalone hands sentence; USER WATCH CONFIRMED PASS, 'Hands correct — no extra hands, no warped fingers') + corpus lanshu methodology/15-seedance-masterclass.md:161 ('hands visible + realistic reactions'). History: slice-1 verifier (2026-07-17) FAILED an earlier revision that promoted this to a fixed skeleton clause with invented wording found in neither probe."
   kill_list:
     dead_intensifiers:
       words: ["stunning", "breathtaking", "ultra-detailed", "masterpiece", "best quality", "8K"]

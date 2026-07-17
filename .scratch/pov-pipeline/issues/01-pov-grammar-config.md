@@ -10,3 +10,16 @@
 - [x] Every line/entry has an evidence tag (probe sheet path, corpus citation, or explicit `candidate` marker)
 - [x] First-person camera vocabulary marked validated-by-probe (2026-07-17 probes), superseding its CORPUS-ONLY status
 - [x] The two probe prompts are reproducible from the block's clauses (manual cross-check documented in the block's header comment)
+
+## Comments
+
+**2026-07-17 verifier FAIL on criterion 4, fixed same day.** The slice-1 verifier found the
+`hands_visible` "fixed clause" appeared in NEITHER probe prompt (both probes express hands
+INLINE in the Subject: detail) and the header's "byte-for-byte verified" claim was false —
+the compiler was injecting redundant, probe-unvalidated boilerplate into every prompt.
+Root-cause fix: clause removed from `skeleton_clauses`; hands-visibility moved to
+`pov_grammar.protagonist_detail_craft` (script-writer prompt-level requirement, no lexical
+code check per project_spine_check_rejected_lexical); `unseen_protagonist` trailing comma
+dropped to match probe 1 byte-pattern; header cross-check rewritten honestly with the
+failure history. Compiler + tests updated (hands assertions replaced with a
+must-NOT-exist-as-clause assertion). Suite 786 passed / 1 skipped after fix.
