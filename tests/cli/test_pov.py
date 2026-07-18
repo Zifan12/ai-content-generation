@@ -448,6 +448,12 @@ def test_topic_mode_invalid_pick_raises_loud(tmp_path) -> None:
 # --- asset gate (ticket 10) ---------------------------------------------------
 
 
+# A minimal valid PNG header (8-byte signature + IHDR chunk start) — the gate
+# checks magic bytes ("readable image files", PRD-slice2), so fixtures must
+# carry a real signature, not just a .png filename.
+_PNG_HEADER = b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\rIHDR" + b"\x00" * 13
+
+
 def _write_refs(refs_root, slug: str, names: list[str]) -> list:
     """Create refs/<slug>/ with the named files; returns the created paths."""
     char_dir = refs_root / slug
@@ -455,7 +461,7 @@ def _write_refs(refs_root, slug: str, names: list[str]) -> list:
     paths = []
     for name in names:
         p = char_dir / name
-        p.write_bytes(b"\x89PNG fake image bytes")
+        p.write_bytes(_PNG_HEADER)
         paths.append(p)
     return paths
 
@@ -540,6 +546,44 @@ def test_ref_count_out_of_bounds_raises_named_error(tmp_path) -> None:
             output_dir=tmp_path / "out",
         )
     assert writer.pitches == []
+
+
+def test_garbage_bytes_behind_png_extension_raise(tmp_path) -> None:
+    """'Readable image files' (PRD-slice2 gate spec) means magic bytes, not
+    filenames — a corrupt/empty file wearing .png must not pass the gate."""
+    refs_root = tmp_path / "refs"
+    _write_refs(refs_root, "silverhero", ["a.png"])
+    (refs_root / "silverhero" / "b.png").write_bytes(b"not an image at all")
+
+    writer = FakeScriptWriter(_script())
+    with pytest.raises(ValueError, match="b.png"):
+        run_pov_pipeline(
+            writer, _rules(), SAMPLE_IDEA,
+            characters=["silverhero"],
+            refs_root=refs_root,
+            output_dir=tmp_path / "out",
+        )
+
+
+def test_valid_refs_sheet_carries_ref_watch_items(tmp_path) -> None:
+    """Ref-carrying runs add the reference failure modes to the watch checklist
+    (PRD-slice2 render-sheet spec); zero-ref runs must not carry them."""
+    _write_refs(tmp_path / "refs", "silverhero", ["a.png", "b.png"])
+
+    writer = FakeScriptWriter(_script())
+    run_dir = run_pov_pipeline(
+        writer, _rules(), SAMPLE_IDEA,
+        characters=["silverhero"],
+        refs_root=tmp_path / "refs",
+        output_dir=tmp_path / "out",
+    )
+    sheet_text = (run_dir / "render_sheet.md").read_text(encoding="utf-8")
+    for item in ("IDENTITY/COSTUME MATCH", "STYLE BLEED", "TWINS", "SUMMONED PROTAGONIST"):
+        assert item in sheet_text
+
+    plain_dir = run_pov_pipeline(writer, _rules(), SAMPLE_IDEA, output_dir=tmp_path / "plain")
+    plain_sheet = (plain_dir / "render_sheet.md").read_text(encoding="utf-8")
+    assert "SUMMONED PROTAGONIST" not in plain_sheet
 
 
 def test_non_image_file_in_refs_dir_raises(tmp_path) -> None:

@@ -40,12 +40,27 @@ _ALLOWED_ROLES = ("protagonist", "in_frame")
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
-# Per-role (min, max) reference counts. Protagonist: 2-4 crops of what the
-# camera sees (PRD-slice2 decision 2). in_frame: mask/head close-up +
-# full-body front, optional 3/4 (one-face-region rule, RESEARCH-slice2.md §4
-# items 2-4 — the ~3-5 identity-ref plateau, reference-material-playbook.md
-# 118-133, minus the panels a POV render can never show).
+# Per-role (min, max) reference counts — STARTING bounds, revisited on ticket
+# 11's probe evidence. Protagonist: 2-4 crops of what the camera sees
+# (PRD-slice2 decision 2 — no face/full-body panels, the camera never shows
+# them). in_frame: 2-4 panels per the request sheet's one-face-region recipe
+# (mask close-up + full-body + optional 3/4); the corpus's ~3-5 identity-ref
+# target (reference-material-playbook.md:118-133) sits inside diminishing
+# returns past 3, so 4 is the cap until a watched render argues otherwise.
 _ROLE_BOUNDS: dict[str, tuple[int, int]] = {"protagonist": (2, 4), "in_frame": (2, 4)}
+
+# Magic-byte signatures for the allowed extensions — "readable image files"
+# (PRD-slice2 asset-gate validation) means the bytes actually open as an
+# image format, not merely that the filename ends right; a zero-byte or
+# garbage file passing the gate would burn a render slot silently.
+# (stdlib imghdr was removed in Python 3.13, hence the manual check.)
+def _bytes_look_like_image(head: bytes) -> bool:
+    """True iff ``head`` (the file's first 12 bytes) matches PNG/JPEG/WEBP magic."""
+    return (
+        head.startswith(b"\x89PNG\r\n\x1a\n")
+        or head.startswith(b"\xff\xd8\xff")
+        or (head[:4] == b"RIFF" and head[8:12] == b"WEBP")
+    )
 
 # seedance_2_0 hard cap: max_image_references: 9 (counts start/end frames
 # too) — config/render_rules.yaml limits, measured `model get` 2026-07-06.
@@ -110,6 +125,12 @@ def parse_character_args(values: list[str]) -> list[DeclaredCharacter]:
     Role defaults to ``protagonist`` (the lane's primary content class —
     PRD-slice2 content-class table). Slugs are lowercased (the refs-directory
     convention is lowercase) and validated against ``[a-z0-9_-]``.
+
+    Returns:
+        One :class:`DeclaredCharacter` per input value, in DECLARATION ORDER —
+        the order is load-bearing: ``check_assets`` uses it (within each role
+        group) to build the deterministic upload sequence that defines the
+        ``imageN`` numbering downstream.
 
     Raises:
         ValueError: on an unknown role (message names the allowed roles), a
@@ -191,6 +212,15 @@ def check_assets(characters: list[DeclaredCharacter], refs_root: str | Path) -> 
                 f"refs/{character.slug}/ contains non-image file(s): "
                 f"{', '.join(strangers)} — allowed extensions: "
                 f"{', '.join(sorted(_IMAGE_EXTENSIONS))}"
+            )
+        unreadable = [
+            p.name for p in files if not _bytes_look_like_image(p.read_bytes()[:12])
+        ]
+        if unreadable:
+            raise ValueError(
+                f"refs/{character.slug}/ contains file(s) whose bytes are not a "
+                f"readable PNG/JPEG/WEBP image: {', '.join(unreadable)} — a corrupt "
+                f"or empty reference would silently burn a render"
             )
         low, high = _ROLE_BOUNDS[character.role]
         if not (low <= len(files) <= high):

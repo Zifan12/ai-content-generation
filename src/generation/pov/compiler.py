@@ -101,6 +101,17 @@ def _sub_protagonist(text: str, role: str) -> str:
     return text.replace("[PROTAGONIST]", role)
 
 
+def _apply_replace_table(text: str, table: dict[str, str]) -> str:
+    """Replace each table key with its phrase — whole word, case-insensitive.
+
+    The shared mechanic behind the glow/glimmer and sensitive-actions passes
+    (both are word→phrase config tables applied identically).
+    """
+    for banned, replacement in table.items():
+        text = re.sub(rf"\b{re.escape(banned)}\b", replacement, text, flags=re.IGNORECASE)
+    return text
+
+
 def _scrub(text: str, kill_list: dict) -> str:
     """Scrub kill-list vocabulary and any bracketed content from one LLM-authored field.
 
@@ -140,11 +151,8 @@ def _scrub(text: str, kill_list: dict) -> str:
     for word in words_to_drop:
         cleaned = re.sub(rf"\b{re.escape(word)}\b", "", cleaned, flags=re.IGNORECASE)
 
-    for banned, replacement in kill_list["glow_glimmer"]["replace"].items():
-        cleaned = re.sub(rf"\b{re.escape(banned)}\b", replacement, cleaned, flags=re.IGNORECASE)
-
-    for banned, replacement in kill_list["sensitive_actions"]["replace"].items():
-        cleaned = re.sub(rf"\b{re.escape(banned)}\b", replacement, cleaned, flags=re.IGNORECASE)
+    cleaned = _apply_replace_table(cleaned, kill_list["glow_glimmer"]["replace"])
+    cleaned = _apply_replace_table(cleaned, kill_list["sensitive_actions"]["replace"])
 
     # Collapse the whitespace/punctuation debris the word-removal passes leave
     # behind (e.g. "a stunning, breathtaking view" -> "a ,  view" -> "a view").

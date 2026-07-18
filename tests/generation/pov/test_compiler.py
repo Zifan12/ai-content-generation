@@ -205,7 +205,15 @@ def test_filter_risk_action_words_are_substituted(rules: RenderRules) -> None:
     declares this table (seedance_2_0.dialect.sensitive_words) but the POV
     compiler never applied it — the verified gap RESEARCH-slice2.md §1 names."""
     replace_table = rules.pov_grammar()["kill_list"]["sensitive_actions"]["replace"]
+    # Banned words spread across EVERY script-authored field type the ticket
+    # names: actions, dialogue, audio, and the protagonist/scene/world prose.
     script = _script(
+        protagonist_detail="with brutal gauntlets, gloved hands visible at frame bottom",
+        scene_setting="a battle-scarred rooftop over a dim city block",
+        world_prose=(
+            "Foreground slash marks score the concrete, midground antennas lean "
+            "sideways, background towers fade into haze."
+        ),
         beats=[
             POVBeat(
                 actions=[
@@ -217,13 +225,16 @@ def test_filter_risk_action_words_are_substituted(rules: RenderRules) -> None:
             POVBeat(
                 actions=["the arms recoil from the kill"],
                 audio_events=["metal groan"],
+                dialogue_line="stand down before this turns brutal",
+                speaker="the radio voice",
             ),
         ],
     )
     compiled = compile_pov_prompt(script, rules)
     lowered = compiled.prompt_text.lower()
 
-    for banned in ["attack", "punch", "destroy", "fight", "blood", "kill"]:
+    banned_present = ["attack", "punch", "destroy", "fight", "blood", "kill", "brutal", "battle", "slash"]
+    for banned in banned_present:
         assert banned in replace_table, f"config missing sensitive_actions row {banned!r}"
         assert not re.search(rf"\b{banned}\b", lowered), f"{banned!r} survived compilation"
     assert replace_table["attack"].lower() in lowered
