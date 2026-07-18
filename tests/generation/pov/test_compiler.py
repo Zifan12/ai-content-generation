@@ -90,6 +90,7 @@ def test_fixed_clauses_present_byte_verbatim(rules: RenderRules) -> None:
     )
     # Non-templated clauses: exact config string, untouched.
     assert clauses["anti_drift_constraint"]["text"] in compiled.prompt_text
+    assert clauses["continuous_take_constraint"]["text"] in compiled.prompt_text
     assert clauses["constraints_block"]["text"] in compiled.prompt_text
     assert clauses["style_register"][script.camera_register]["text"] in compiled.prompt_text
     # hands_visible must NOT exist as a skeleton clause — the slice-1 verifier
@@ -134,6 +135,23 @@ def test_style_clause_present_per_register_and_before_audio(
     style_text = clauses["style_register"][register]["text"]
     assert style_text in compiled.prompt_text
     assert compiled.prompt_text.index(style_text) < compiled.prompt_text.index("Audio:")
+
+
+def test_continuous_take_guard_present_after_anti_drift(rules: RenderRules) -> None:
+    """Angle-switch regression (2026-07-17 kaiju run): take_480p.mp4 watched a
+    mid-clip ANGLE SWITCH with anti_drift_constraint alone in the prompt; doc
+    15:385's second guard ('This is one continuous take. No multiple camera
+    angles.') then held POV in 3 consecutive watched takes. Every compiled
+    prompt must carry BOTH camera guards, continuous-take directly in
+    anti-drift's wake (the hand-edited passing takes' order)."""
+    clauses = rules.pov_grammar()["skeleton_clauses"]
+    compiled = compile_pov_prompt(_script(), rules)
+
+    guard = clauses["continuous_take_constraint"]["text"]
+    anti_drift = clauses["anti_drift_constraint"]["text"]
+    assert guard in compiled.prompt_text
+    assert compiled.prompt_text.index(anti_drift) < compiled.prompt_text.index(guard)
+    assert compiled.prompt_text.index(guard) < compiled.prompt_text.index("Style:")
 
 
 def test_kill_list_words_never_survive(rules: RenderRules) -> None:
