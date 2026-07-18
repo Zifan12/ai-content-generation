@@ -247,6 +247,30 @@ def test_subject_sentence_is_punctuated_before_action(rules: RenderRules) -> Non
     assert "visible Action, in order:" not in compiled.prompt_text
 
 
+def test_action_and_audio_items_with_trailing_periods_join_cleanly(rules: RenderRules) -> None:
+    """A roll that authors actions/audio as full sentences ('...steel.') must not
+    compose 'steel.;', 'glass.,', or a '..' ending — the kaiju beam rerun
+    (2026-07-17) put all three on a sheet. Joiners own the punctuation."""
+    script = _script(
+        beats=[
+            POVBeat(
+                actions=["The hand smashes through glass and steel.", "The hand yanks back."],
+                audio_events=["Crashing glass.", "Shredding wires."],
+            ),
+            POVBeat(
+                actions=["Jet contrails curl toward camera."],
+                audio_events=["Jet engines screaming closer."],
+            ),
+        ],
+    )
+    compiled = compile_pov_prompt(script, rules)
+
+    assert ".;" not in compiled.prompt_text
+    assert ".," not in compiled.prompt_text
+    assert ".." not in compiled.prompt_text
+    assert "steel; The hand yanks back" in compiled.prompt_text
+
+
 def test_scene_setting_with_trailing_period_does_not_double_up(rules: RenderRules) -> None:
     """A scene_setting already ending in '.' must not compose 'Scene: ...x..' —
     the double-period defect the first kaiju rerun (2026-07-17) put on a sheet."""

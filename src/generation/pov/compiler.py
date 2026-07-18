@@ -140,6 +140,23 @@ def _scrub(text: str, kill_list: dict) -> str:
     return cleaned
 
 
+def _normalize_fragment(text: str, kill_list: dict) -> str:
+    """Scrub one LLM-authored fragment AND strip its trailing period/whitespace.
+
+    THE punctuation contract for every splice point: the compiler owns ALL
+    punctuation between fragments — sentence builders append their own
+    terminal '.' (via :func:`_ensure_terminal_period` or a literal), joiners
+    own the '; '/', ' between list items. LLM prose arrives with or without
+    trailing periods roll-to-roll; normalizing here (rather than guarding
+    each seam individually) is the class fix for the recurring defect family:
+    subject/world run-ons (ticket 03), 'Scene: ...figures..' (first kaiju
+    rerun), and 'steel.;' / 'glass.,' / 'camera..' item joins (beam rerun) —
+    four same-class instances, 2026-07-17. Trailing '!'/'?' are left alone
+    (meaningful, and _ensure_terminal_period treats them as terminal).
+    """
+    return _scrub(text, kill_list).rstrip(". ")
+
+
 def count_body_words(script: POVScript) -> int:
     """Count the script-authored body words the 60-100 budget governs.
 
@@ -211,12 +228,12 @@ def compile_pov_prompt(script: POVScript, rules: RenderRules) -> CompiledPOVProm
     anti_drift = clauses["anti_drift_constraint"]["text"]
     constraints_block = clauses["constraints_block"]["text"]
 
-    protagonist_detail = _scrub(script.protagonist_detail, kill_list)
-    scene_setting = _scrub(script.scene_setting, kill_list)
-    world_prose = _scrub(script.world_prose, kill_list)
+    protagonist_detail = _normalize_fragment(script.protagonist_detail, kill_list)
+    scene_setting = _normalize_fragment(script.scene_setting, kill_list)
+    world_prose = _normalize_fragment(script.world_prose, kill_list)
     action_items, audio_items = _flatten_actions(script)
-    action_items = [_scrub(item, kill_list) for item in action_items]
-    audio_items = [_scrub(item, kill_list) for item in audio_items]
+    action_items = [_normalize_fragment(item, kill_list) for item in action_items]
+    audio_items = [_normalize_fragment(item, kill_list) for item in audio_items]
 
     body_word_count = sum(
         len(part.split())
@@ -232,16 +249,16 @@ def compile_pov_prompt(script: POVScript, rules: RenderRules) -> CompiledPOVProm
     subject_sentence = _ensure_terminal_period(
         f"{unseen_protagonist} {protagonist_detail}".strip()
     )
-    action_sentence = f"Action, in order: {'; '.join(action_items)}."
-    # Same run-on/double-period guard as subject/world: scene_setting arriving
-    # with its own trailing period must not compose "figures.." (first kaiju
-    # rerun 2026-07-17 produced exactly that on the sheet).
+    # Every builder ends its sentence via _ensure_terminal_period — fragments
+    # arrive period-stripped from _normalize_fragment (the punctuation
+    # contract lives on that helper's docstring).
+    action_sentence = _ensure_terminal_period(f"Action, in order: {'; '.join(action_items)}")
     scene_sentence = _ensure_terminal_period(f"Scene: {scene_setting}")
     world_sentence = _ensure_terminal_period(f"World: {world_prose}")
     # Empty audio_items (no beat authored an audio event) must not compose into
     # "Audio: , no music." — a malformed leading comma reaching a paid render.
     closing_term = grammar["audio_rule"]["closing_term"]
-    audio_sentence = f"Audio: {', '.join([*audio_items, closing_term])}."
+    audio_sentence = _ensure_terminal_period(f"Audio: {', '.join([*audio_items, closing_term])}")
 
     prompt_text = " ".join(
         [
