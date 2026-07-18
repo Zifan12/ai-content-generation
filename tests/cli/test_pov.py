@@ -52,6 +52,7 @@ def _script() -> POVScript:
         protagonist_role="diver",
         protagonist_detail="with a dive light, gloved hands occasionally visible in frame",
         duration_seconds=10,
+        camera_register="calm",
         beats=[
             POVBeat(
                 actions=["the camera glides forward down the rust-streaked corridor"],
@@ -235,6 +236,7 @@ def test_a_structurally_invalid_script_is_repaired_before_writing(tmp_path) -> N
         protagonist_role="explorer",
         protagonist_detail="with a headlamp, gloved hands occasionally visible",
         duration_seconds=10,
+        camera_register="calm",
         beats=[
             POVBeat(actions=["the hand reaches for the glowing shard"]),
             POVBeat(actions=["the hand lifts the shard toward the eyes"]),
@@ -260,6 +262,7 @@ def test_unrepairable_script_raises_loud_and_writes_nothing(tmp_path) -> None:
         protagonist_role="explorer",
         protagonist_detail="with a headlamp, gloved hands occasionally visible",
         duration_seconds=10,
+        camera_register="calm",
         beats=[
             POVBeat(actions=["the hand reaches for the glowing shard"]),
             POVBeat(actions=["the hand lifts the shard toward the eyes"]),

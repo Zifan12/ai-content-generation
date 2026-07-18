@@ -200,7 +200,13 @@ def compile_pov_prompt(script: POVScript, rules: RenderRules) -> CompiledPOVProm
     budget = grammar["world_prose_craft"]["body_word_target"]
     role = script.protagonist_role
 
-    camera_as_eyes = _sub_protagonist(clauses["camera_as_eyes"]["text"], role)
+    # camera_as_eyes carries register variants (calm/action) — the script's
+    # camera_register (a Literal, schema-enforced) picks which fixed clause
+    # opens the prompt (first live run 2026-07-17: one calm-locked clause for
+    # every story flatlined action stories).
+    camera_as_eyes = _sub_protagonist(
+        clauses["camera_as_eyes"][script.camera_register]["text"], role
+    )
     unseen_protagonist = _sub_protagonist(clauses["unseen_protagonist"]["text"], role)
     anti_drift = clauses["anti_drift_constraint"]["text"]
     constraints_block = clauses["constraints_block"]["text"]

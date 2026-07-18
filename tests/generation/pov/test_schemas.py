@@ -58,9 +58,40 @@ def test_pov_script_rejects_unknown_fields() -> None:
             protagonist_role="explorer",
             protagonist_detail="with a headlamp",
             duration_seconds=10,
+            camera_register="calm",
             beats=[POVBeat(actions=["walks forward"])],
             world_prose="Damp stone, faint light.",
             unexpected_field="nope",  # type: ignore[call-arg]
+        )
+
+
+def test_pov_script_requires_camera_register() -> None:
+    """camera_register has NO default — a default would silently re-lock every
+    story to one register, the first live run's failure (2026-07-17: calm-locked
+    camera on an action story). The seat must choose per story."""
+    with pytest.raises(ValidationError):
+        POVScript(  # type: ignore[call-arg]
+            scene_setting="a crystal cavern",
+            protagonist_role="explorer",
+            protagonist_detail="with a headlamp",
+            duration_seconds=10,
+            beats=[POVBeat(actions=["walks forward"])],
+            world_prose="Damp stone, faint light.",
+        )
+
+
+def test_pov_script_rejects_unknown_camera_register() -> None:
+    """Literal["calm", "action"] — an invalid register fails at parse (the
+    cheapest layer that holds it), never reaching the compiler's clause lookup."""
+    with pytest.raises(ValidationError):
+        POVScript(
+            scene_setting="a crystal cavern",
+            protagonist_role="explorer",
+            protagonist_detail="with a headlamp",
+            duration_seconds=10,
+            camera_register="frantic",  # type: ignore[arg-type]
+            beats=[POVBeat(actions=["walks forward"])],
+            world_prose="Damp stone, faint light.",
         )
 
 

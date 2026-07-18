@@ -33,6 +33,7 @@ def _script() -> POVScript:
             "with a headlamp, gloved hands occasionally visible at the bottom of frame"
         ),
         duration_seconds=10,
+        camera_register="calm",
         beats=[
             POVBeat(
                 actions=[
@@ -102,6 +103,18 @@ def test_sheet_contains_location_still_escalation_lever(rules: RenderRules) -> N
 
     assert "escalation lever" in sheet.lower()
     assert "eye vantage" in sheet.lower() or "EYE VANTAGE" in sheet
+
+
+def test_sheet_states_the_camera_register(rules: RenderRules) -> None:
+    """The register is a taste-relevant knob the operator reviews at the sheet
+    gate (first-live-run fix 2026-07-17) — it must be visible, not buried in
+    script.json."""
+    script = _script()
+    compiled = compile_pov_prompt(script, rules)
+
+    sheet = build_render_sheet(SAMPLE_PITCH, script, compiled, rules)
+
+    assert "calm camera register" in sheet
 
 
 def test_pitch_fields_byte_identical_in_sheet(rules: RenderRules) -> None:

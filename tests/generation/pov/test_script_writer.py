@@ -32,6 +32,7 @@ def _script() -> POVScript:
         protagonist_role="explorer",
         protagonist_detail="with a headlamp, gloved hands occasionally visible",
         duration_seconds=10,
+        camera_register="calm",
         beats=[
             POVBeat(actions=["the right hand reaches for the glowing shard"]),
             POVBeat(actions=["the hand lifts the shard toward the eyes"]),
@@ -126,6 +127,35 @@ def test_prompt_teaches_world_prose_craft() -> None:
 
     assert "foreground" in llm.system.lower() and "midground" in llm.system.lower()
     assert "particulates" in llm.system.lower() or "dust" in llm.system.lower()
+
+
+def test_prompt_teaches_camera_register_choice_and_action_15s_default() -> None:
+    """First-live-run fixes (2026-07-17): the seat must choose camera_register
+    by story energy (calm-locked camera was the measured failure) and action
+    stories default to 15s (every proven action POV example is 15s)."""
+    llm = FakeLLM(_script())
+    writer = POVScriptWriter(llm=llm)
+
+    writer.develop(SAMPLE_PITCH)
+
+    assert "camera_register" in llm.system
+    assert '"calm"' in llm.system and '"action"' in llm.system
+    assert "default to 15" in llm.system
+
+
+def test_prompt_teaches_escalation_and_event_beats() -> None:
+    """First-live-run fixes (2026-07-17): beats must escalate scale (final beat
+    = largest image) and change the SCENE, not just the hand — micro-step
+    chains were the measured 'not interesting' failure."""
+    llm = FakeLLM(_script())
+    writer = POVScriptWriter(llm=llm)
+
+    writer.develop(SAMPLE_PITCH)
+
+    assert "ESCALATE SCALE BEAT TO BEAT" in llm.system
+    assert "LARGEST image" in llm.system
+    assert "EVENT BEATS, NOT MICRO-STEPS" in llm.system
+    assert "CHANGE THE SCENE" in llm.system
 
 
 def test_prompt_teaches_beat_free_action_lines_fail() -> None:

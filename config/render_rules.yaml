@@ -524,7 +524,10 @@ escalation:
 # so it is a script-stage authoring rule (protagonist_detail_craft below),
 # not a fixed clause. Direct comparison against
 # render_taste_test/pov_probe/probe1_prompt.txt and probe2_prompt.txt):
-#   skeleton_clauses.camera_as_eyes      -> opens BOTH probes verbatim
+#   skeleton_clauses.camera_as_eyes.calm -> opens BOTH probes verbatim
+#                                            (.action = corpus sd-067 verbatim,
+#                                            NOT yet probe-watched — see its
+#                                            evidence field)
 #   "Subject: an unseen [PROTAGONIST]"    -> unseen_protagonist fragment,
 #                                            verbatim in both probes; the
 #                                            script's own detail completes the
@@ -545,8 +548,13 @@ escalation:
 pov_grammar:
   skeleton_clauses:
     camera_as_eyes:
-      text: "Single continuous shot, first-person POV perspective, the camera IS the [PROTAGONIST]'s eyes. First-person handheld footage with slight natural shake."
-      evidence: "probe:render_taste_test/pov_probe/PROBE_SHEET.md (probe 1 + probe 2, both opening line, USER WATCH CONFIRMED PASS 2026-07-17: 'Stays first-person the ENTIRE clip') + corpus lanshu methodology/15-seedance-masterclass.md:161 ('Seedance's advantage: almost the only model that stably holds first-person POV, hands visible + realistic reactions') + all-prompts.json:8176 (sd-067, 'the camera IS her eyes')"
+      note: "Register variants — the compiler selects by POVScript.camera_register (the script seat chooses by story energy). Added after the first live run (2026-07-17, output/pov/20260717_175253_*): a single calm-locked clause carried 'slight natural shake' into an action story; operator verdict 'complete fail, not interesting'. Proven ACTION prompts (sd-067) use hyper-chaotic camera language; every story inheriting the calm cave probe's camera flatlines the energy."
+      calm:
+        text: "Single continuous shot, first-person POV perspective, the camera IS the [PROTAGONIST]'s eyes. First-person handheld footage with slight natural shake."
+        evidence: "probe:render_taste_test/pov_probe/PROBE_SHEET.md (probe 1 + probe 2, both opening line, USER WATCH CONFIRMED PASS 2026-07-17: 'Stays first-person the ENTIRE clip') + corpus lanshu methodology/15-seedance-masterclass.md:161 ('Seedance's advantage: almost the only model that stably holds first-person POV, hands visible + realistic reactions') + all-prompts.json:8176 (sd-067, 'the camera IS her eyes')"
+      action:
+        text: "Single continuous shot, first-person POV perspective, the camera IS the [PROTAGONIST]'s eyes. Hyper-chaotic handheld motion, completely unstabilized, violent raw human movement, constant micro-jitters, aggressive head swings, abrupt jerks, frequent over-rotation."
+        evidence: "corpus all-prompts.json (sd-067 'Electro POV', source Higgsfield-published Seedance 2.0 prompt, higgsfield.ai/s/seedance-2-0-higgsfieldai-kQBLPo) — camera chain VERBATIM: 'hyper-chaotic handheld motion, completely unstabilized, violent raw human movement, constant micro-jitters, aggressive head swings, abrupt jerks, frequent over-rotation'; opening sentence shared with the calm variant (sd-067's own 'Single continuous shot, first-person POV perspective, the camera IS her eyes'). sd-067's 'wide-angle lens (strong distortion)' deliberately NOT carried (lens choice, not camera motion). CORPUS-ONLY as of 2026-07-17 — not yet validated by our own watched render; promote to probe: evidence after the first action-register 480p watch passes."
     unseen_protagonist:
       text: "Subject: an unseen [PROTAGONIST]"
       note: "No trailing comma — probe 1 reads 'an unseen explorer with a headlamp,' (no comma after the role noun); the script's own gear/pose detail follows with its own connective and completes the Subject: sentence. That trailing detail is script-specific content, not part of the fixed clause, and MUST carry the hands-visibility phrasing (protagonist_detail_craft.hands_visible below); only [PROTAGONIST] is a substitution token in this block."

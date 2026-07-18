@@ -82,7 +82,8 @@ def build_render_sheet(
             f"- what_happens: {pitch.what_happens}",
             f"- turn: {pitch.turn}",
             "",
-            f"Duration: {script.duration_seconds}s ({len(script.beats)} beats)",
+            f"Duration: {script.duration_seconds}s ({len(script.beats)} beats, "
+            f"{script.camera_register} camera register)",
             "",
             "## Prompt",
             "```",

@@ -34,6 +34,8 @@ line needs a speaker, a speaker needs a line), not a craft rule. It mirrors
 verbatim in shape.
 """
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
@@ -148,6 +150,16 @@ class POVScript(BaseModel):
     protagonist_role: str  # substitutes [PROTAGONIST] in the fixed skeleton clauses
     protagonist_detail: str  # trailing gear/pose clause completing the Subject sentence
     duration_seconds: int  # intended 10 or 15; ticket 04 validates + bounded-repairs
+    # Selects the camera_as_eyes skeleton variant (pov_grammar config): "calm"
+    # (probe-proven slight-natural-shake) or "action" (sd-067's hyper-chaotic
+    # handheld chain). A Literal, not a free str: an invalid register is a
+    # single-field malformed-object defect (same class as the dialogue/speaker
+    # pairing above), and OpenRouter's strict json_schema enforces the enum at
+    # parse — the cheapest layer that holds it (whack-a-mole policy). REQUIRED,
+    # no default: a default would silently re-lock every story to one register,
+    # which is exactly the first live run's failure (2026-07-17, calm-locked
+    # camera on an action story).
+    camera_register: Literal["calm", "action"]
     beats: list[POVBeat]
     world_prose: str  # light/depth-layered nouns/particulates prose (world_prose_craft)
 

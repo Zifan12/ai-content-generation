@@ -23,6 +23,7 @@ from src.generation.render_adapters.rules import RenderRules
 def _script(
     *,
     duration_seconds: int = 10,
+    camera_register: str = "calm",
     protagonist_detail: str = (
         "with a headlamp, gloved hands occasionally visible at the bottom of frame"
     ),
@@ -39,6 +40,7 @@ def _script(
         protagonist_role="explorer",
         protagonist_detail=protagonist_detail,
         duration_seconds=duration_seconds,
+        camera_register=camera_register,
         beats=beats
         or [
             POVBeat(
@@ -78,7 +80,10 @@ def test_fixed_clauses_present_byte_verbatim(rules: RenderRules) -> None:
     compiled = compile_pov_prompt(script, rules)
 
     role = script.protagonist_role
-    assert clauses["camera_as_eyes"]["text"].replace("[PROTAGONIST]", role) in compiled.prompt_text
+    assert (
+        clauses["camera_as_eyes"][script.camera_register]["text"].replace("[PROTAGONIST]", role)
+        in compiled.prompt_text
+    )
     assert (
         clauses["unseen_protagonist"]["text"].replace("[PROTAGONIST]", role)
         in compiled.prompt_text
@@ -90,6 +95,28 @@ def test_fixed_clauses_present_byte_verbatim(rules: RenderRules) -> None:
     # killed it as probe-unvalidated boilerplate; hands live inline in the
     # script-authored protagonist_detail (pov_grammar.protagonist_detail_craft).
     assert "hands_visible" not in clauses
+
+
+@pytest.mark.parametrize("register", ["calm", "action"])
+def test_camera_register_selects_its_variant_and_excludes_the_other(
+    rules: RenderRules, register: str
+) -> None:
+    """The script's camera_register picks WHICH camera_as_eyes variant opens the
+    prompt (first live run 2026-07-17: calm-locked camera on an action story) —
+    the chosen variant's text present verbatim, the other's distinguishing
+    language absent."""
+    clauses = rules.pov_grammar()["skeleton_clauses"]
+    script = _script(camera_register=register)
+    compiled = compile_pov_prompt(script, rules)
+
+    chosen = clauses["camera_as_eyes"][register]["text"].replace(
+        "[PROTAGONIST]", script.protagonist_role
+    )
+    assert chosen in compiled.prompt_text
+    if register == "calm":
+        assert "hyper-chaotic" not in compiled.prompt_text.lower()
+    else:
+        assert "slight natural shake" not in compiled.prompt_text.lower()
 
 
 def test_kill_list_words_never_survive(rules: RenderRules) -> None:

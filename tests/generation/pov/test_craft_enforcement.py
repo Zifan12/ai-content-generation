@@ -54,6 +54,7 @@ def _valid_script(duration_seconds: int = 10) -> POVScript:
         protagonist_role="explorer",
         protagonist_detail="with a headlamp, gloved hands occasionally visible",
         duration_seconds=duration_seconds,
+        camera_register="calm",
         beats=beats,
         world_prose="Foreground rubble glistens, midground crystals pulse blue light.",
     )

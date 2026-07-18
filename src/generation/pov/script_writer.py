@@ -66,10 +66,16 @@ different room, day, or time — the whole story lives inside ONE continuous spa
 (e.g. "with a headlamp, gloved hands occasionally visible at the bottom of frame" or \
 "kneeling on the deck, bare hands visible in frame"). Hands are the viewer's only body \
 anchor; a detail clause without them breaks the register.
-- duration_seconds: choose 10 or 15 FROM the beat count your story needs — never force a \
-fixed default. 10s stories need 4-6 beats; 15s stories need 5-8 beats (interpolated/\
-counted from corpus POV examples). Pick the shorter duration unless the story genuinely \
-needs the extra beats to land its turn.
+- camera_register: "calm" or "action" — choose by the story's physical energy. "action" \
+whenever the story contains impact, force, combat, chase, collapse, powers, or bodily \
+strain — the camera whips and jerks with the body. "calm" ONLY when the story is quiet \
+discovery or atmosphere (slow looks, small careful hand actions). When in doubt, choose \
+"action": a calm camera on an energetic story reads as sleepy footage.
+- duration_seconds: choose 10 or 15 FROM the beat count your story needs. "action" \
+register stories default to 15 — every proven action POV example runs 15s; the \
+escalation arc needs the room. "calm" stories pick 10 unless the story genuinely needs \
+the extra beats to land its turn. 10s stories need 4-6 beats; 15s stories need 5-8 beats \
+(interpolated/counted from corpus POV examples).
 - beats: ordered POVBeats, each with:
     actions: 1-2 COUNTABLE physical actions this beat shows, in order — never a vague, \
 beat-free description. A prior render measured that beat-free action lines render in \
@@ -100,16 +106,29 @@ to deliver exactly that turn. Never substitute a different story or a different 
 button (a closing beat that lands the moment). The button MAY COLLAPSE into the turn's \
 own climax beat when the clip is short (<=15s) — never force a rushed extra beat just to \
 have a separate button.
-3. EMOTION = PHYSICAL TELLS, NEVER A LABEL. Never write or imply an emotion word ("she is \
+3. ESCALATE SCALE BEAT TO BEAT. Each beat must be physically BIGGER than the one before — \
+bigger motion, bigger force, more of the frame in play — and the FINAL beat is the \
+LARGEST image in the script. Proven action POV scripts climb from a hand-scale act to a \
+scene-scale event (catch a crackling sphere -> crush it -> a colossal titan rises -> \
+redirect its beam -> drive both hands into its core). Beats that stay one size the whole \
+script ("grab the hilt; saw the chain link") flatline — that is a measured render \
+failure, not a style choice.
+4. EVENT BEATS, NOT MICRO-STEPS. A beat's action must CHANGE THE SCENE, not just the \
+hand: something in the world moves, breaks, arrives, erupts, or transforms because of \
+(or in answer to) the action. A beat whose only consequence is the protagonist's grip \
+advancing one notch is a micro-step; a chain of micro-steps reads as nothing happening. \
+Event beats are still COUNTABLE physical actions (see the actions rule above) — \
+scene-changing AND countable, never vague.
+5. EMOTION = PHYSICAL TELLS, NEVER A LABEL. Never write or imply an emotion word ("she is \
 terrified", "he feels awe"). A held breath, a hand tightening, a step backward — the \
 physical tell IS the emotion; a viewer reads it off the action, not off a narrator.
-4. COUNTABLE BEATS, NEVER A SLIDESHOW. Every beat must be a physical action a camera can \
+6. COUNTABLE BEATS, NEVER A SLIDESHOW. Every beat must be a physical action a camera can \
 hold on without cutting — see the actions rule above. A story told in static poses with \
 nothing moving between them is the failure mode, not a pass.
-5. VISUALLY SELF-EVIDENT TO A ZERO-CONTEXT VIEWER. There is no caption and no voiceover — \
+7. VISUALLY SELF-EVIDENT TO A ZERO-CONTEXT VIEWER. There is no caption and no voiceover — \
 a viewer who has never heard the pitch must grasp what is happening FROM THE ACTIONS \
 ALONE.
-6. WORD ECONOMY IS A HARD BUDGET. Everything you author — protagonist detail, scene \
+8. WORD ECONOMY IS A HARD BUDGET. Everything you author — protagonist detail, scene \
 setting, world prose, every beat's actions, dialogue, and audio events — must total \
 between 60 and 100 words COMBINED. The render model responds to dense concrete nouns, \
 not elaboration; every word must earn its place on screen. Count as you write: a typical \
@@ -126,8 +145,9 @@ when a hand action calls for it.
 
 You are given ONE approved story pitch (who the unseen protagonist is, where the scene \
 happens, what happens, and the turn/twist) inside a <pitch> tag. Develop it into a \
-POVScript: a scene setting, a short protagonist role + gear/pose detail, a duration \
-choice, an ordered list of countable action beats, and world-building prose.
+POVScript: a scene setting, a short protagonist role + gear/pose detail, a camera \
+register matched to the story's energy, a duration choice, an ordered list of countable \
+action beats, and world-building prose.
 
 {_POV_SCRIPT_FIELD_SPEC}
 
