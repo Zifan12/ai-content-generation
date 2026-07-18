@@ -91,6 +91,7 @@ def test_fixed_clauses_present_byte_verbatim(rules: RenderRules) -> None:
     # Non-templated clauses: exact config string, untouched.
     assert clauses["anti_drift_constraint"]["text"] in compiled.prompt_text
     assert clauses["constraints_block"]["text"] in compiled.prompt_text
+    assert clauses["style_register"][script.camera_register]["text"] in compiled.prompt_text
     # hands_visible must NOT exist as a skeleton clause — the slice-1 verifier
     # killed it as probe-unvalidated boilerplate; hands live inline in the
     # script-authored protagonist_detail (pov_grammar.protagonist_detail_craft).
@@ -117,6 +118,22 @@ def test_camera_register_selects_its_variant_and_excludes_the_other(
         assert "hyper-chaotic" not in compiled.prompt_text.lower()
     else:
         assert "slight natural shake" not in compiled.prompt_text.lower()
+
+
+@pytest.mark.parametrize("register", ["calm", "action"])
+def test_style_clause_present_per_register_and_before_audio(
+    rules: RenderRules, register: str
+) -> None:
+    """BUG-033 regression: both probes carry a Style: sentence the original
+    grammar transcription missed — the styleless kaiju render watched as 'not
+    realistic or cinematic'. Every compiled prompt must carry its register's
+    style clause verbatim, positioned before the Audio sentence (probe order)."""
+    clauses = rules.pov_grammar()["skeleton_clauses"]
+    compiled = compile_pov_prompt(_script(camera_register=register), rules)
+
+    style_text = clauses["style_register"][register]["text"]
+    assert style_text in compiled.prompt_text
+    assert compiled.prompt_text.index(style_text) < compiled.prompt_text.index("Audio:")
 
 
 def test_kill_list_words_never_survive(rules: RenderRules) -> None:

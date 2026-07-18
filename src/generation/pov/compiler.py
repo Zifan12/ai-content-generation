@@ -26,8 +26,10 @@ script-stage contract never names):
     pov_grammar.protagonist_detail_craft — there is NO standalone hands
     clause, the slice-1 verifier killed that as probe-unvalidated) ->
     Action, in order (beats flattened, dialogue interleaved at its beat's
-    position) -> Scene -> World -> anti_drift_constraint -> Audio (beats'
-    audio events, "no music" per the seedance dialect's audio_rule) ->
+    position) -> Scene -> World -> anti_drift_constraint -> style_register
+    (fixed Style: clause selected by camera_register — both probes carry it,
+    the original transcription missed it, BUG-033) -> Audio (beats' audio
+    events, "no music" per the seedance dialect's audio_rule) ->
     constraints_block
 
 Deliberately OUT of this module's scope (ticket 04): dialogue-never-final
@@ -226,6 +228,11 @@ def compile_pov_prompt(script: POVScript, rules: RenderRules) -> CompiledPOVProm
     )
     unseen_protagonist = _sub_protagonist(clauses["unseen_protagonist"]["text"], role)
     anti_drift = clauses["anti_drift_constraint"]["text"]
+    # Style rides the same register axis as the camera (grill decision
+    # 2026-07-17) — both probes carry a Style: sentence the original grammar
+    # transcription missed (BUG-033: the styleless kaiju render watched as
+    # "not realistic or cinematic").
+    style_clause = clauses["style_register"][script.camera_register]["text"]
     constraints_block = clauses["constraints_block"]["text"]
 
     protagonist_detail = _normalize_fragment(script.protagonist_detail, kill_list)
@@ -268,6 +275,7 @@ def compile_pov_prompt(script: POVScript, rules: RenderRules) -> CompiledPOVProm
             scene_sentence,
             world_sentence,
             anti_drift,
+            style_clause,
             audio_sentence,
             constraints_block,
         ]

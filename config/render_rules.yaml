@@ -538,11 +538,26 @@ escalation:
 #                                            bottom of frame."; probe 2: "...
 #                                            kneeling..., bare hands visible in
 #                                            frame.")
-#   [[Action: / Scene: / Light: / Camera: — script-specific, not fixed clauses]]
+#   [[Action: / Scene: — script-specific, not fixed clauses]]
+#   [[Light: — script-specific; content folded into World: prose per
+#     world_prose_craft.light_time_source_emitter_tone, label dropped]]
+#   [[Camera: mid-prompt line ("POV handheld with realistic micro-shake") —
+#     DELIBERATELY NOT PORTED (root-cause gate 2026-07-17): both probes carry
+#     it IN ADDITION to the opening shake sentence, but no watched defect has
+#     been attributed to its absence across three watched renders; port on
+#     recurrence per whack-a-mole policy, don't add speculatively]]
 #   skeleton_clauses.anti_drift_constraint -> "No cuts, no zooms, natural head
 #                                              movement only." appears verbatim,
 #                                              mid-prompt, in BOTH probes
-#   [[Style: / Audio: — script-specific]]
+#   skeleton_clauses.style_register.calm  -> "Style: photoreal documentary
+#                                              tension." VERBATIM in both probes
+#                                              (slot was MISSED by the original
+#                                              ticket-01 transcription — found
+#                                              2026-07-17 via the styleless kaiju
+#                                              watch, BUG-033; .action = corpus
+#                                              sd-067 + lanshu-15 anti-plastic
+#                                              negation, not yet probe-watched)
+#   [[Audio: — script-specific]]
 #   skeleton_clauses.constraints_block   -> closes BOTH probes verbatim
 # ---------------------------------------------------------------------------
 pov_grammar:
@@ -562,6 +577,14 @@ pov_grammar:
     anti_drift_constraint:
       text: "No cuts, no zooms, natural head movement only."
       evidence: "corpus lanshu methodology/15-seedance-masterclass.md:163-169 (Format 3, mandatory constraint: 'without this line, Seedance defaults to switching camera angles, breaking immersion') + :380 (pitfall table row: 'POV mid-switch of angle' -> fix is this exact line); validated-by-probe 2026-07-17 (PROBE_SHEET.md watch checklist, both probes 'Stays first-person the ENTIRE clip — no angle switch', USER WATCH CONFIRMED PASS) — this is the clause the ticket-01 acceptance criterion means by 'superseding its CORPUS-ONLY status'"
+    style_register:
+      note: "Register variants selected by POVScript.camera_register (same axis as camera_as_eyes — grill decision 2026-07-17: style rides the camera register until a watched render needs a third combination). Added after the money-shot kaiju 480p watch: compiled prompts carried NO style sentence at all — BOTH probes ship 'Style: photoreal documentary tension.' and ticket 01 never transcribed the slot (BUG-033). Operator verdict on the styleless render: 'doesn't look realistic or cinematic'."
+      calm:
+        text: "Style: photoreal documentary tension."
+        evidence: "probe:render_taste_test/pov_probe/probe1_prompt.txt + probe2_prompt.txt (VERBATIM in both, USER WATCH CONFIRMED PASS 2026-07-17) — includes the word 'tension' deliberately (grill Q2: editing a watch-proven clause breaks corpus-verbatim discipline; if a gentle calm story ever watches wrongly tense, that names a new variant, not an edit to this one)"
+      action:
+        text: "Style: cinematic lighting, photorealistic, grounded realism, 35mm film look, heavy film grain, ARRI ALEXA aesthetic, practical VFX feel. No 3D, no cartoon, no VFX aesthetic."
+        evidence: "sentence 1: corpus all-prompts.json sd-067 ('Electro POV', Higgsfield-published) VERBATIM realism chain; sentence 2: corpus lanshu methodology/15-seedance-masterclass.md:381 pitfall-table row ('monster/skin too plastic-looking -> add No 3D, no cartoon, no VFX') + convergent OpenMontage seedance skill ('counter-intuitive but forces photoreal texture in heavy-VFX scenes'). 'cinematic lighting' is the corpus-legitimate PAIRED usage (video_model_system_guide.md:175,300 — bare 'cinematic' is what the kill list scrubs, and the scrub only touches LLM-authored prose, never fixed clauses). Deliberately EXCLUDED per documented risks: 'motion blur on hits' (face-softening, video_model_system_guide.md:653), the no-blur/no-ghosting quality suffix (fights film grain, unreconciled corpus tension), bare 'epic'/'4K' (dead-intensifier lists). CORPUS-ONLY as of 2026-07-17 — not yet watched on our own render; promote to probe: evidence after the first action-register watch passes."
     constraints_block:
       text: "Constraints: no watermark, no logo, no on-screen text, no extra hands. Generate the video without subtitles."
       evidence: "probe:render_taste_test/pov_probe/PROBE_SHEET.md (both probes, verbatim closing sentence; USER WATCH CONFIRMED PASS, no text/watermark/subtitle leak observed) — restates global_constraints.always_append (this file) in POV-specific wording so the compiler (ticket 02) never has to cross-read an unrelated block for this fixed clause"

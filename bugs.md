@@ -1194,3 +1194,24 @@ Track every shipped feature that fails, what was tried, and what fixed it.
   — and update the docstring's superseded coverage-knee rationale. Cheap and cited, but it is NOT on
   the critical path for the pitch-51 re-render (both live characters already have hand-made 2-ref
   sets), so it should not delay that test.
+
+### BUG-033 - POV grammar transcription dropped the probes' Style: slot; every render shipped styleless
+- Date opened: 2026-07-17
+- Status: fixed same day (style_register clause + compiler slot + regression test); render validation pending the next 480p watch
+- Feature: `config/render_rules.yaml` pov_grammar / `src/generation/pov/compiler.py`
+- Behavior: the money-shot kaiju 480p (run 20260717_205811, 45cr) watched as "doesn't look realistic
+  or cinematic" (operator verdict). The compiled prompt carried NO style/register sentence at all.
+- Root cause (root-cause gate run 2026-07-17): ticket 01's probe->grammar transcription was
+  incomplete. BOTH probe prompts (render_taste_test/pov_probe/probe1_prompt.txt, probe2_prompt.txt)
+  carry `Style: photoreal documentary tension.` verbatim — a watch-passed fixed slot that never became
+  a skeleton clause, so `compile_pov_prompt` composed prompts with no realism register. CLASS defect,
+  second same-day instance of "proven prompt slot missing from grammar" (first: camera register-lock,
+  fixed that morning) — promoted per whack-a-mole policy.
+- Fix: `pov_grammar.skeleton_clauses.style_register` with calm (probe-verbatim, tension included —
+  grill Q2) / action (sd-067 verbatim chain + lanshu-15:381 anti-plastic negation "No 3D, no cartoon,
+  no VFX aesthetic" — grill Q3, corpus-only until watched) variants, selected by camera_register
+  (grill Q1: style rides the camera axis until a watched render needs a third combination), spliced
+  between anti_drift and Audio (probe order). Promotion artifacts: yaml header's probe cross-check map
+  now maps or explicitly declines EVERY probe slot (Camera: mid-prompt line recorded as deliberately
+  not ported — no watched defect in three watches; port on recurrence), and
+  test_style_clause_present_per_register_and_before_audio is the regression check.
