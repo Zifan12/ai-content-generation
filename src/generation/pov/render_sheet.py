@@ -105,5 +105,13 @@ def build_render_sheet(
             "## Location-still escalation lever",
             _LOCATION_STILL_ESCALATION_LEVER,
             "",
+            "## Operator corrections (defect log)",
+            "One line per gate-2 correction: date, what was wrong, what the operator "
+            "changed. RECURRENCE across runs — not a single instance — is what promotes "
+            "a defect to a code check or prompt rule (whack-a-mole policy, first live "
+            "run 2026-07-17); this log is how recurrence gets measured instead of "
+            "remembered.",
+            "- (none yet)",
+            "",
         ]
     )
