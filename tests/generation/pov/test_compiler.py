@@ -363,6 +363,23 @@ def test_world_sentence_is_punctuated_before_anti_drift(rules: RenderRules) -> N
     assert f"moss. {anti_drift}" in compiled.prompt_text
 
 
+def test_cli_command_carries_image_flags_in_ref_order(rules: RenderRules) -> None:
+    """Ticket 10: reference paths become repeated --image flags on the copy-paste
+    CLI command, in the exact order given — upload order defines imageN for
+    ticket 11's binding clause, so order is a contract, not cosmetics."""
+    refs = ["refs/hero/a_arm.png", "refs/hero/b_glove.png"]
+    compiled = compile_pov_prompt(_script(), rules, ref_paths=refs)
+
+    first = compiled.cli_command.index('--image "refs/hero/a_arm.png"')
+    second = compiled.cli_command.index('--image "refs/hero/b_glove.png"')
+    assert first < second
+
+
+def test_cli_command_without_refs_has_no_image_flag(rules: RenderRules) -> None:
+    compiled = compile_pov_prompt(_script(), rules)
+    assert "--image" not in compiled.cli_command
+
+
 @pytest.mark.parametrize("duration", [10, 15])
 def test_cost_line_matches_measured_rate(rules: RenderRules, duration: int) -> None:
     compiled = compile_pov_prompt(_script(duration_seconds=duration), rules)

@@ -445,6 +445,148 @@ def test_topic_mode_invalid_pick_raises_loud(tmp_path) -> None:
         )
 
 
+# --- asset gate (ticket 10) ---------------------------------------------------
+
+
+def _write_refs(refs_root, slug: str, names: list[str]) -> list:
+    """Create refs/<slug>/ with the named files; returns the created paths."""
+    char_dir = refs_root / slug
+    char_dir.mkdir(parents=True, exist_ok=True)
+    paths = []
+    for name in names:
+        p = char_dir / name
+        p.write_bytes(b"\x89PNG fake image bytes")
+        paths.append(p)
+    return paths
+
+
+def test_missing_refs_dir_raises_request_sheet_before_any_llm_call(tmp_path) -> None:
+    """The gate fails BEFORE any LLM spend: no script-writer call, no pitcher
+    call, no run directory — just the role-specific request sheet."""
+    from src.generation.pov.asset_check import POVAssetRequestNeeded
+
+    writer = FakeScriptWriter(_script())
+    pitcher = FakePitcher()
+    out_dir = tmp_path / "out"
+
+    with pytest.raises(POVAssetRequestNeeded) as exc_info:
+        run_pov_pipeline(
+            writer, _rules(), SAMPLE_IDEA,
+            pitcher=pitcher,
+            characters=["silverhero"],
+            refs_root=tmp_path / "refs",
+            output_dir=out_dir,
+        )
+
+    assert writer.pitches == []
+    assert pitcher.calls == []
+    assert not out_dir.exists() or list(out_dir.iterdir()) == []
+    sheet = exc_info.value.sheet_text
+    assert "silverhero" in sheet
+    assert "forearms" in sheet  # protagonist-role crop instructions present
+    assert "NO face/mask panel" in sheet  # the anti-summon warning, protagonist role
+
+
+def test_valid_refs_proceed_and_cli_carries_image_flags_in_order(tmp_path) -> None:
+    paths = _write_refs(tmp_path / "refs", "silverhero", ["b_glove.png", "a_arm.png"])
+
+    writer = FakeScriptWriter(_script())
+    run_dir = run_pov_pipeline(
+        writer, _rules(), SAMPLE_IDEA,
+        characters=["silverhero"],
+        refs_root=tmp_path / "refs",
+        output_dir=tmp_path / "out",
+    )
+
+    sheet_text = (run_dir / "render_sheet.md").read_text(encoding="utf-8")
+    # filename-sorted within the character: a_arm before b_glove
+    a_arm = next(p for p in paths if p.name == "a_arm.png")
+    b_glove = next(p for p in paths if p.name == "b_glove.png")
+    assert f'--image "{a_arm}"' in sheet_text
+    assert f'--image "{b_glove}"' in sheet_text
+    assert sheet_text.index(f'--image "{a_arm}"') < sheet_text.index(f'--image "{b_glove}"')
+    assert "Reference assets" in sheet_text
+
+
+def test_protagonist_refs_precede_in_frame_refs_regardless_of_declaration_order(
+    tmp_path,
+) -> None:
+    """Upload order defines imageN for ticket 11's binding clause — protagonist
+    characters' refs always come first, whatever order the flags were typed in."""
+    _write_refs(tmp_path / "refs", "foe", ["mask.png", "body.png"])
+    _write_refs(tmp_path / "refs", "hero", ["arm.png", "glove.png"])
+
+    writer = FakeScriptWriter(_script())
+    run_dir = run_pov_pipeline(
+        writer, _rules(), SAMPLE_IDEA,
+        characters=["foe:in_frame", "hero:protagonist"],
+        refs_root=tmp_path / "refs",
+        output_dir=tmp_path / "out",
+    )
+
+    sheet_text = (run_dir / "render_sheet.md").read_text(encoding="utf-8")
+    assert sheet_text.index("arm.png") < sheet_text.index("mask.png")
+
+
+def test_ref_count_out_of_bounds_raises_named_error(tmp_path) -> None:
+    _write_refs(tmp_path / "refs", "silverhero", ["only_one.png"])
+
+    writer = FakeScriptWriter(_script())
+    with pytest.raises(ValueError, match="silverhero"):
+        run_pov_pipeline(
+            writer, _rules(), SAMPLE_IDEA,
+            characters=["silverhero"],
+            refs_root=tmp_path / "refs",
+            output_dir=tmp_path / "out",
+        )
+    assert writer.pitches == []
+
+
+def test_non_image_file_in_refs_dir_raises(tmp_path) -> None:
+    refs_root = tmp_path / "refs"
+    _write_refs(refs_root, "silverhero", ["a.png", "b.png"])
+    (refs_root / "silverhero" / "notes.txt").write_text("not an image", encoding="utf-8")
+
+    writer = FakeScriptWriter(_script())
+    with pytest.raises(ValueError, match="notes.txt"):
+        run_pov_pipeline(
+            writer, _rules(), SAMPLE_IDEA,
+            characters=["silverhero"],
+            refs_root=refs_root,
+            output_dir=tmp_path / "out",
+        )
+
+
+def test_unknown_role_raises_naming_allowed_roles(tmp_path) -> None:
+    writer = FakeScriptWriter(_script())
+    with pytest.raises(ValueError, match="in_frame"):
+        run_pov_pipeline(
+            writer, _rules(), SAMPLE_IDEA,
+            characters=["silverhero:villain"],
+            refs_root=tmp_path / "refs",
+            output_dir=tmp_path / "out",
+        )
+
+
+def test_no_character_flag_keeps_slice_one_behavior_byte_identical(tmp_path) -> None:
+    writer = FakeScriptWriter(_script())
+    run_dir = run_pov_pipeline(writer, _rules(), SAMPLE_IDEA, output_dir=tmp_path)
+
+    sheet_text = (run_dir / "render_sheet.md").read_text(encoding="utf-8")
+    assert "--image" not in sheet_text
+    assert "Reference assets" not in sheet_text
+
+
+def test_cli_parser_accepts_repeated_character_flags() -> None:
+    import scripts.pov as pov_module
+
+    parser = pov_module._build_parser()
+    args = parser.parse_args(
+        ["--idea", "x", "--character", "silverhero", "--character", "foe:in_frame"]
+    )
+    assert args.character == ["silverhero", "foe:in_frame"]
+
+
 def test_topic_and_idea_are_mutually_exclusive_on_the_cli() -> None:
     import scripts.pov as pov_module
 

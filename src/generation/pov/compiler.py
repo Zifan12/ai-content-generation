@@ -45,6 +45,8 @@ is a seam-2 assertion, and nothing else in the pipeline checks it).
 """
 
 import re
+from collections.abc import Sequence
+from pathlib import Path
 
 from src.generation.executor import _sanitize_prompt
 from src.generation.pov.schemas import CompiledPOVPrompt, POVScript
@@ -214,12 +216,24 @@ def _flatten_actions(script: POVScript) -> tuple[list[str], list[str]]:
     return action_items, audio_items
 
 
-def compile_pov_prompt(script: POVScript, rules: RenderRules) -> CompiledPOVPrompt:
+def compile_pov_prompt(
+    script: POVScript,
+    rules: RenderRules,
+    ref_paths: Sequence[str | Path] = (),
+) -> CompiledPOVPrompt:
     """Compile a :class:`POVScript` into the final prompt text, CLI command, and cost line.
 
     Pure function: everything it needs comes from ``script`` and ``rules``
     (which itself is a read-once in-memory view over the committed yaml, not
     a live file read per call). No LLM call, no network, no render.
+
+    ``ref_paths`` (ticket 10) are the asset gate's validated reference images
+    in upload order; each becomes a ``--image`` flag on the CLI command IN
+    THAT ORDER — the CLI auto-uploads plain paths for seedance_2_0
+    (executor.py, measured 2026-07-06) and upload order defines the
+    ``imageN`` numbering ticket 11's binding clause will use, so order is a
+    contract. The prompt text itself is unchanged by refs in this ticket
+    (binding clause = ticket 11, frozen from probe evidence first).
 
     Raises:
         POVWordBudgetError: if the compiled body's word count falls outside
@@ -318,10 +332,11 @@ def compile_pov_prompt(script: POVScript, rules: RenderRules) -> CompiledPOVProm
     # characters the Windows .cmd-shim CreateProcess quirk can't reliably
     # escape (module docstring there) — reused here ONLY for the copy-paste
     # CLI string; prompt_text itself stays untouched/readable.
+    ref_flags = "".join(f' --image "{path}"' for path in ref_paths)
     cli_command = (
         f'higgsfield generate create {model_id} --prompt "{_sanitize_prompt(prompt_text)}" '
         f"--aspect_ratio {_ASPECT_RATIO} --duration {script.duration_seconds} "
-        f"--resolution {_SANITY_RESOLUTION} --wait"
+        f"--resolution {_SANITY_RESOLUTION}{ref_flags} --wait"
     )
     cost_line = (
         f"{_SANITY_RESOLUTION} sanity render: {script.duration_seconds}s x {rate}cr/s = {cost}cr"

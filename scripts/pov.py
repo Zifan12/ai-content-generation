@@ -73,6 +73,11 @@ from pathlib import Path
 # `import src...` below would otherwise fail.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from src.generation.pov.asset_check import (  # noqa: E402
+    POVAssetRequestNeeded,
+    check_assets,
+    parse_character_args,
+)
 from src.generation.pov.compiler import compile_pov_prompt  # noqa: E402
 from src.generation.pov.craft_enforcement import develop_valid_script  # noqa: E402
 from src.generation.pov.render_sheet import build_render_sheet  # noqa: E402
@@ -188,6 +193,8 @@ def run_pov_pipeline(
     topic: str | None = None,
     choice_provider: Callable[[], str] | None = None,
     money_shot: str | None = None,
+    characters: list[str] | None = None,
+    refs_root: str | Path = "refs",
     output_dir: str | Path = "output/pov",
 ) -> Path:
     """
@@ -228,6 +235,14 @@ def run_pov_pipeline(
             text, carried byte-verbatim as the pitch's money_shot. None →
             the unset placeholder note (script seat infers the peak).
             Invalid with ``topic`` — topic-mode pitches carry their own.
+        characters: Optional ``--character <slug>[:role]`` declarations
+            (ticket 10). Parsed and asset-gated BEFORE any LLM seat runs —
+            a declared character with no references on disk halts the run
+            with a request sheet and costs zero LLM calls. Validated
+            reference paths flow to the compiler (``--image`` flags, upload
+            order = imageN) and the render sheet.
+        refs_root: Root directory holding per-character reference libraries
+            (``<refs_root>/<slug>/``). The repo convention is ``refs/``.
         output_dir: Parent directory the run's slug-named subdirectory is
             created under.
 
@@ -238,8 +253,12 @@ def run_pov_pipeline(
 
     Raises:
         ValueError: if neither or both of ``idea``/``topic`` are given, if
-            ``topic`` is set with no ``pitcher``, or if the operator's pick
-            (via ``choice_provider``) is missing or invalid.
+            ``topic`` is set with no ``pitcher``, if the operator's pick
+            (via ``choice_provider``) is missing or invalid, or if a
+            declared character's reference directory fails validation.
+        POVAssetRequestNeeded: if a declared character has no references on
+            disk yet — carries the printable request sheet; zero LLM calls
+            were made.
         POVStructuralViolationError: if the script still violates a
             structural rule after its one bounded repair (ticket 04) —
             surfaces loud, no run directory is written.
@@ -251,6 +270,12 @@ def run_pov_pipeline(
             "money_shot is an idea-mode input — topic-mode pitches carry their own "
             "money_shot from the pitcher (ticket 07)"
         )
+
+    # Asset gate FIRST (ticket 10): a missing reference must never cost a
+    # pitcher or script-writer call, so the gate runs before any LLM seat.
+    ref_paths: list[Path] = []
+    if characters:
+        ref_paths = check_assets(parse_character_args(characters), refs_root)
 
     slate: POVPitchSlate | None = None
     if topic is not None:
@@ -264,8 +289,8 @@ def run_pov_pipeline(
         pitch = _pitch_from_idea(idea, money_shot)
 
     script = develop_valid_script(script_writer, pitch, rules)
-    compiled = compile_pov_prompt(script, rules)
-    sheet = build_render_sheet(pitch, script, compiled, rules)
+    compiled = compile_pov_prompt(script, rules, ref_paths=ref_paths)
+    sheet = build_render_sheet(pitch, script, compiled, rules, ref_paths=ref_paths)
 
     slug_source = idea if idea is not None else topic
     assert slug_source is not None  # narrowed by the exactly-one check above
@@ -313,6 +338,17 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--character",
+        action="append",
+        metavar="SLUG[:ROLE]",
+        help=(
+            "Canon subject requiring reference images (repeatable). ROLE is "
+            "'protagonist' (default — you ARE the character, limbs only) or "
+            "'in_frame' (the character stands in front of the camera). Missing "
+            "refs/<slug>/ halts the run with a request sheet before any LLM spend."
+        ),
+    )
+    parser.add_argument(
         "--output-dir",
         default="output/pov",
         help="Parent directory the run's slug-named subdirectory is created under.",
@@ -348,16 +384,23 @@ def main() -> None:
         pitcher = None
         choice_provider = None
 
-    run_dir = run_pov_pipeline(
-        script_writer,
-        rules,
-        args.idea,
-        pitcher=pitcher,
-        topic=args.topic,
-        choice_provider=choice_provider,
-        money_shot=args.money_shot,
-        output_dir=args.output_dir,
-    )
+    try:
+        run_dir = run_pov_pipeline(
+            script_writer,
+            rules,
+            args.idea,
+            pitcher=pitcher,
+            topic=args.topic,
+            choice_provider=choice_provider,
+            money_shot=args.money_shot,
+            characters=args.character,
+            output_dir=args.output_dir,
+        )
+    except POVAssetRequestNeeded as exc:
+        # Not a defect — the operator hasn't supplied reference images yet.
+        # Print the request sheet and exit nonzero (nothing was run or spent).
+        print(f"\n{exc.sheet_text}")
+        sys.exit(1)
     print(f"\nRun directory: {run_dir}")
     print(f"Next: open {run_dir / 'render_sheet.md'} and follow the MANDATORY 480p pass.")
 

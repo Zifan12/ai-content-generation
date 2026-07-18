@@ -15,6 +15,9 @@ Pure function like compiler.compile_pov_prompt: no LLM call, no file I/O —
 the driver (scripts/pov.py) writes the returned string to disk.
 """
 
+from collections.abc import Sequence
+from pathlib import Path
+
 from src.generation.pov.schemas import CompiledPOVPrompt, POVPitch, POVScript
 from src.generation.render_adapters.rules import RenderRules
 
@@ -38,6 +41,23 @@ class — render_taste_test/pov_probe/PROBE_SHEET.md probe 2 measured this drawi
 correctly in POV register; confirm it still does on THIS render).
 - [ ] No TEXT LEAK — no watermark, logo, subtitles, or on-screen text of any kind."""
 
+# Reference-render watch items (ticket 10): appended to the checklist only when
+# the run carries reference assets. Failure modes from the slice-② research
+# brief (RESEARCH-slice2.md §1 hard constraints + the class-specific risk
+# PRD-slice2 decision 2 names): ref/render identity mismatch, style bleed
+# (08-避坑12问.md:52-60), duplicate-figure twins (08:79-101), and the
+# protagonist-summoned-into-frame risk unique to binding a ref to the unseen
+# camera-holder.
+_REF_WATCH_ITEMS = """- [ ] IDENTITY/COSTUME MATCH — everything on screen that the reference images \
+own (limbs, suit detail, mask) matches the source art; costume detail does not drift or \
+get reinvented mid-clip.
+- [ ] No STYLE BLEED — the reference's art style (vintage grain, illustration flatness, \
+render sheen) does not leak into the world's photoreal register.
+- [ ] No TWINS — no duplicate or cloned copy of a referenced character anywhere in frame.
+- [ ] No SUMMONED PROTAGONIST — the protagonist's referenced character does NOT appear \
+as a separate visible figure; refs bind to YOUR limbs only, the camera-holder stays \
+unseen."""
+
 # PRD user story 23 / Implementation Decisions "Assets verdict" paragraph — no
 # pov_grammar config entry exists for this (ticket 01's scope was the fixed
 # prompt clauses + kill list + beat/dialogue/world rules, not this separate
@@ -59,6 +79,7 @@ def build_render_sheet(
     script: POVScript,
     compiled: CompiledPOVPrompt,
     rules: RenderRules,
+    ref_paths: Sequence[str | Path] = (),
 ) -> str:
     """
     Compose the run's render sheet markdown.
@@ -73,10 +94,25 @@ def build_render_sheet(
             cli_command, cost_line).
         rules: The loaded render rules — read once for
             ``scene_lane.retake_ladder``'s wording.
+        ref_paths: The asset gate's validated reference images in upload
+            order (ticket 10). Non-empty → the sheet gains a "Reference
+            assets" section listing them in imageN order and the watch
+            checklist gains the reference failure modes. Empty → the sheet
+            is byte-identical to slice ①'s.
 
     Returns:
         The full render sheet as a markdown string.
     """
+    ref_section: list[str] = []
+    if ref_paths:
+        ref_section = [
+            "## Reference assets (upload order = imageN, ticket 11 binding contract)",
+            *[f"- image{i}: {path}" for i, path in enumerate(ref_paths, start=1)],
+            "",
+        ]
+    watch_checklist = (
+        f"{_WATCH_CHECKLIST}\n{_REF_WATCH_ITEMS}" if ref_paths else _WATCH_CHECKLIST
+    )
     return "\n".join(
         [
             "# POV Render Sheet",
@@ -96,6 +132,7 @@ def build_render_sheet(
             compiled.prompt_text,
             "```",
             "",
+            *ref_section,
             "## MANDATORY render ladder",
             f"**{rules.retake_ladder()}**",
             "",
@@ -107,7 +144,7 @@ def build_render_sheet(
             f"Cost: {compiled.cost_line}",
             "",
             "## Watch checklist (POV failure modes)",
-            _WATCH_CHECKLIST,
+            watch_checklist,
             "",
             "## Location-still escalation lever",
             _LOCATION_STILL_ESCALATION_LEVER,
