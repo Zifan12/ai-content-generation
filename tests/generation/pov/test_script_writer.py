@@ -23,6 +23,7 @@ SAMPLE_PITCH = POVPitch(
     where="a crystal cavern deep underground",
     what_happens="the explorer finds a glowing shard and lifts it toward their eyes",
     turn="the shard's glow reveals the cavern is not empty after all",
+    money_shot="the raised shard lights the cavern and hundreds of eyes open at once",
 )
 
 
@@ -141,6 +142,21 @@ def test_prompt_teaches_camera_register_choice_and_action_15s_default() -> None:
     assert "camera_register" in llm.system
     assert '"calm"' in llm.system and '"action"' in llm.system
     assert "default to 15" in llm.system
+
+
+def test_prompt_teaches_money_shot_climax_binding() -> None:
+    """Ticket 07 (grill Q3-B): the climax delivers the pitch's money_shot —
+    final beat default, penultimate legal under a button that never
+    out-scales it; placeholder note (idea mode) means infer the peak."""
+    llm = FakeLLM(_script())
+    writer = POVScriptWriter(llm=llm)
+
+    writer.develop(SAMPLE_PITCH)
+
+    assert "DELIVER THE MONEY SHOT AT THE CLIMAX" in llm.system
+    assert "FINAL beat by default" in llm.system
+    assert "never out-scale" in llm.system
+    assert "placeholder note" in llm.system
 
 
 def test_prompt_teaches_escalation_and_event_beats() -> None:

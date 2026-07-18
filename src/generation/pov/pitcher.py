@@ -41,6 +41,14 @@ _POV_PITCH_FIELD_SPEC = """For each POVPitch produce:
 zero-context viewer, nothing that only lands with outside knowledge of the topic.
 - turn: the surprise/twist beat the pitch exists to deliver — the payoff a downstream \
 script develops toward.
+- money_shot: the SINGLE image this video exists to deliver, as one concrete, \
+camera-pointable sentence. Two tests it must pass: the THUMBNAIL test (this is the frame \
+you would freeze to make a scrolling viewer stop) and the FAILURE test (if the render \
+nails everything else but misses this image, the video failed anyway). Exactly ONE per \
+pitch — a 10-15 second continuous take has one peak; other big moments are rungs on the \
+ladder below it, and a story with two genuine peaks is two pitches. It may coincide with \
+the turn's visual form, but it is always an IMAGE a camera can point at, never a \
+narrative statement or a feeling.
 
 Craft rules:
 1. JUDGEABLE IN SECONDS. The four fields together must let a reader picture the whole \
@@ -60,9 +68,9 @@ caption, no voiceover, no on-screen narrator text of any kind reaches the final 
 
 You are given a bare operator topic (a word or short phrase, e.g. "deep sea", "abandoned \
 observatory") inside a <topic> tag. Propose 3-5 distinct POV story pitches for that topic \
-— the DESIRE, not the staging: who I am, where I am, what happens, and the turn. A \
-downstream stage develops the picked pitch into beats, dialogue, and staged prose — do \
-not write any of that here.
+— the DESIRE, not the staging: who I am, where I am, what happens, the turn, and the \
+money shot. A downstream stage develops the picked pitch into beats, dialogue, and \
+staged prose — do not write any of that here.
 
 {_POV_PITCH_FIELD_SPEC}
 

@@ -20,6 +20,7 @@ SAMPLE_PITCH = POVPitch(
     where="a crystal cavern deep underground",
     what_happens="the explorer finds a glowing shard and lifts it toward their eyes",
     turn="the shard's glow reveals the cavern is not empty after all",
+    money_shot="the raised shard lights the cavern and hundreds of eyes open at once",
 )
 
 
@@ -93,6 +94,20 @@ def test_sheet_contains_pov_watch_checklist_failure_modes(rules: RenderRules) ->
     assert "BODY LEAK" in sheet
     assert "BEAT TELEPORT" in sheet
     assert "TEXT LEAK" in sheet
+
+
+def test_sheet_prints_money_shot_and_checks_it_first(rules: RenderRules) -> None:
+    """Ticket 07: the pitch's money_shot appears verbatim (gate-2 checks the
+    operator's imagination against the plan) and MONEY SHOT LANDS is the FIRST
+    watch-checklist item — the one question that fails the video on its own."""
+    script = _script()
+    compiled = compile_pov_prompt(script, rules)
+
+    sheet = build_render_sheet(SAMPLE_PITCH, script, compiled, rules)
+
+    assert SAMPLE_PITCH.money_shot in sheet
+    assert "MONEY SHOT LANDS" in sheet
+    assert sheet.index("MONEY SHOT LANDS") < sheet.index("ANGLE SWITCH")
 
 
 def test_sheet_contains_location_still_escalation_lever(rules: RenderRules) -> None:

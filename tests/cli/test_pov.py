@@ -109,18 +109,21 @@ def _slate() -> POVPitchSlate:
                 where="a flooded limestone cave",
                 what_happens="the explorer's headlamp catches something moving in the water",
                 turn="it is their own reflection, delayed by half a second",
+                money_shot="the reflection keeps moving after the explorer freezes",
             ),
             POVPitch(
                 who="a deep-sea diver",
                 where="the flooded corridor of a sunken WWII wreck",
                 what_happens="the diver sweeps silt aside and reaches for a door handle",
                 turn="a still-ticking pocket watch is wedged in the hinge",
+                money_shot="the watch face glows through the silt cloud, still ticking",
             ),
             POVPitch(
                 who="a night-shift mechanic",
                 where="an abandoned observatory dome",
                 what_happens="the mechanic climbs a ladder toward a jammed telescope mount",
                 turn="the dome slit is already open, aimed at something on the ground",
+                money_shot="through the open slit, a floodlit shape on the lawn looks up",
             ),
         ]
     )
@@ -275,6 +278,67 @@ def test_unrepairable_script_raises_loud_and_writes_nothing(tmp_path) -> None:
         run_pov_pipeline(writer, _rules(), SAMPLE_IDEA, output_dir=tmp_path)
 
     assert list(tmp_path.iterdir()) == []
+
+
+# --- money-shot contract (ticket 07) ----------------------------------------
+
+
+def test_idea_mode_money_shot_flag_flows_verbatim_to_artifacts(tmp_path) -> None:
+    """Code-copy proof for --money-shot: the operator's stated peak image
+    reaches pitch.json and the sheet byte-identical — no LLM saw it."""
+    writer = FakeScriptWriter(_script())
+    stated = "the beam erupts and the helicopter bursts into a fireball"
+
+    run_dir = run_pov_pipeline(
+        writer, _rules(), SAMPLE_IDEA, money_shot=stated, output_dir=tmp_path
+    )
+
+    pitch_data = json.loads((run_dir / "pitch.json").read_text(encoding="utf-8"))
+    assert pitch_data["money_shot"] == stated
+    assert stated in (run_dir / "render_sheet.md").read_text(encoding="utf-8")
+
+
+def test_idea_mode_without_money_shot_gets_the_unset_placeholder(tmp_path) -> None:
+    import scripts.pov as pov_module
+
+    writer = FakeScriptWriter(_script())
+
+    run_dir = run_pov_pipeline(writer, _rules(), SAMPLE_IDEA, output_dir=tmp_path)
+
+    pitch_data = json.loads((run_dir / "pitch.json").read_text(encoding="utf-8"))
+    assert pitch_data["money_shot"] == pov_module._MONEY_SHOT_UNSET_NOTE
+
+
+def test_topic_mode_rejects_money_shot_kwarg(tmp_path) -> None:
+    """Topic-mode pitches carry their own money_shot from the pitcher —
+    a CLI-level --money-shot with --topic must fail loud, not be dropped."""
+    writer = FakeScriptWriter(_script())
+    pitcher = FakePitcher()
+
+    with pytest.raises(ValueError):
+        run_pov_pipeline(
+            writer, _rules(), pitcher=pitcher, topic="deep sea",
+            choice_provider=lambda: "1", money_shot="a peak", output_dir=tmp_path,
+        )
+
+
+def test_cli_parser_accepts_money_shot_with_idea() -> None:
+    import scripts.pov as pov_module
+
+    parser = pov_module._build_parser()
+    args = parser.parse_args(["--idea", "x", "--money-shot", "the fireball"])
+    assert args.money_shot == "the fireball"
+
+
+def test_slate_print_includes_the_money_line(capsys) -> None:
+    import scripts.pov as pov_module
+
+    pov_module._print_slate(_slate())
+
+    out = capsys.readouterr().out
+    assert "money:" in out
+    for pitch in _slate().pitches:
+        assert pitch.money_shot in out
 
 
 # --- topic mode (ticket 05) --------------------------------------------------

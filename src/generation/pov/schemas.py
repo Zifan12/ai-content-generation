@@ -55,6 +55,14 @@ class POVPitch(BaseModel):
     where: str  # the single continuous place the scene happens
     what_happens: str  # the scene's action, in a sentence or two
     turn: str  # the surprise/twist beat the pitch exists to deliver
+    # The single image the video exists to deliver (ticket 07): thumbnail test
+    # (the frame you'd freeze to stop a scroll) + failure test (render nails
+    # everything else but misses this = video failed anyway). Exactly one per
+    # pitch — one 10-15s continuous take has one peak; two peaks = two videos.
+    # REQUIRED, no default (camera_register precedent): an optional field
+    # silently reopens the capture gap this ticket exists to close. Idea mode
+    # fills it with a placeholder note when --money-shot is not given.
+    money_shot: str
 
 
 class POVPitchSlate(BaseModel):

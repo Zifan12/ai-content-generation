@@ -33,6 +33,7 @@ SAMPLE_PITCH = POVPitch(
     where="a crystal cavern deep underground",
     what_happens="the explorer finds a glowing shard and lifts it toward their eyes",
     turn="the shard's glow reveals the cavern is not empty after all",
+    money_shot="the raised shard lights the cavern and hundreds of eyes open at once",
 )
 
 

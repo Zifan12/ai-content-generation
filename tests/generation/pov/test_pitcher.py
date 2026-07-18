@@ -19,18 +19,21 @@ def _slate() -> POVPitchSlate:
                 where="a crystal cavern",
                 what_happens="the explorer reaches for a glowing shard",
                 turn="the cavern is not empty after all",
+                money_shot="the shard flares and hundreds of eyes open in the dark",
             ),
             POVPitch(
                 who="a diver",
                 where="a sunken WWII wreck",
                 what_happens="the diver sweeps silt from a cabin door",
                 turn="a still-ticking pocket watch is wedged in the hinge",
+                money_shot="the watch face glows through the silt cloud, still ticking",
             ),
             POVPitch(
                 who="a night-shift mechanic",
                 where="an abandoned observatory dome",
                 what_happens="the mechanic climbs toward a jammed telescope mount",
                 turn="the dome slit is already open",
+                money_shot="through the open slit, something enormous blinks back",
             ),
         ]
     )
@@ -100,6 +103,22 @@ def test_prompt_teaches_one_continuous_moment_and_first_person_native() -> None:
 
     assert "ONE CONTINUOUS MOMENT" in llm.system
     assert "FIRST-PERSON NATIVE" in llm.system
+
+
+def test_prompt_teaches_money_shot_definition() -> None:
+    """Ticket 07: the pitcher must author each pitch's money_shot under the
+    ratified definition — single image, thumbnail test, failure test, exactly
+    one per pitch, an image not a feeling."""
+    llm = FakeLLM(_slate())
+    pitcher = POVPitcher(llm=llm)
+
+    pitcher.pitch("deep sea")
+
+    assert "money_shot" in llm.system
+    assert "THUMBNAIL test" in llm.system
+    assert "FAILURE test" in llm.system
+    assert "Exactly ONE per" in llm.system
+    assert "two genuine peaks is two pitches" in llm.system
 
 
 def test_prompt_names_the_slate_size_and_no_staging() -> None:

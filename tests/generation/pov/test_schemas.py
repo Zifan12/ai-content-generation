@@ -21,7 +21,21 @@ def test_pov_pitch_rejects_unknown_fields() -> None:
             where="a crystal cavern",
             what_happens="finds a glowing shard",
             turn="the shard reacts to touch",
+            money_shot="the shard flares and lights the whole cavern wall",
             unexpected_field="nope",  # type: ignore[call-arg]
+        )
+
+
+def test_pov_pitch_requires_money_shot() -> None:
+    """money_shot has NO default (ticket 07) — an optional field silently
+    reopens the capture gap: the operator's peak image staying unwritten until
+    a paid watch is exactly the disease this field exists to close."""
+    with pytest.raises(ValidationError):
+        POVPitch(  # type: ignore[call-arg]
+            who="a cave explorer",
+            where="a crystal cavern",
+            what_happens="finds a glowing shard",
+            turn="the shard reacts to touch",
         )
 
 

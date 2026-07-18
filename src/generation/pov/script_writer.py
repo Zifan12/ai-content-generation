@@ -113,22 +113,28 @@ scene-scale event (catch a crackling sphere -> crush it -> a colossal titan rise
 redirect its beam -> drive both hands into its core). Beats that stay one size the whole \
 script ("grab the hilt; saw the chain link") flatline — that is a measured render \
 failure, not a style choice.
-4. EVENT BEATS, NOT MICRO-STEPS. A beat's action must CHANGE THE SCENE, not just the \
+4. DELIVER THE MONEY SHOT AT THE CLIMAX. The pitch's money_shot names the single image \
+this video exists to deliver — your escalation ladder climbs TO it. It lands on the \
+FINAL beat by default; the second-to-last beat is allowed ONLY when a short button beat \
+follows, and that button must never out-scale the money shot's image. If the pitch's \
+money_shot is a placeholder note rather than a concrete image (idea mode), infer the \
+peak image from what_happens and the turn, and build the ladder to that.
+5. EVENT BEATS, NOT MICRO-STEPS. A beat's action must CHANGE THE SCENE, not just the \
 hand: something in the world moves, breaks, arrives, erupts, or transforms because of \
 (or in answer to) the action. A beat whose only consequence is the protagonist's grip \
 advancing one notch is a micro-step; a chain of micro-steps reads as nothing happening. \
 Event beats are still COUNTABLE physical actions (see the actions rule above) — \
 scene-changing AND countable, never vague.
-5. EMOTION = PHYSICAL TELLS, NEVER A LABEL. Never write or imply an emotion word ("she is \
+6. EMOTION = PHYSICAL TELLS, NEVER A LABEL. Never write or imply an emotion word ("she is \
 terrified", "he feels awe"). A held breath, a hand tightening, a step backward — the \
 physical tell IS the emotion; a viewer reads it off the action, not off a narrator.
-6. COUNTABLE BEATS, NEVER A SLIDESHOW. Every beat must be a physical action a camera can \
+7. COUNTABLE BEATS, NEVER A SLIDESHOW. Every beat must be a physical action a camera can \
 hold on without cutting — see the actions rule above. A story told in static poses with \
 nothing moving between them is the failure mode, not a pass.
-7. VISUALLY SELF-EVIDENT TO A ZERO-CONTEXT VIEWER. There is no caption and no voiceover — \
+8. VISUALLY SELF-EVIDENT TO A ZERO-CONTEXT VIEWER. There is no caption and no voiceover — \
 a viewer who has never heard the pitch must grasp what is happening FROM THE ACTIONS \
 ALONE.
-8. WORD ECONOMY IS A HARD BUDGET. Everything you author — protagonist detail, scene \
+9. WORD ECONOMY IS A HARD BUDGET. Everything you author — protagonist detail, scene \
 setting, world prose, every beat's actions, dialogue, and audio events — must total \
 between 60 and 100 words COMBINED. The render model responds to dense concrete nouns, \
 not elaboration; every word must earn its place on screen. Count as you write: a typical \

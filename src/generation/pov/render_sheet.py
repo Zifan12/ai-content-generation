@@ -18,11 +18,16 @@ the driver (scripts/pov.py) writes the returned string to disk.
 from src.generation.pov.schemas import CompiledPOVPrompt, POVPitch, POVScript
 from src.generation.render_adapters.rules import RenderRules
 
-# The four POV-specific failure modes named in the ticket, worded from the
-# probe's own watch checklist (render_taste_test/pov_probe/PROBE_SHEET.md)
-# and the pov_grammar config's evidence trail (unseen_protagonist /
-# anti_drift_constraint), rather than reinvented from scratch.
-_WATCH_CHECKLIST = """- [ ] No ANGLE SWITCH — stays first-person the entire clip; no cut to \
+# Item 1 is the ticket-07 money-shot contract check (first by design — the
+# only item that fails the video on its own). Below it, the four POV-specific
+# failure modes named in ticket 03, worded from the probe's own watch
+# checklist (render_taste_test/pov_probe/PROBE_SHEET.md) and the pov_grammar
+# config's evidence trail (unseen_protagonist / anti_drift_constraint),
+# rather than reinvented from scratch.
+_WATCH_CHECKLIST = """- [ ] MONEY SHOT LANDS — the pitch's stated money_shot image is on screen \
+and reads at a glance (item 1 by design, ticket 07: the one question that fails the video \
+on its own — if this box is unchecked, the other four passing does not save the take).
+- [ ] No ANGLE SWITCH — stays first-person the entire clip; no cut to \
 seeing the protagonist from outside, no third-person establishing shot \
 (anti_drift_constraint failure).
 - [ ] No BODY LEAK — no face, head, shoulders, or body of the protagonist visible in \
@@ -81,6 +86,7 @@ def build_render_sheet(
             f"- where: {pitch.where}",
             f"- what_happens: {pitch.what_happens}",
             f"- turn: {pitch.turn}",
+            f"- money_shot: {pitch.money_shot}",
             "",
             f"Duration: {script.duration_seconds}s ({len(script.beats)} beats, "
             f"{script.camera_register} camera register)",

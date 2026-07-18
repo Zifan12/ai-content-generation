@@ -85,8 +85,17 @@ from src.generation.render_adapters.rules import RenderRules  # noqa: E402
 # rather than an invented split of the operator's text.
 _IDEA_MODE_NOTE = "(operator-provided via --idea; see what_happens for the full concept)"
 
+# money_shot's own placeholder (ticket 07): unlike who/where/turn, this note is
+# ALSO read by the script seat's craft rule ("if money_shot is a placeholder
+# note ... infer the peak"), so it states the fallback contract instead of just
+# pointing back at what_happens.
+_MONEY_SHOT_UNSET_NOTE = (
+    "(not stated — script stage infers the peak from what_happens; "
+    "check the climax beats on the sheet)"
+)
 
-def _pitch_from_idea(idea_text: str) -> POVPitch:
+
+def _pitch_from_idea(idea_text: str, money_shot: str | None = None) -> POVPitch:
     """
     Wrap the operator's raw --idea text as the picked pitch, verbatim, with NO LLM call.
 
@@ -95,12 +104,19 @@ def _pitch_from_idea(idea_text: str) -> POVPitch:
     would silently mis-split some ideas and never be validated against real
     ones) — module docstring explains why that path was rejected. Only
     what_happens carries real content; it is the operator's text unchanged.
+
+    ``money_shot`` (ticket 07) is the operator's ``--money-shot`` text
+    byte-verbatim when given — the single image the video exists to deliver —
+    or the ``_MONEY_SHOT_UNSET_NOTE`` placeholder when not, which tells the
+    script seat to infer the peak (its inference is then visible as the
+    climax beats on the sheet, still a pre-spend check).
     """
     return POVPitch(
         who=_IDEA_MODE_NOTE,
         where=_IDEA_MODE_NOTE,
         what_happens=idea_text,
         turn=_IDEA_MODE_NOTE,
+        money_shot=money_shot if money_shot is not None else _MONEY_SHOT_UNSET_NOTE,
     )
 
 
@@ -111,6 +127,7 @@ def _print_slate(slate: POVPitchSlate) -> None:
         print(f"     where: {pitch.where}")
         print(f"     what:  {pitch.what_happens}")
         print(f"     turn:  {pitch.turn}")
+        print(f"     money: {pitch.money_shot}")
 
 
 def _pick_pitch(slate: POVPitchSlate, choice_provider: Callable[[], str] | None) -> POVPitch:
@@ -170,6 +187,7 @@ def run_pov_pipeline(
     pitcher=None,
     topic: str | None = None,
     choice_provider: Callable[[], str] | None = None,
+    money_shot: str | None = None,
     output_dir: str | Path = "output/pov",
 ) -> Path:
     """
@@ -206,6 +224,10 @@ def run_pov_pipeline(
         choice_provider: Zero-arg callable returning the operator's typed
             pick as a string. REQUIRED when ``topic`` is set (see
             ``_pick_pitch``); unused in idea mode.
+        money_shot: Idea mode only (ticket 07): the operator's ``--money-shot``
+            text, carried byte-verbatim as the pitch's money_shot. None →
+            the unset placeholder note (script seat infers the peak).
+            Invalid with ``topic`` — topic-mode pitches carry their own.
         output_dir: Parent directory the run's slug-named subdirectory is
             created under.
 
@@ -224,6 +246,11 @@ def run_pov_pipeline(
     """
     if (idea is None) == (topic is None):
         raise ValueError("exactly one of idea or topic must be given to run_pov_pipeline")
+    if money_shot is not None and topic is not None:
+        raise ValueError(
+            "money_shot is an idea-mode input — topic-mode pitches carry their own "
+            "money_shot from the pitcher (ticket 07)"
+        )
 
     slate: POVPitchSlate | None = None
     if topic is not None:
@@ -234,7 +261,7 @@ def run_pov_pipeline(
         pitch = _pick_pitch(slate, choice_provider)
     else:
         assert idea is not None  # narrowed by the exactly-one check above
-        pitch = _pitch_from_idea(idea)
+        pitch = _pitch_from_idea(idea, money_shot)
 
     script = develop_valid_script(script_writer, pitch, rules)
     compiled = compile_pov_prompt(script, rules)
@@ -275,6 +302,15 @@ def _build_parser() -> argparse.ArgumentParser:
     group.add_argument(
         "--topic",
         help="Bare topic seed — the pitcher seat proposes a 3-5 pitch slate to pick from.",
+    )
+    parser.add_argument(
+        "--money-shot",
+        dest="money_shot",
+        help=(
+            "Idea mode only: the single image the video exists to deliver, in your own "
+            "words (carried verbatim). Unset: the script stage infers the peak — check "
+            "the climax beats on the sheet."
+        ),
     )
     parser.add_argument(
         "--output-dir",
@@ -319,6 +355,7 @@ def main() -> None:
         pitcher=pitcher,
         topic=args.topic,
         choice_provider=choice_provider,
+        money_shot=args.money_shot,
         output_dir=args.output_dir,
     )
     print(f"\nRun directory: {run_dir}")
