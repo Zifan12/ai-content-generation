@@ -108,7 +108,7 @@ def _scrub(text: str, kill_list: dict) -> str:
     kill-list words and bracket tokens can never survive regardless of where
     in the script's prose they appeared.
 
-    Three passes:
+    Four passes:
       1. Bracketed timestamps (or any bracketed content) — stripped
          unconditionally. Higgsfield rejects bracketed timelines at any
          duration >5s (seedance_2_0.dialect.bracket_ban); a compiler whose
@@ -124,6 +124,12 @@ def _scrub(text: str, kill_list: dict) -> str:
          carve-out; revisit if a real script legitimately wants it.
       3. glow / glimmer — replaced with their configured steady-intensity
          substitutes (flicker/strobe cue avoidance, probe-observed).
+      4. Filter-risk action words (fight/battle/destroy, kill/brutal/attack,
+         punch/slash, blood) — replaced with the doc-19 §3 corpus phrases
+         (``kill_list.sensitive_actions``, ticket 08). Bare documented forms
+         only: inflections pass through by design (extending beyond the
+         table would be a self-invented technique; see the config row's
+         evidence note).
     """
     cleaned = _BRACKET_RE.sub("", text)
 
@@ -133,6 +139,9 @@ def _scrub(text: str, kill_list: dict) -> str:
         cleaned = re.sub(rf"\b{re.escape(word)}\b", "", cleaned, flags=re.IGNORECASE)
 
     for banned, replacement in kill_list["glow_glimmer"]["replace"].items():
+        cleaned = re.sub(rf"\b{re.escape(banned)}\b", replacement, cleaned, flags=re.IGNORECASE)
+
+    for banned, replacement in kill_list["sensitive_actions"]["replace"].items():
         cleaned = re.sub(rf"\b{re.escape(banned)}\b", replacement, cleaned, flags=re.IGNORECASE)
 
     # Collapse the whitespace/punctuation debris the word-removal passes leave

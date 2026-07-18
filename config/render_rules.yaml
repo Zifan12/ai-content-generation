@@ -606,6 +606,18 @@ pov_grammar:
     glow_glimmer:
       replace: { "glow": "steady-intensity light", "glimmer": "diffuse light" }
       evidence: "candidate — flagged candidate-strength in .scratch/pov-pipeline/PRD.md Implementation Decisions; no direct corpus citation found for this specific substitution. Kept because both words read as a flicker/strobe cue and probe 2's script deliberately used a continuous, non-flickering 'glow brightens' rather than 'glimmer' to avoid an unwanted strobe rendering — a single probe data point, not a corpus rule, hence candidate not corpus-cited"
+    sensitive_actions:
+      replace:
+        "fight": "intense power confrontation"
+        "battle": "intense power confrontation"
+        "destroy": "intense power confrontation"
+        "kill": "dramatic energy clash"
+        "brutal": "dramatic energy clash"
+        "attack": "dramatic energy clash"
+        "punch": "powerful forces meeting"
+        "slash": "powerful forces meeting"
+        "blood": "epic visual impact"
+      evidence: "corpus lanshu methodology/19-seedance-masterclass-round3.md:144-151 (§3 filter-substitution table) — duplicated from seedance_2_0.dialect.sensitive_words (this file) per the dead_intensifiers duplicate-don't-cross-read precedent, flattened to word→phrase pairs so the POV compiler substitutes mechanically (ticket 08, gap found RESEARCH-slice2.md §1: the POV _scrub never applied the scene lane's table). BARE FORMS ONLY, verbatim from the table — inflections (attacking/fights/killed) pass through; extending coverage beyond the documented words would be a self-invented technique. The age-word row (boy/girl/child/kid/young → role description) is deliberately ABSENT: it is authoring guidance, not a mechanical word swap (ticket 08 scope note)."
   beat_budget:
     at_10s:
       min: 4

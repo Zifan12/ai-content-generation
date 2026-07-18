@@ -13,6 +13,8 @@ strings in the test, so a future edit to the config can't silently drift out
 of sync with what this test actually proves.
 """
 
+import re
+
 import pytest
 
 from src.generation.pov.compiler import POVWordBudgetError, compile_pov_prompt
@@ -193,6 +195,39 @@ def test_kill_list_words_never_survive(rules: RenderRules) -> None:
 
     for banned in kill_list["glow_glimmer"]["replace"]:
         assert banned.lower() not in lowered, f"{banned!r} survived compilation"
+
+
+def test_filter_risk_action_words_are_substituted(rules: RenderRules) -> None:
+    """Ticket 08: doc-19 §3 filter-risk action vocabulary (fight/battle/destroy,
+    kill/brutal/attack, punch/slash, blood) must never reach a paid render bare —
+    each word is substituted with its corpus phrase, word-boundary and
+    case-insensitive, same mechanics as the glow/glimmer pass. The scene lane
+    declares this table (seedance_2_0.dialect.sensitive_words) but the POV
+    compiler never applied it — the verified gap RESEARCH-slice2.md §1 names."""
+    replace_table = rules.pov_grammar()["kill_list"]["sensitive_actions"]["replace"]
+    script = _script(
+        beats=[
+            POVBeat(
+                actions=[
+                    "the gloved hands Attack the tower with a heavy punch",
+                    "the fist smashes through to destroy the antenna",
+                ],
+                audio_events=["a distant fight rumbling", "no blood anywhere"],
+            ),
+            POVBeat(
+                actions=["the arms recoil from the kill"],
+                audio_events=["metal groan"],
+            ),
+        ],
+    )
+    compiled = compile_pov_prompt(script, rules)
+    lowered = compiled.prompt_text.lower()
+
+    for banned in ["attack", "punch", "destroy", "fight", "blood", "kill"]:
+        assert banned in replace_table, f"config missing sensitive_actions row {banned!r}"
+        assert not re.search(rf"\b{banned}\b", lowered), f"{banned!r} survived compilation"
+    assert replace_table["attack"].lower() in lowered
+    assert replace_table["punch"].lower() in lowered
 
 
 def test_no_bracketed_timestamps_survive_under_any_input(rules: RenderRules) -> None:
