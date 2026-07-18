@@ -247,6 +247,16 @@ def test_subject_sentence_is_punctuated_before_action(rules: RenderRules) -> Non
     assert "visible Action, in order:" not in compiled.prompt_text
 
 
+def test_scene_setting_with_trailing_period_does_not_double_up(rules: RenderRules) -> None:
+    """A scene_setting already ending in '.' must not compose 'Scene: ...x..' —
+    the double-period defect the first kaiju rerun (2026-07-17) put on a sheet."""
+    script = _script(scene_setting="a waist-high Tokyo intersection, dollhouse buildings.")
+    compiled = compile_pov_prompt(script, rules)
+
+    assert "dollhouse buildings." in compiled.prompt_text
+    assert ".." not in compiled.prompt_text
+
+
 def test_world_sentence_is_punctuated_before_anti_drift(rules: RenderRules) -> None:
     """Same run-on class, the other splice point: world_prose with no
     trailing punctuation must not run into the anti_drift_constraint clause."""

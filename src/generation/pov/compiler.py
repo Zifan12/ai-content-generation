@@ -233,7 +233,10 @@ def compile_pov_prompt(script: POVScript, rules: RenderRules) -> CompiledPOVProm
         f"{unseen_protagonist} {protagonist_detail}".strip()
     )
     action_sentence = f"Action, in order: {'; '.join(action_items)}."
-    scene_sentence = f"Scene: {scene_setting}."
+    # Same run-on/double-period guard as subject/world: scene_setting arriving
+    # with its own trailing period must not compose "figures.." (first kaiju
+    # rerun 2026-07-17 produced exactly that on the sheet).
+    scene_sentence = _ensure_terminal_period(f"Scene: {scene_setting}")
     world_sentence = _ensure_terminal_period(f"World: {world_prose}")
     # Empty audio_items (no beat authored an audio event) must not compose into
     # "Audio: , no music." — a malformed leading comma reaching a paid render.
