@@ -65,6 +65,13 @@ def test_record_post_persists_to_db(db):
     assert found.blueprint_id == bp.id
 
 
+def test_record_post_allows_null_blueprint_id(db):
+    pv = record_post(db, blueprint_id=None, tiktok_url="https://www.tiktok.com/@me/video/exilus1")
+
+    assert pv.id is not None
+    assert pv.blueprint_id is None
+
+
 def test_enter_views_by_id_sets_counts_and_fetched_at(db):
     bp = _make_blueprint(db)
     pv = record_post(db, blueprint_id=bp.id, tiktok_url="https://www.tiktok.com/@me/video/3")

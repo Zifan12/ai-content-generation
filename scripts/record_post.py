@@ -10,6 +10,7 @@ WHY THIS EXISTS:
 USAGE:
   uv run python scripts/record_post.py --blueprint-id 123 --url https://www.tiktok.com/@me/video/456
   uv run python scripts/record_post.py --blueprint-id 123 --url <url> --posted-at 2026-06-15T14:30:00 --niche surreal_hyperreal
+  uv run python scripts/record_post.py --url <url>  # non-blueprint pitch (e.g. Exilus) — blueprint_id left null
 
 DESIGN:
   The DB work lives in record_post(session, ...) which takes a session passed in — so unit
@@ -29,7 +30,7 @@ from src.models.published_video import PublishedVideo
 
 def record_post(
     session: Session,
-    blueprint_id: int,
+    blueprint_id: int | None,
     tiktok_url: str,
     posted_at: datetime | None = None,
     niche: str = "surreal_hyperreal",
@@ -38,7 +39,9 @@ def record_post(
     Insert one PublishedVideo row and return it (with its assigned id).
 
     session: an open SQLAlchemy session (caller owns its lifecycle).
-    blueprint_id: FK to the BlueprintRecord that conditioned this video.
+    blueprint_id: FK to the BlueprintRecord that conditioned this video. None for videos
+        not sourced from the blueprint-conditioned lane (e.g. Exilus/news-reactive pitches) —
+        write_back_percentiles already no-ops on a null blueprint_id.
     tiktok_url: the live post URL.
     posted_at: when it was posted; defaults to now (UTC) if not given.
     niche: denormalized niche label for per-niche percentile grouping later.
@@ -60,7 +63,7 @@ def record_post(
 def main() -> None:
     """Parse CLI args, open a real Postgres session, record the post, print the new row id."""
     parser = argparse.ArgumentParser(description="Record a manually-posted TikTok video.")
-    parser.add_argument("--blueprint-id", type=int, required=True, help="FK to the conditioning blueprint.")
+    parser.add_argument("--blueprint-id", type=int, default=None, help="FK to the conditioning blueprint (omit for non-blueprint pitches, e.g. Exilus).")
     parser.add_argument("--url", required=True, help="Live TikTok post URL.")
     parser.add_argument(
         "--posted-at",
