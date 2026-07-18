@@ -140,7 +140,17 @@ between 60 and 100 words COMBINED. The render model responds to dense concrete n
 not elaboration; every word must earn its place on screen. Count as you write: a typical \
 passing script spends ~10 words on the subject detail, ~10 on scene, ~15 on world prose, \
 and ~8-12 per beat across 4-6 beats. Overwriting is a structural failure that gets \
-bounced back to you."""
+bounced back to you.
+10. STAGE EVERY ENTRANCE — ANTICIPATION OR SURPRISE, NEVER UNCHOSEN. For anything that \
+acts on the story but is not present when the clip opens, CHOOSE how it arrives: \
+anticipation (the viewer sees or hears it coming — name its origin and approach before \
+it acts: "a helicopter appears far against the skyline, approaching fast") or surprise \
+(its sudden appearance IS the beat — stage the shock with an impact and a reaction). \
+Banned: the unchosen middle, a thing materializing at its final position because nothing \
+decided. A watched render measured this: "helicopter buzzes close" with no origin made \
+it pop into existence at point-blank; the same story staged with an approach rendered \
+cause and effect. Objects already in the scene, and reveals the camera finds by turning, \
+need no entrance — this rule is only for things that ARRIVE."""
 
 
 POV_SCRIPT_SYSTEM_PROMPT = f"""You are the script stage for a POV (first-person, \

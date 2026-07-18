@@ -174,6 +174,23 @@ def test_prompt_teaches_escalation_and_event_beats() -> None:
     assert "CHANGE THE SCENE" in llm.system
 
 
+def test_prompt_teaches_entrance_staging_choice() -> None:
+    """Staging-candidate promotion (2026-07-18, kaiju run watch): 'helicopter
+    buzzes close' with no origin popped into existence at point-blank; the
+    re-staged approach beat rendered cause->effect on the passing watch. The
+    rule is a forced CHOICE (anticipation or surprise), never a blanket
+    everything-must-enter mandate — in-scene objects and camera-turn reveals
+    are exempt by its own text."""
+    llm = FakeLLM(_script())
+    writer = POVScriptWriter(llm=llm)
+
+    writer.develop(SAMPLE_PITCH)
+
+    assert "STAGE EVERY ENTRANCE" in llm.system
+    assert "ANTICIPATION OR SURPRISE, NEVER UNCHOSEN" in llm.system
+    assert "things that ARRIVE" in llm.system
+
+
 def test_prompt_teaches_beat_free_action_lines_fail() -> None:
     """The BUG-031/L9 lesson (beat-free lines render in zero frames) must
     survive relocation into this seat's prompt, uncompressed (StoryArchitect
