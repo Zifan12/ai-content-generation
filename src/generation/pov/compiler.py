@@ -46,9 +46,9 @@ is a seam-2 assertion, and nothing else in the pipeline checks it).
 
 import re
 from collections.abc import Sequence
-from pathlib import Path
 
 from src.generation.executor import _sanitize_prompt
+from src.generation.pov.asset_check import ResolvedCharacter
 from src.generation.pov.schemas import CompiledPOVPrompt, POVScript
 from src.generation.render_adapters.rules import RenderRules
 
@@ -224,10 +224,45 @@ def _flatten_actions(script: POVScript) -> tuple[list[str], list[str]]:
     return action_items, audio_items
 
 
+def _binding_sentences(
+    bound_characters: Sequence[ResolvedCharacter],
+    grammar: dict,
+    protagonist_role: str,
+) -> list[str]:
+    """Compose one positional binding sentence per bound character, in upload order.
+
+    Templates come from ``pov_grammar.ip_binding`` (ticket 11): the
+    protagonist form is the probe-frozen wording (ip_probe roll 1b, user
+    watch PASS — arms bound to the refs, NO summoned figure), the in_frame
+    form is the scene-lane's measured visible-character sentence. The
+    ``imageN`` counter runs continuously across characters in the SAME order
+    the CLI ``--image`` flags are emitted (both derive from
+    ``bound_characters``), so numbering can never drift from upload order.
+    in_frame characters are named by their slug with underscores as spaces —
+    the prompt needs a readable noun, and the slug is the only name the
+    pipeline has for them.
+    """
+    sentences: list[str] = []
+    next_image = 1
+    for character in bound_characters:
+        image_list = ", ".join(
+            f"image{n}" for n in range(next_image, next_image + len(character.ref_paths))
+        )
+        next_image += len(character.ref_paths)
+        template = grammar["ip_binding"][character.role]["text"]
+        text = template.replace("{image_list}", image_list)
+        if character.role == "protagonist":
+            text = text.replace("[PROTAGONIST]", protagonist_role)
+        else:
+            text = text.replace("[NAME]", character.slug.replace("_", " "))
+        sentences.append(text)
+    return sentences
+
+
 def compile_pov_prompt(
     script: POVScript,
     rules: RenderRules,
-    ref_paths: Sequence[str | Path] = (),
+    bound_characters: Sequence[ResolvedCharacter] = (),
 ) -> CompiledPOVPrompt:
     """Compile a :class:`POVScript` into the final prompt text, CLI command, and cost line.
 
@@ -235,13 +270,15 @@ def compile_pov_prompt(
     (which itself is a read-once in-memory view over the committed yaml, not
     a live file read per call). No LLM call, no network, no render.
 
-    ``ref_paths`` (ticket 10) are the asset gate's validated reference images
-    in upload order; each becomes a ``--image`` flag on the CLI command IN
-    THAT ORDER — the CLI auto-uploads plain paths for seedance_2_0
-    (executor.py, measured 2026-07-06) and upload order defines the
-    ``imageN`` numbering ticket 11's binding clause will use, so order is a
-    contract. The prompt text itself is unchanged by refs in this ticket
-    (binding clause = ticket 11, frozen from probe evidence first).
+    ``bound_characters`` (tickets 10+11) are the asset gate's validated
+    canon subjects in upload order. Each contributes (a) one positional
+    binding sentence spliced directly after the Subject sentence — the
+    probe-frozen wording for the protagonist role, the scene-lane measured
+    form for in_frame — and (b) its reference paths as ``--image`` flags on
+    the CLI command. Both derive from the same sequence, so the ``imageN``
+    numbering and the upload order can never disagree. The CLI auto-uploads
+    plain paths for seedance_2_0 (executor.py, measured 2026-07-06). Empty
+    (the default) compiles byte-identically to the slice-① output.
 
     Raises:
         POVWordBudgetError: if the compiled body's word count falls outside
@@ -293,6 +330,9 @@ def compile_pov_prompt(
     subject_sentence = _ensure_terminal_period(
         f"{unseen_protagonist} {protagonist_detail}".strip()
     )
+    # Binding sentences (ticket 11) sit directly after the Subject sentence —
+    # the probe roll-1b byte pattern. Fixed config templates, never scrubbed.
+    binding_block = _binding_sentences(bound_characters, grammar, role)
     # Every builder ends its sentence via _ensure_terminal_period — fragments
     # arrive period-stripped from _normalize_fragment (the punctuation
     # contract lives on that helper's docstring).
@@ -308,6 +348,7 @@ def compile_pov_prompt(
         [
             camera_as_eyes,
             subject_sentence,
+            *binding_block,
             action_sentence,
             scene_sentence,
             world_sentence,
@@ -340,7 +381,8 @@ def compile_pov_prompt(
     # characters the Windows .cmd-shim CreateProcess quirk can't reliably
     # escape (module docstring there) — reused here ONLY for the copy-paste
     # CLI string; prompt_text itself stays untouched/readable.
-    ref_flags = "".join(f' --image "{path}"' for path in ref_paths)
+    all_ref_paths = [path for character in bound_characters for path in character.ref_paths]
+    ref_flags = "".join(f' --image "{path}"' for path in all_ref_paths)
     cli_command = (
         f'higgsfield generate create {model_id} --prompt "{_sanitize_prompt(prompt_text)}" '
         f"--aspect_ratio {_ASPECT_RATIO} --duration {script.duration_seconds} "

@@ -271,11 +271,13 @@ def run_pov_pipeline(
             "money_shot from the pitcher (ticket 07)"
         )
 
-    # Asset gate FIRST (ticket 10): a missing reference must never cost a
-    # pitcher or script-writer call, so the gate runs before any LLM seat.
-    ref_paths: list[Path] = []
+    # Asset gate FIRST (tickets 10+11): a declared character with no references
+    # halts here — before the pitcher or script seat can spend an LLM call.
+    resolved: list = []
     if characters:
-        ref_paths = check_assets(parse_character_args(characters), refs_root)
+        resolved = check_assets(parse_character_args(characters), Path(refs_root))
+    ref_paths = [path for character in resolved for path in character.ref_paths]
+    ref_bound = tuple(character.slug for character in resolved)
 
     slate: POVPitchSlate | None = None
     if topic is not None:
@@ -288,8 +290,8 @@ def run_pov_pipeline(
         assert idea is not None  # narrowed by the exactly-one check above
         pitch = _pitch_from_idea(idea, money_shot)
 
-    script = develop_valid_script(script_writer, pitch, rules)
-    compiled = compile_pov_prompt(script, rules, ref_paths=ref_paths)
+    script = develop_valid_script(script_writer, pitch, rules, ref_bound=ref_bound)
+    compiled = compile_pov_prompt(script, rules, bound_characters=resolved)
     sheet = build_render_sheet(pitch, script, compiled, rules, ref_paths=ref_paths)
 
     slug_source = idea if idea is not None else topic

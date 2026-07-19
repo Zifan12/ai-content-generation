@@ -119,6 +119,22 @@ class DeclaredCharacter:
     role: str
 
 
+@dataclass(frozen=True)
+class ResolvedCharacter:
+    """A gate-validated character: slug, role, and its reference paths in order.
+
+    ``ref_paths`` are filename-sorted within the character; a list of
+    ResolvedCharacters from :func:`check_assets` is in UPLOAD ORDER
+    (protagonist characters first) — flattening their ``ref_paths`` in
+    sequence yields the exact ``imageN`` numbering the compiler's binding
+    sentences and ``--image`` flags share.
+    """
+
+    slug: str
+    role: str
+    ref_paths: tuple  # tuple[Path | str, ...] — tuple keeps the record hashable/frozen
+
+
 def parse_character_args(values: list[str]) -> list[DeclaredCharacter]:
     """Parse repeated ``--character <slug>[:role]`` values.
 
@@ -176,14 +192,19 @@ def _request_sheet(missing: list[DeclaredCharacter], refs_root: Path) -> str:
     )
 
 
-def check_assets(characters: list[DeclaredCharacter], refs_root: str | Path) -> list[Path]:
-    """Validate every declared character's references; return upload-ordered paths.
+def check_assets(
+    characters: list[DeclaredCharacter], refs_root: str | Path
+) -> list[ResolvedCharacter]:
+    """Validate every declared character's references; return them upload-ordered.
 
     Returns:
-        Every reference path in deterministic upload order — protagonist
-        characters first (declaration order), then in_frame characters
-        (declaration order), each character's files filename-sorted. This
-        order defines the ``imageN`` numbering downstream (module docstring).
+        One :class:`ResolvedCharacter` per declared character, in
+        deterministic upload order — protagonist characters first
+        (declaration order), then in_frame characters (declaration order),
+        each character's files filename-sorted. Flattening their
+        ``ref_paths`` in sequence defines the ``imageN`` numbering the
+        compiler's binding sentences and ``--image`` flags share (module
+        docstring).
 
     Raises:
         POVAssetRequestNeeded: if any declared character's directory is
@@ -191,8 +212,8 @@ def check_assets(characters: list[DeclaredCharacter], refs_root: str | Path) -> 
             the operator sources them all in one pass, not one rerun each.
         ValueError: if a present directory fails validation — reference
             count outside the role's bounds, a non-image file in the
-            directory, or the total across characters exceeding the measured
-            CLI cap.
+            directory, unreadable image bytes, or the total across
+            characters exceeding the measured CLI cap.
     """
     root = Path(refs_root)
     missing = [
@@ -231,15 +252,19 @@ def check_assets(characters: list[DeclaredCharacter], refs_root: str | Path) -> 
         per_character[character.slug] = files
 
     ordered = [
-        path
+        ResolvedCharacter(
+            slug=character.slug,
+            role=character.role,
+            ref_paths=tuple(per_character[character.slug]),
+        )
         for role in _ALLOWED_ROLES
         for character in characters
         if character.role == role
-        for path in per_character[character.slug]
     ]
-    if len(ordered) > _MAX_TOTAL_REFS:
+    total = sum(len(c.ref_paths) for c in ordered)
+    if total > _MAX_TOTAL_REFS:
         raise ValueError(
-            f"{len(ordered)} total references across characters exceeds the "
+            f"{total} total references across characters exceeds the "
             f"seedance_2_0 cap of {_MAX_TOTAL_REFS} images (render_rules.yaml "
             f"limits.max_image_references, measured) — trim the libraries"
         )

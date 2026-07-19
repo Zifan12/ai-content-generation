@@ -591,6 +591,18 @@ pov_grammar:
     constraints_block:
       text: "Constraints: no watermark, no logo, no on-screen text, no extra hands. Generate the video without subtitles."
       evidence: "probe:render_taste_test/pov_probe/PROBE_SHEET.md (both probes, verbatim closing sentence; USER WATCH CONFIRMED PASS, no text/watermark/subtitle leak observed) — restates global_constraints.always_append (this file) in POV-specific wording so the compiler (ticket 02) never has to cross-read an unrelated block for this fixed clause"
+  ip_binding:
+    # Ticket 11 (slice ②): positional binding sentences for canon-IP subjects.
+    # Templates: [PROTAGONIST]/[NAME] substituted by the compiler; {image_list}
+    # becomes "imageN, imageN+1, ..." in upload order (asset gate's ordering —
+    # protagonist characters' refs first). Composed by CODE directly after the
+    # Subject sentence; appearance is NEVER re-described in prose (BUG-021).
+    protagonist:
+      text: "The [PROTAGONIST]'s arms and hands are those of the character shown in {image_list}."
+      evidence: "probe:render_taste_test/ip_probe/PROBE_SHEET.md roll 1b (2026-07-19, 30cr, USER WATCH PASS all 5 register questions: arms matched the official-art limb crops, NO summoned figure, beam drew, filter passed, register held) + DECISIONS_LOCKED.md L11 — this exact sentence, positioned directly after the Subject sentence, is the roll-1 byte pattern; ref recipe = 2-4 crops of what-the-camera-sees, no face/full-body panels"
+    in_frame:
+      text: "[NAME] is the character shown in {image_list}."
+      evidence: "scene-lane MEASURED form (seedance_2_0.dialect.ref_binding this file, FINDINGS.md; adapter.py _identity_block composes it live) — Tier-1 for VISIBLE characters on this CLI. The POV in-frame RENDER itself is unprobed (probe deferred until a story needs the role, PRD-slice2 decision 3) — first in-frame watch promotes or amends this row"
   protagonist_detail_craft:
     hands_visible:
       rule: "The script stage's protagonist_detail MUST express hands-visibility inline in the Subject: sentence, in story-specific wording (e.g. 'gloved hands occasionally visible at the bottom of frame' / 'bare hands visible in frame') — it is NOT a fixed clause the compiler injects. Enforced at the script-writer prompt level only; no lexical code check (a synonym like 'gauntleted fingers' is valid — lexical checks can't read prose, see memory project_spine_check_rejected_lexical)."

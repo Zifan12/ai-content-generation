@@ -17,6 +17,7 @@ import re
 
 import pytest
 
+from src.generation.pov.asset_check import ResolvedCharacter
 from src.generation.pov.compiler import POVWordBudgetError, compile_pov_prompt
 from src.generation.pov.schemas import CompiledPOVPrompt, POVBeat, POVScript
 from src.generation.render_adapters.rules import RenderRules
@@ -375,11 +376,16 @@ def test_world_sentence_is_punctuated_before_anti_drift(rules: RenderRules) -> N
 
 
 def test_cli_command_carries_image_flags_in_ref_order(rules: RenderRules) -> None:
-    """Ticket 10: reference paths become repeated --image flags on the copy-paste
-    CLI command, in the exact order given — upload order defines imageN for
-    ticket 11's binding clause, so order is a contract, not cosmetics."""
-    refs = ["refs/hero/a_arm.png", "refs/hero/b_glove.png"]
-    compiled = compile_pov_prompt(_script(), rules, ref_paths=refs)
+    """Ticket 10/11: reference paths become repeated --image flags on the
+    copy-paste CLI command, in upload order — the same order the binding
+    clause numbers imageN by, so order is a contract, not cosmetics."""
+    bound = [
+        ResolvedCharacter(
+            slug="hero", role="protagonist",
+            ref_paths=["refs/hero/a_arm.png", "refs/hero/b_glove.png"],
+        )
+    ]
+    compiled = compile_pov_prompt(_script(), rules, bound_characters=bound)
 
     first = compiled.cli_command.index('--image "refs/hero/a_arm.png"')
     second = compiled.cli_command.index('--image "refs/hero/b_glove.png"')
@@ -389,6 +395,60 @@ def test_cli_command_carries_image_flags_in_ref_order(rules: RenderRules) -> Non
 def test_cli_command_without_refs_has_no_image_flag(rules: RenderRules) -> None:
     compiled = compile_pov_prompt(_script(), rules)
     assert "--image" not in compiled.cli_command
+
+
+def test_protagonist_binding_clause_frozen_wording_and_position(rules: RenderRules) -> None:
+    """Ticket 11: the probe-frozen binding clause (ip_probe roll 1b, user-watch
+    PASS 2026-07-19) compiles verbatim from config — role substituted, imageN
+    list matching upload order — positioned directly after the Subject sentence
+    (the roll-1 byte pattern)."""
+    bound = [
+        ResolvedCharacter(
+            slug="silverhero", role="protagonist",
+            ref_paths=["refs/silverhero/a.png", "refs/silverhero/b.png"],
+        )
+    ]
+    script = _script()  # protagonist_role = "explorer"
+    compiled = compile_pov_prompt(script, rules, bound_characters=bound)
+
+    expected = (
+        "The explorer's arms and hands are those of the character shown in image1, image2."
+    )
+    assert expected in compiled.prompt_text
+    assert compiled.prompt_text.index("Subject:") < compiled.prompt_text.index(expected)
+    assert compiled.prompt_text.index(expected) < compiled.prompt_text.index("Action, in order:")
+
+
+def test_multi_character_binding_numbers_continue_across_characters(
+    rules: RenderRules,
+) -> None:
+    """imageN numbering runs continuously across characters in upload order:
+    protagonist's refs first (image1..2), then the in_frame character's
+    (image3..4) using the scene-lane visible-character form."""
+    bound = [
+        ResolvedCharacter(
+            slug="silverhero", role="protagonist",
+            ref_paths=["refs/silverhero/a.png", "refs/silverhero/b.png"],
+        ),
+        ResolvedCharacter(
+            slug="storm_foe", role="in_frame",
+            ref_paths=["refs/storm_foe/mask.png", "refs/storm_foe/body.png"],
+        ),
+    ]
+    compiled = compile_pov_prompt(_script(), rules, bound_characters=bound)
+
+    assert "shown in image1, image2." in compiled.prompt_text
+    assert "storm foe is the character shown in image3, image4." in compiled.prompt_text
+
+
+def test_zero_characters_compiles_byte_identical_to_slice_one(rules: RenderRules) -> None:
+    """No declared characters -> prompt text byte-identical to the pre-slice-②
+    compiler output (ticket 11 acceptance: zero-character runs unchanged)."""
+    script = _script()
+    assert (
+        compile_pov_prompt(script, rules).prompt_text
+        == compile_pov_prompt(script, rules, bound_characters=()).prompt_text
+    )
 
 
 @pytest.mark.parametrize("duration", [10, 15])

@@ -198,6 +198,38 @@ only as material describing the story or its structural defects.
 Return one repaired POVScript."""
 
 
+# Appended to either system prompt when the run declares ref-bound canon
+# subjects (ticket 11). Appearance ownership is the load-bearing rule:
+# re-describing what a reference image shows makes the prompt fight its own
+# refs (BUG-021's defect class, deleted repo-wide 2026-07-14; refs beat
+# prompts, reference-material-playbook.md:112-114). Prompt-level enforcement
+# ONLY — no lexical code check (a synonym and a violation look identical to
+# string matching, memory project_spine_check_rejected_lexical); promote to a
+# harder layer only on watched recurrence (whack-a-mole policy).
+_REF_BOUND_SYSTEM_ADDENDUM = """
+
+REFERENCE-BOUND SUBJECTS (this run only): the subjects listed in the
+<reference_bound_subjects> tag are rendered from reference images that OWN their
+appearance completely. For these subjects you must NOT describe colors, materials,
+costume, suit design, markings, or any visual identity anywhere in your prose —
+naming the subject by role is enough; the images carry the look. Your
+protagonist_detail still expresses hands-visibility, but generically (e.g. "gloved
+hands visible at the bottom of frame") — never the glove's color or design. A prose
+description that contradicts a reference image causes the render to blend or
+alternate between the two; the images always win."""
+
+
+def _ref_bound_block(ref_bound: "tuple[str, ...] | list[str]") -> str:
+    """Render the ref-bound subject slugs as a tagged data block (ticket 11).
+
+    Same untrusted-data-tagging convention as ``_pitch_block``: the list
+    tells the model WHICH subjects the addendum's appearance-ownership rule
+    applies to; the tag wrapper keeps it data, not instructions.
+    """
+    lines = "\n".join(f"- {slug}" for slug in ref_bound)
+    return f"<reference_bound_subjects>\n{lines}\n</reference_bound_subjects>"
+
+
 def _pitch_block(pitch: POVPitch) -> str:
     """Render the picked pitch as a tagged <pitch> data block.
 
@@ -235,7 +267,7 @@ class POVScriptWriter:
         self.llm = llm
 
     @traced(name="pov_script_writer")
-    def develop(self, pitch: POVPitch) -> POVScript:
+    def develop(self, pitch: POVPitch, ref_bound: tuple[str, ...] = ()) -> POVScript:
         """
         Develop the picked pitch into a full POVScript via ONE structured-output call.
 
@@ -247,20 +279,33 @@ class POVScriptWriter:
         Args:
             pitch: The picked POVPitch (a topic-mode slate pick, ticket 05,
                 or the operator's --idea text wrapped verbatim, ticket 03).
+            ref_bound: Slugs of ref-bound canon subjects this run declared
+                (ticket 11). Non-empty → the appearance-ownership addendum
+                joins the system prompt and the slugs ride along as a tagged
+                data block; empty → the call is byte-identical to slice ①'s.
 
         Returns:
             The authored POVScript.
         """
+        system = POV_SCRIPT_SYSTEM_PROMPT
+        prompt = _pitch_block(pitch)
+        if ref_bound:
+            system += _REF_BOUND_SYSTEM_ADDENDUM
+            prompt = f"{prompt}\n\n{_ref_bound_block(ref_bound)}"
         return self.llm.parse(
-            prompt=_pitch_block(pitch),
+            prompt=prompt,
             response_model=POVScript,
-            system=POV_SCRIPT_SYSTEM_PROMPT,
+            system=system,
             max_tokens=_SCRIPT_MAX_TOKENS,
         )
 
     @traced(name="pov_script_writer_repair")
     def repair(
-        self, pitch: POVPitch, failed_script: POVScript, violations: list[str]
+        self,
+        pitch: POVPitch,
+        failed_script: POVScript,
+        violations: list[str],
+        ref_bound: tuple[str, ...] = (),
     ) -> POVScript:
         """
         Produce a single repaired script for one that failed structural validation.
@@ -290,9 +335,13 @@ class POVScriptWriter:
             f"<failed_script>\n{failed_script.model_dump_json(indent=2)}\n</failed_script>\n\n"
             f"{_violations_block(violations)}"
         )
+        system = POV_SCRIPT_REPAIR_SYSTEM_PROMPT
+        if ref_bound:
+            system += _REF_BOUND_SYSTEM_ADDENDUM
+            prompt = f"{prompt}\n\n{_ref_bound_block(ref_bound)}"
         return self.llm.parse(
             prompt=prompt,
             response_model=POVScript,
-            system=POV_SCRIPT_REPAIR_SYSTEM_PROMPT,
+            system=system,
             max_tokens=_SCRIPT_MAX_TOKENS,
         )

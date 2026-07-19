@@ -83,14 +83,20 @@ class FakeScriptWriter:
         self._result = result
         self._repaired = repaired
         self.pitches: list[POVPitch] = []
+        self.ref_bound_calls: list[tuple[str, ...]] = []
         self.repair_calls: list[tuple[POVPitch, POVScript, list[str]]] = []
 
-    def develop(self, pitch: POVPitch) -> POVScript:
+    def develop(self, pitch: POVPitch, ref_bound: tuple[str, ...] = ()) -> POVScript:
         self.pitches.append(pitch)
+        self.ref_bound_calls.append(tuple(ref_bound))
         return self._result
 
     def repair(
-        self, pitch: POVPitch, failed_script: POVScript, violations: list[str]
+        self,
+        pitch: POVPitch,
+        failed_script: POVScript,
+        violations: list[str],
+        ref_bound: tuple[str, ...] = (),
     ) -> POVScript:
         self.repair_calls.append((pitch, failed_script, violations))
         assert self._repaired is not None, "test did not configure a repaired script"
@@ -546,6 +552,30 @@ def test_ref_count_out_of_bounds_raises_named_error(tmp_path) -> None:
             output_dir=tmp_path / "out",
         )
     assert writer.pitches == []
+
+
+def test_declared_character_binding_reaches_prompt_and_script_seat(tmp_path) -> None:
+    """Ticket 11 end-to-end: a --character run's compiled prompt carries the
+    probe-frozen binding clause with imageN numbering, and the script seat is
+    told which subjects are ref-bound (so its craft rule can forbid appearance
+    prose for them)."""
+    _write_refs(tmp_path / "refs", "silverhero", ["a.png", "b.png"])
+
+    writer = FakeScriptWriter(_script())
+    run_dir = run_pov_pipeline(
+        writer, _rules(), SAMPLE_IDEA,
+        characters=["silverhero"],
+        refs_root=tmp_path / "refs",
+        output_dir=tmp_path / "out",
+    )
+
+    prompt_text = (run_dir / "prompt.txt").read_text(encoding="utf-8")
+    # _script()'s protagonist_role is "diver" — frozen template, role substituted.
+    assert (
+        "The diver's arms and hands are those of the character shown in image1, image2."
+        in prompt_text
+    )
+    assert writer.ref_bound_calls == [("silverhero",)]
 
 
 def test_garbage_bytes_behind_png_extension_raise(tmp_path) -> None:

@@ -180,12 +180,16 @@ class FakeScriptWriter:
         self.develop_calls: list[POVPitch] = []
         self.repair_calls: list[tuple[POVPitch, POVScript, list[str]]] = []
 
-    def develop(self, pitch: POVPitch) -> POVScript:
+    def develop(self, pitch: POVPitch, ref_bound: tuple[str, ...] = ()) -> POVScript:
         self.develop_calls.append(pitch)
         return self._first
 
     def repair(
-        self, pitch: POVPitch, failed_script: POVScript, violations: list[str]
+        self,
+        pitch: POVPitch,
+        failed_script: POVScript,
+        violations: list[str],
+        ref_bound: tuple[str, ...] = (),
     ) -> POVScript:
         self.repair_calls.append((pitch, failed_script, violations))
         assert self._repaired is not None, "test did not configure a repaired script"

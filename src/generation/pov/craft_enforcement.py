@@ -108,7 +108,12 @@ def check_structure(script: POVScript, rules: RenderRules) -> list[str]:
     return violations
 
 
-def develop_valid_script(script_writer, pitch: POVPitch, rules: RenderRules) -> POVScript:
+def develop_valid_script(
+    script_writer,
+    pitch: POVPitch,
+    rules: RenderRules,
+    ref_bound: tuple[str, ...] = (),
+) -> POVScript:
     """
     Develop ``pitch`` into a structurally valid POVScript, with one bounded repair.
 
@@ -132,6 +137,9 @@ def develop_valid_script(script_writer, pitch: POVPitch, rules: RenderRules) -> 
             Decisions).
         rules: A loaded RenderRules instance, passed through to
             :func:`check_structure`.
+        ref_bound: Slugs of ref-bound canon subjects (ticket 11), passed
+            through unchanged to both ``develop`` and ``repair`` so the
+            appearance-ownership rule applies on the repair call too.
 
     Returns:
         A structurally valid POVScript.
@@ -140,12 +148,12 @@ def develop_valid_script(script_writer, pitch: POVPitch, rules: RenderRules) -> 
         POVStructuralViolationError: if a violation survives the one bounded
             repair attempt.
     """
-    script = script_writer.develop(pitch)
+    script = script_writer.develop(pitch, ref_bound=ref_bound)
     violations = check_structure(script, rules)
     if not violations:
         return script
 
-    script = script_writer.repair(pitch, script, violations)
+    script = script_writer.repair(pitch, script, violations, ref_bound=ref_bound)
     violations = check_structure(script, rules)
     if violations:
         raise POVStructuralViolationError(
