@@ -297,6 +297,31 @@ media policy). Two 10s/480p/9:16 text-only Seedance 2.0 single generations:**
 - Consumer: the POV pipeline (`.scratch/pov-pipeline/PRD.md`); grammar lands evidence-tagged
   in `config/render_rules.yaml` `pov_grammar`.
 
+## L11. Canon-IP refs bind to the POV protagonist's limbs — PROVEN (2026-07-19, 30cr net, user-watch PASS)
+
+**Full record: `render_taste_test/ip_probe/PROBE_SHEET.md` (local, untracked per this dir's media
+policy). One 10s/480p/9:16 Seedance 2.0 generation, 4 reference crops (`refs/ultraman/`).**
+
+- **Costume CROPS (limbs-only, no face/full-body) bind to the POV camera-holder's arms** — arms
+  matched the official-art refs on the first roll. Zero corpus precedent existed; now measured.
+- **The character is NOT summoned into frame as a separate figure** by feeding refs of an
+  "unseen" protagonist. Load-bearing binding sentence, frozen verbatim (position: directly after
+  the Subject sentence): *"The [PROTAGONIST]'s arms and hands are those of the character shown in
+  image1, ..., imageN."*
+- **Beam/energy-attack VFX renders in POV register** — kinetic dashed-particle-stream vocabulary,
+  origin noun in the release clause. First watched beam evidence in repo or corpus.
+- **Content filter PASSED with refs + action-wrapped combat phrasing** attached.
+- **style_register's "No 3D, no cartoon, no VFX aesthetic" negation does NOT block beam VFX**
+  (drew with the clause present) — RESEARCH-slice2 risk #10 closed, clause stays verbatim.
+- Craft-tier findings (not register): payoff-reaction needs countable beats; sustained effects
+  need an authored END beat (candidate rule, first instance); impact moments need their own
+  audio event (existing rule, was under-authored by hand).
+- Attempt 1a failed server-side with no reason and REFUNDED; identical retry succeeded —
+  transient class (L8), diagnose-by-retry-once remains the correct first move.
+- Consumer: POV slice ② ticket 11 (`.scratch/pov-pipeline/issues/11-ref-binding-compiler-craft.md`)
+  freezes the binding clause into `pov_grammar`; asset-gate recipe (2-4 official-art crops of
+  what-the-camera-sees) validated end to end.
+
 *Change policy: Tier 1 changes require a paid-render counter-evidence note (date +
 artifact path). Tier 2 changes require a spec supersession. Either way, edit THIS
 file in the same commit — it is the file other docs point at.*
