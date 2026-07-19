@@ -191,6 +191,23 @@ def test_prompt_teaches_entrance_staging_choice() -> None:
     assert "things that ARRIVE" in llm.system
 
 
+def test_prompt_teaches_scale_anchoring_for_nonhuman_protagonists() -> None:
+    """Scale-class promotion (BUG-034, 2026-07-19, /root-cause gate): 2nd watched
+    instance of wrong-scale rendering (giant read person-sized; earlier: dollhouse
+    toy textures). Disease: no scale-anchoring contract existed, and the word-economy
+    rule taught cutting the anchors first. The rule is judgment-shaped: relative cues
+    sizing the PROTAGONIST against a normal world — never shrinking the world — and
+    scale anchors are exempted from first-cut word trimming."""
+    llm = FakeLLM(_script())
+    writer = POVScriptWriter(llm=llm)
+
+    writer.develop(SAMPLE_PITCH)
+
+    assert "ANCHOR NON-HUMAN SCALE WITH RELATIVE CUES" in llm.system
+    assert "never anchor by shrinking the world" in llm.system.lower()
+    assert "LAST words cut" in llm.system
+
+
 def test_prompt_teaches_beat_free_action_lines_fail() -> None:
     """The BUG-031/L9 lesson (beat-free lines render in zero frames) must
     survive relocation into this seat's prompt, uncompressed (StoryArchitect

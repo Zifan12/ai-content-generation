@@ -1215,3 +1215,24 @@ Track every shipped feature that fails, what was tried, and what fixed it.
   now maps or explicitly declines EVERY probe slot (Camera: mid-prompt line recorded as deliberately
   not ported — no watched defect in three watches; port on recurrence), and
   test_style_clause_present_per_register_and_before_audio is the regression check.
+
+### BUG-034 - Script seat renders non-human protagonists at wrong scale (no scale-anchoring contract)
+- Date opened: 2026-07-19
+- Status: fixed (craft rule 11 promoted via /root-cause gate); render validation pending next 480p watch
+- Feature: `src/generation/pov/script_writer.py` `_POV_SCRIPT_FIELD_SPEC`
+- Behavior: ticket-12 validation take (run 20260719_114001, 45cr, operator watch): Ultraman reads
+  person-sized — surrounding objects near-equal scale. Secondary: the amended-idea rerun compressed
+  the operator's explicit anchors (rooftops-at-chest, cars-at-ankles) OUT of the script under the
+  word budget, keeping only weak vantage cues.
+- Root cause (root-cause gate run 2026-07-19): the seat has NO scale-anchoring contract — nothing in
+  the shared field spec requires relative-size cues for a non-human-scale protagonist, and rule 9
+  (word economy, "cut to fit") actively teaches cutting those anchors first because they read as
+  decoration. CLASS defect, 2nd watched instance (1st: kaiju dollhouse toy-textures 2026-07-17,
+  patched at pitch-vocabulary level only, never structurally) - promoted per whack-a-mole policy.
+- Fix: craft rule 11 "ANCHOR NON-HUMAN SCALE WITH RELATIVE CUES - LOAD-BEARING, NEVER CUT" appended
+  to `_POV_SCRIPT_FIELD_SPEC` (shared by develop AND repair prompts - one edit, both call sites):
+  relative cues size the PROTAGONIST against a normal world ("rooftops at chest height"); never
+  shrink the world ("miniature city" renders toy textures - the banked kaiju lesson, now in code);
+  scale anchors exempted from first-cut word trimming. Regression check:
+  test_prompt_teaches_scale_anchoring_for_nonhuman_protagonists.
+- Validation evidence: pending - next giant-protagonist 480p watch judges whether the rule holds.

@@ -150,7 +150,17 @@ Banned: the unchosen middle, a thing materializing at its final position because
 decided. A watched render measured this: "helicopter buzzes close" with no origin made \
 it pop into existence at point-blank; the same story staged with an approach rendered \
 cause and effect. Objects already in the scene, and reveals the camera finds by turning, \
-need no entrance — this rule is only for things that ARRIVE."""
+need no entrance — this rule is only for things that ARRIVE.
+11. ANCHOR NON-HUMAN SCALE WITH RELATIVE CUES — LOAD-BEARING, NEVER CUT. When the \
+protagonist's scale differs from human (giant, tiny, creature), the world prose and \
+beats MUST state what reaches what from the POV vantage: "rooftops at chest height", \
+"cars small below at your ankles", "the doorknob towers overhead". Without these \
+relative cues the render defaults to human eye height and the scale premise silently \
+dies — two watched renders measured this (a giant reading person-sized; toy-textured \
+buildings). Never anchor by shrinking the world ("miniature city", "tiny buildings" — \
+renders TOY textures); size the PROTAGONIST relative to a normal world. These anchors \
+are load-bearing structure, not decoration: when cutting words for the budget (rule 9), \
+scale anchors are among the LAST words cut, never the first."""
 
 
 POV_SCRIPT_SYSTEM_PROMPT = f"""You are the script stage for a POV (first-person, \
