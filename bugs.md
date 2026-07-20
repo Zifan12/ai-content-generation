@@ -1236,3 +1236,23 @@ Track every shipped feature that fails, what was tried, and what fixed it.
   scale anchors exempted from first-cut word trimming. Regression check:
   test_prompt_teaches_scale_anchoring_for_nonhuman_protagonists.
 - Validation evidence: pending - next giant-protagonist 480p watch judges whether the rule holds.
+
+### BUG-035 - Script seat leaves sustained effects unended (unauthored hold deforms hands)
+- Date opened: 2026-07-19
+- Status: fixed (craft rule 12 promoted on 2nd watched instance); render validation pending next
+  sustained-effect 480p watch
+- Feature: `src/generation/pov/script_writer.py` `_POV_SCRIPT_FIELD_SPEC`
+- Behavior: take_480p_roll2 (135534 config, operator watch 2026-07-19 evening): after beam release
+  the beam wanders left before finding the kaiju (separate FIRST-INSTANCE aim defect - log only,
+  not promoted), then keeps firing while the in-frame hands visibly deform ("hands are all messed
+  up") - the script's remaining beats were all kaiju-side, leaving the hands unauthored mid-hold.
+  Instance 1: ip_probe roll 1b craft defect #3 (beam never ends, still firing after the kaiju
+  fell) - logged on the probe sheet as a candidate rule, promote-on-recurrence.
+- Root cause: the script contract authors effect RELEASE but nothing after - no end beat, and no
+  authored limb action during the hold. Unauthored hold = model improvises the limbs = deformation
+  exposure on the register's only identity surface (hands).
+- Fix: craft rule 12 "END EVERY SUSTAINED EFFECT" appended to `_POV_SCRIPT_FIELD_SPEC` (shared by
+  develop AND repair prompts - one edit, both call sites): a released continuous effect gets an
+  authored countable END action; sustaining limbs hold/act on something NAMED until then.
+  Regression check: test_prompt_teaches_sustained_effect_end_beat.
+- Validation evidence: pending - next sustained-effect 480p watch judges whether the rule holds.

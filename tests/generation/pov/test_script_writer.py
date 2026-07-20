@@ -208,6 +208,22 @@ def test_prompt_teaches_scale_anchoring_for_nonhuman_protagonists() -> None:
     assert "LAST words cut" in llm.system
 
 
+def test_prompt_teaches_sustained_effect_end_beat() -> None:
+    """Sustained-effect promotion (BUG-035, 2026-07-19): 2nd watched instance of an
+    unauthored effect hold (ip_probe roll 1b: beam never ends, still firing after the
+    kaiju fell; take_480p_roll2: hands deform mid-hold while the beam keeps firing).
+    The rule is judgment-shaped: a released continuous effect gets an authored countable
+    END action, and the sustaining limbs never linger unauthored until it lands."""
+    llm = FakeLLM(_script())
+    writer = POVScriptWriter(llm=llm)
+
+    writer.develop(SAMPLE_PITCH)
+
+    assert "END EVERY SUSTAINED EFFECT" in llm.system
+    assert "the stream cuts off, both arms lower" in llm.system
+    assert "improvises the hold" in llm.system
+
+
 def test_prompt_teaches_beat_free_action_lines_fail() -> None:
     """The BUG-031/L9 lesson (beat-free lines render in zero frames) must
     survive relocation into this seat's prompt, uncompressed (StoryArchitect

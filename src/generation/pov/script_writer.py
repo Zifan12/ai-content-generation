@@ -160,7 +160,16 @@ dies — two watched renders measured this (a giant reading person-sized; toy-te
 buildings). Never anchor by shrinking the world ("miniature city", "tiny buildings" — \
 renders TOY textures); size the PROTAGONIST relative to a normal world. These anchors \
 are load-bearing structure, not decoration: when cutting words for the budget (rule 9), \
-scale anchors are among the LAST words cut, never the first."""
+scale anchors are among the LAST words cut, never the first.
+12. END EVERY SUSTAINED EFFECT. An action that releases a continuous effect (a beam, a \
+stream, a spray, a pour, an alarm) must also author the effect's END as a countable \
+action ("the stream cuts off, both arms lower") — and until that end, the limbs \
+sustaining it must hold or act on something NAMED, never linger unauthored. Two watched \
+renders measured the unauthored hold: a beam kept firing after its target had already \
+fallen, and in-frame hands deformed mid-hold while the script's attention had moved on. \
+An effect left running with no authored end and no authored limb action means the model \
+improvises the hold — and improvised holds deform the hands, the register's only \
+identity surface."""
 
 
 POV_SCRIPT_SYSTEM_PROMPT = f"""You are the script stage for a POV (first-person, \
