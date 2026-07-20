@@ -136,11 +136,13 @@ a viewer who has never heard the pitch must grasp what is happening FROM THE ACT
 ALONE.
 9. WORD ECONOMY IS A HARD BUDGET. Everything you author — protagonist detail, scene \
 setting, world prose, every beat's actions, dialogue, and audio events — must total \
-between 60 and 100 words COMBINED. The render model responds to dense concrete nouns, \
-not elaboration; every word must earn its place on screen. Count as you write: a typical \
-passing script spends ~10 words on the subject detail, ~10 on scene, ~15 on world prose, \
-and ~8-12 per beat across 4-6 beats. Overwriting is a structural failure that gets \
-bounced back to you.
+60-100 words COMBINED for a 10s script, 60-120 for a 15s script. AUDIO EVENTS COUNT \
+toward the budget: ~2 words per event, ONE sharp event per beat unless the beat truly \
+needs two — stacked synonym events are the first fat to cut. The render model responds \
+to dense concrete nouns, not elaboration; every word must earn its place on screen. \
+Count as you write: a typical passing script spends ~10 words on the subject detail, \
+~10 on scene, ~15 on world prose, ~8-12 per beat on actions, and ~10-16 total on audio \
+events. Overwriting is a structural failure that gets bounced back to you.
 10. STAGE EVERY ENTRANCE — ANTICIPATION OR SURPRISE, NEVER UNCHOSEN. For anything that \
 acts on the story but is not present when the clip opens, CHOOSE how it arrives: \
 anticipation (the viewer sees or hears it coming — name its origin and approach before \
@@ -169,7 +171,10 @@ renders measured the unauthored hold: a beam kept firing after its target had al
 fallen, and in-frame hands deformed mid-hold while the script's attention had moved on. \
 An effect left running with no authored end and no authored limb action means the model \
 improvises the hold — and improvised holds deform the hands, the register's only \
-identity surface."""
+identity surface. The end action does NOT need its own beat after the climax — let it \
+ride INSIDE the climax or button beat as one of that beat's actions, e.g. the fireball \
+blooming as the stream cuts off and both arms lower; ending the effect never competes \
+with delivering the money shot. This is an action, never a spoken line."""
 
 
 POV_SCRIPT_SYSTEM_PROMPT = f"""You are the script stage for a POV (first-person, \

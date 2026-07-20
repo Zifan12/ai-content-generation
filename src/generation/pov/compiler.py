@@ -68,7 +68,8 @@ class POVWordBudgetError(ValueError):
     scene setting, world prose, and every beat's actions/dialogue/audio —
     EXCLUDING the fixed skeleton clauses and the constraints block, per
     ``pov_grammar.world_prose_craft.body_word_target.excludes``. A script
-    this far outside the corpus-sourced 60-100 word range is a script-stage
+    this far outside the duration-keyed corpus-sourced range (60-100 @10s,
+    60-120 @15s — the ``at_<duration>s`` rows, BUG-036) is a script-stage
     defect, not something this compiler should silently accept or pad.
     """
 
@@ -182,7 +183,7 @@ def _normalize_fragment(text: str, kill_list: dict) -> str:
 
 
 def count_body_words(script: POVScript) -> int:
-    """Count the script-authored body words the 60-100 budget governs.
+    """Count the script-authored body words the duration-keyed budget governs.
 
     Counts RAW (pre-scrub) text: protagonist detail, scene setting, world
     prose, and every beat's actions, dialogue lines, and audio events —
@@ -287,7 +288,12 @@ def compile_pov_prompt(
     grammar = rules.pov_grammar()
     clauses = grammar["skeleton_clauses"]
     kill_list = grammar["kill_list"]
-    budget = grammar["world_prose_craft"]["body_word_target"]
+    # Duration-keyed row (BUG-036) — a direct index, loud KeyError on an
+    # out-of-contract duration: the craft gate upstream owns duration
+    # validity (craft_enforcement._VALID_DURATIONS).
+    budget = grammar["world_prose_craft"]["body_word_target"][
+        f"at_{script.duration_seconds}s"
+    ]
     role = script.protagonist_role
 
     # camera_as_eyes carries register variants (calm/action) — the script's

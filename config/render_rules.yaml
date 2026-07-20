@@ -664,10 +664,16 @@ pov_grammar:
       rule: "Give the air something physical to render — dust, damp haze, drifting motes, breath fog — rather than leaving the space visually empty."
       evidence: "corpus image-video-director/04-visual-vocabulary.md:78-79 (Particulate and Air as Renderable Objects: 'dust particles dancing in a single beam of light' ... 'these give the model physical material to render')"
     body_word_target:
-      min_words: 60
-      max_words: 100
+      # Duration-keyed (BUG-036, 2026-07-19) — mirrors beat_budget's at_Ns shape.
       excludes: "the fixed skeleton_clauses and constraints_block text — the target applies only to the script-specific body (Subject/Action/Scene/Light/Style/Audio prose)"
-      evidence: "corpus video_model_system_guide.md:138-148 ('Prompt length' table: 'Official Volcengine guide | 60-100 words' — Volcengine is Seedance's vendor cloud, i.e. this is the model's own official guidance)"
+      at_10s:
+        min_words: 60
+        max_words: 100
+        evidence: "corpus video_model_system_guide.md:138-148 ('Prompt length' table: 'Official Volcengine guide | 60-100 words' — Volcengine is Seedance's vendor cloud, i.e. the model's own official guidance). NOTE (BUG-036 audit): the vendor figure is whole-prompt, duration-agnostic guidance applied here to the authored body only; the 2026-07-19 arithmetic audit showed it fits the at_10s beat budget but not at_15s's"
+      at_15s:
+        min_words: 60
+        max_words: 120
+        evidence: "derived 2026-07-19 (BUG-036): beat_budget.at_15s is corpus-counted at 5-8 beats (sd-067) and the script contract's taught spend (~35 words fixed fields + 8-12/beat actions + per-beat audio events) cannot fit 100 words above ~5 beats — two consecutive live develop+repair cycles produced mandatory-content-only bodies at 114/121 words (Langfuse traces be9c65a3384dc6fd1d4a5934cdb2fa56 / 221dd15c2ce7e7aee2c660e46322b96d, 2026-07-19). 120 fits the taught arithmetic at 7 beats (~119). Compiled prompt total lands ~210 words, at the corpus diminishing-returns knee (video_model_system_guide.md:148 '~200 words') — VALIDATION GATE: the next 15s 480p watch judges render quality at this prompt length"
 
 # ---------------------------------------------------------------------------
 # OPEN / UNVERIFIED — rules from guides not yet confirmed by our own renders.

@@ -1256,3 +1256,26 @@ Track every shipped feature that fails, what was tried, and what fixed it.
   authored countable END action; sustaining limbs hold/act on something NAMED until then.
   Regression check: test_prompt_teaches_sustained_effect_end_beat.
 - Validation evidence: pending - next sustained-effect 480p watch judges whether the rule holds.
+
+### BUG-036 - Script contract arithmetic overflow: 15s stories cannot fit the flat 100-word body budget
+- Date opened: 2026-07-19
+- Status: fixed (duration-keyed body budget); render validation pending next 15s 480p watch
+- Feature: `config/render_rules.yaml` `pov_grammar.world_prose_craft.body_word_target` + script rule 9
+- Behavior: ticket-12 rerun (first with craft rule 12 live): two consecutive develop+repair cycles
+  hard-failed POVStructuralViolationError at 114 then 121 body words vs the 60-100 budget. Trace audit
+  (Langfuse be9c65a3384dc6fd1d4a5934cdb2fa56 / 221dd15c2ce7e7aee2c660e46322b96d): the bodies were
+  mandatory content, not fat - 5-6 beats with per-beat audio events + rule-11 scale anchors (exempt
+  from cutting) + rule-12 end-beat.
+- Root cause: contract self-conflict, deterministic for the 15s action class. Rule 9's taught spend
+  (~35 fixed + 8-12 words/beat "across 4-6 beats") omitted audio events from its ledger entirely and
+  was written for 10s beat counts; beat_budget.at_15s mandates 5-8 beats (corpus-counted) and the
+  duration rule makes 15s the action-register default - taught arithmetic yields ~91-131 words vs a
+  flat 100 cap. The 60-100 figure is Volcengine WHOLE-PROMPT guidance (duration-agnostic) misapplied
+  as a body-only cap for both durations. Rules 10-12's mandatory content made the overflow surface.
+- Fix: body_word_target duration-keyed mirroring beat_budget shape (at_10s 60-100 unchanged vendor
+  figure; at_15s 60-120 arithmetic-derived, evidence-tagged with trace ids); both readers updated
+  (compiler hard backstop indexes per duration; craft_enforcement repairable check moves inside the
+  duration-valid branch, same reasoning as the beat budget); rule 9 rewritten to budget audio events
+  explicitly (~2/event, one/beat) and state both ranges. Compiled 15s total ~210 words sits at the
+  corpus ~200 diminishing-returns knee.
+- Validation evidence: pending - next 15s 480p watch judges render quality at the longer prompt.
