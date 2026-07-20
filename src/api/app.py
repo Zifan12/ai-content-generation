@@ -1,20 +1,13 @@
 """
 FastAPI app entry point.
 
-Lifespan-managed APScheduler boots one job per active niche on startup and
-shuts down cleanly on exit. Without lifespan binding, the scheduler either
-leaks across reloads or never starts at all.
+Currently a bare app with no routes. It previously existed only to host an
+APScheduler lifespan that booted one recurring scrape job per active niche;
+that scheduler went with the corpus lane (ADR-0009), and no HTTP surface has
+replaced it — the pipeline is driven entirely by the operator scripts under
+``scripts/``. Kept as the mount point for a future dashboard/control API.
 """
 
-from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from src.scrapers.scheduler import start, stop
 
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    start()
-    yield
-    stop()
-
-app = FastAPI(lifespan=lifespan)
+app = FastAPI()

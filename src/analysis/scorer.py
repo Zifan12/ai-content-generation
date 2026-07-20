@@ -2,7 +2,8 @@
 Rule-based virality classifier — deterministic baseline for eval gates.
 
 PIPELINE ROLE:
-  Used by P1 eval harness (test_blueprint_eval.py) as baseline scorer.
+  Registered by the eval harness (src/evals/harness.py) as the
+  ``rule-based-scorer`` component.
   Provides deterministic, cost-free virality classification (no LLM calls).
 
 WHY THIS FILE EXISTS:

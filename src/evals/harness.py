@@ -19,9 +19,6 @@ from src.analysis.scorer import RuleBasedScorer
 from src.database import SessionLocal
 from src.evals.metrics import auc, precision_at_k
 from src.models.eval import EvalRun
-from src.models.blueprint import BlueprintRecord
-from src.evals.blueprint_eval import schema_valid_rate as _schema_valid_rate
-from src.blueprints.schema import EXTRACTOR_VERSION
 
 @dataclass
 class EvalReport:
@@ -126,8 +123,10 @@ class EvalHarness:
 
 def main():
     """
-    CLI entrypoint. Supported --component values: rule-based-scorer, blueprint-extractor-v1.
-    blueprint-extractor-v1 bypasses the scorer registry and queries BlueprintRecord directly.
+    CLI entrypoint. Supported --component values: rule-based-scorer.
+
+    The blueprint-extractor-v1 component was removed with the Blueprint corpus lane
+    (ADR-0009); its schema_valid_rate gate no longer has an extractor to measure.
     """
     parser = argparse.ArgumentParser(description="Run eval harness against golden set.")
     parser.add_argument("--component", required=True, help="Scorer name to evaluate")
@@ -151,31 +150,8 @@ def main():
                 ).score,
                 
             )
-        elif args.component == "blueprint-extractor-v1":
-            records = db.execute(
-                select(BlueprintRecord).where(BlueprintRecord.extractor_version == EXTRACTOR_VERSION)
-            ).scalars().all()
-            rate = _schema_valid_rate(records)
-            git_sha = harness._git_sha()
-            db.add(EvalRun(component=args.component, git_sha=git_sha, metric_name="schema_valid_rate", metric_value=rate, dataset_version=args.dataset_version))
-            db.add(EvalRun(component=args.component, git_sha=git_sha, metric_name="record_count", metric_value=float(len(records)), dataset_version=args.dataset_version))
-            db.commit()
-            print(
-                    json.dumps({
-                        "component": args.component,
-                        "metrics": {
-                            "schema_valid_rate": rate,
-                            "record_count": len(records),
-                        },
-                        "git_sha": git_sha,
-                        "dataset_version": args.dataset_version,
-                        }, indent=2
-                    )
-                )
-            return
-
         else:
-            raise SystemExit(f"Unknown component: {args.component}. Supported: rule-based-scorer, blueprint-extractor-v1")
+            raise SystemExit(f"Unknown component: {args.component}. Supported: rule-based-scorer")
         
         report = harness.run(component=args.component)
         print(

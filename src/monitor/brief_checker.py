@@ -42,17 +42,17 @@ surfaced here for ratification, not re-litigated silently):
   reformulation call -- the ticket's own scope note says this ticket owns
   "the handoff contract (shape only)"; a reformulation step would be a third
   LLM call this ticket doesn't add.
-- **``brief_checker`` seat = ``anthropic/claude-sonnet-5`` (mirrors
-  ``eval_judge``), not ``groundedness_judge``'s exact model** -- the ticket's
+- **``brief_checker`` seat = ``anthropic/claude-sonnet-5``, not
+  ``groundedness_judge``'s exact model** -- the ticket's
   binding instruction says "mirror the groundedness_judge seat's
   provider/model exactly", but ``groundedness_judge`` and ``context_agent``
   (the seat that authors the brief's field content via
   ``BRIEF_SYSTEM_PROMPT``) are BOTH ``google/gemini-2.5-flash`` today --
   copying it verbatim would make the checker the SAME model family as the
   content it grades, directly violating the ticket's own doubly-emphasized
-  "never self-graded" / cross-family lock. ``eval_judge`` is the ticket's
-  other named precedent and is genuinely cross-family (Anthropic vs. Google),
-  so that is what ``config/providers.yaml`` uses instead. Flagged for user
+  "never self-graded" / cross-family lock. An Anthropic model is genuinely
+  cross-family from the Google-family seat that authors the content, so that
+  is what ``config/providers.yaml`` uses instead. Flagged for user
   ratification, not decided quietly.
 """
 
