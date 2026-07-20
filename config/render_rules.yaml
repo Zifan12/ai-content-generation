@@ -617,7 +617,7 @@ pov_grammar:
       evidence: "corpus image-video-director/04-visual-vocabulary.md:94 ('Cinematic alone without props, light sources, and placement is insufficient') + video_model_system_guide.md:175,300,675 (same finding stated three separate times in the Seedance-adjacent playbook: 'cinematic alone is too vague, the model guesses — pair with specifics')"
     glow_glimmer:
       replace: { "glow": "steady-intensity light", "glimmer": "diffuse light" }
-      evidence: "candidate — flagged candidate-strength in .scratch/pov-pipeline/PRD.md Implementation Decisions; no direct corpus citation found for this specific substitution. Kept because both words read as a flicker/strobe cue and probe 2's script deliberately used a continuous, non-flickering 'glow brightens' rather than 'glimmer' to avoid an unwanted strobe rendering — a single probe data point, not a corpus rule, hence candidate not corpus-cited"
+      evidence: "corpus video_model_system_guide.md:179,283,654 — stated three times independently: glow/glimmer/glints cause specular flicker artifacts, replace with steady intensity/diffuse. Re-tiered 2026-07-20 from candidate (the original 'no citation found' note predated a full-guide sweep; RESEARCH-cinematic-realistic.md). Probe-2 corroboration retained: its script deliberately chose continuous 'glow brightens' phrasing to avoid strobe rendering"
     sensitive_actions:
       replace:
         "fight": "intense power confrontation"
