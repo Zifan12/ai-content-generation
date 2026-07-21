@@ -237,8 +237,8 @@ def test_prompt_teaches_target_end_state() -> None:
 
     writer.develop(SAMPLE_PITCH)
 
-    assert "END STATE FOR EVERY TARGET YOU ACT ON" in llm.system
-    assert "ends the ENTITY" in llm.system
+    assert "AUTHOR THE TARGET'S BODY FATE" in llm.system
+    assert "ambient effect word is NOT a body fate" in llm.system
     assert "holds its last pose" in llm.system
 
 

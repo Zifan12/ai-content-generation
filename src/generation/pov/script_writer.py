@@ -175,17 +175,22 @@ identity surface. The end action does NOT need its own beat after the climax —
 ride INSIDE the climax or button beat as one of that beat's actions, e.g. the fireball \
 blooming as the stream cuts off and both arms lower; ending the effect never competes \
 with delivering the money shot. This is an action, never a spoken line.
-13. END STATE FOR EVERY TARGET YOU ACT ON. When a beat's action lands on a target — a \
-creature struck, a door forced, a vehicle thrown, a person pulled clear — a later action \
-MUST author what BECOMES of that target ("topples backward into the water", "the door \
-tears off its hinges and drops", "she lands on the ledge and stays there"). Rule 12 ends \
-the EFFECT; this rule ends the ENTITY the effect was aimed at — they are different \
-omissions and the second one is invisible until watched. A watched render measured this: \
-the beam struck, the fireball bloomed, and the target simply kept standing, because the \
-script never said it fell. An unauthored target holds its last pose: the model has no \
-reason to invent a consequence you did not write, so the payoff reads as nothing having \
-happened. Fold the end state into the climax or button beat's actions, exactly as rule 12 \
-folds the effect's end — it never needs a beat of its own.
+13. AUTHOR THE TARGET'S BODY FATE — INSIDE THE MONEY SHOT, NOT AFTER IT. When a beat's \
+action lands on a target — a creature struck, a door forced, a vehicle thrown, a person \
+pulled clear — the SAME beat's actions must author what physically BECOMES OF ITS BODY, \
+fused into the money-shot moment, never as a beat that follows it (rule 4 keeps the money \
+shot final — do not add an after-beat, write the fate INTO it). Rule 12 ends the EFFECT; \
+this rule resolves the BODY the effect hit — different omissions, and this one is \
+invisible until watched. THE TRAP: an ambient effect word is NOT a body fate. "Erupts in \
+a fireball", "explodes", "bursts into flame", "vanishes in light" all describe something \
+happening AROUND the target while its body stands untouched underneath — a watched render \
+measured exactly this: the beam struck, the fireball bloomed, and the kaiju simply kept \
+standing, because "erupts in fireball" never said the BODY was destroyed. Write the body's \
+own physical resolution in concrete terms the camera can see — "the kaiju's body is torn \
+apart and hurled backward, crashing into the floodwater", "the door tears off its hinges \
+and drops", "she lands on the ledge and stays there" — the same concrete-over-label \
+discipline as rule 14. An unauthored body holds its last pose: the model invents no \
+consequence you did not write, so the payoff reads as nothing having happened.
 14. DESCRIBE POSE GEOMETRY, NEVER THE MOVE'S NAME. When a beat needs a SPECIFIC body \
 configuration — a signature stance, a named technique, a precise grip or brace — write \
 the limb geometry and let the name go: which limb, where, at what height, facing which \

@@ -1376,3 +1376,30 @@ Track every shipped feature that fails, what was tried, and what fixed it.
   NOTE: hand-typed geometry wording rendered once (5670f837) and the stance question was
   confounded by two other defects in the same take (BUG-037 angle break, BUG-038 standing
   target); a clean judgment needs a pipeline-generated take.
+
+### BUG-040 - 15s word budget (120) too tight for craft rules 13+14; combat pitches uncompilable
+- Date opened: 2026-07-21
+- Status: fixed (budget re-derived 120 -> 150); render-quality validation pending next 15s watch
+- Feature: `config/render_rules.yaml` `world_prose_craft.body_word_target.at_15s.max_words`
+- Behavior: after BUG-038 (rule 13) + BUG-039 (rule 14) landed, `scripts/pov.py` on a 15s
+  kaiju-beam pitch raised `POVStructuralViolationError: the authored body totals 126 words; the
+  15s word budget is 60-120`. The pipeline became uncompilable for exactly the combat-story class
+  the two new rules target. Surfaced for free by an end-to-end LLM-only pipeline run (no render),
+  as the advisor predicted when rules 13/14 were committed ("rules compete — rule 9 is a hard
+  budget, every new rule demanding more words fights it").
+- Root cause: the 120 cap was derived (BUG-036, 2026-07-19) BEFORE rules 13/14 existed. Those
+  rules add ~24 words of mandatory, trim-exempt content on a combat beat: an explicit body-fate
+  clause (rule 13, ~23 words vs a bare "collapses") and a spelled-out limb-geometry pose (rule 14,
+  ~23 words vs a bare "wrists cross"). Measured mandatory floor on a 5-beat pitch = ~141 body words
+  (develop probe, output/pov/20260721_150459_*). 120 < 141 floor = structural impossibility, not a
+  seat bug. Same re-derivation class as BUG-036 itself (which re-derived at_15s for beat count).
+- Fix: at_15s max_words 120 -> 150 (floor ~141 + ~9 words for the bounded-repair pass to converge
+  into). One config value, read by BOTH enforcers (compiler.py word check AND
+  craft_enforcement.py:90) — no code change. Post-fix: same pitch compiles at 115 words
+  (output/pov/20260721_154010_*), both rules present (beat: "the kaiju's body tears apart in a
+  massive fireball" + crossed-forearm geometry).
+- Validation evidence: pipeline compiles (verified). RENDER-QUALITY GATE STILL OPEN: compiled
+  total is now ~230-240 words, PAST the corpus ~200 diminishing-returns knee
+  (video_model_system_guide.md:148). The next 15s 480p watch must judge whether the longer prompt
+  degrades render adherence. If it does, the documented lever is shorter FIXED clauses (esp. the
+  ~30-word BUG-037 action camera clause), NOT re-tightening the mandatory craft rules.
