@@ -224,6 +224,44 @@ def test_prompt_teaches_sustained_effect_end_beat() -> None:
     assert "improvises the hold" in llm.system
 
 
+def test_prompt_teaches_target_end_state() -> None:
+    """Target-end-state promotion (BUG-038, 2026-07-21, /root-cause gate): watched
+    render 5670f837 measured the beam striking, the fireball blooming, and the kaiju
+    simply continuing to stand — the script authored no consequence for the target.
+    Disease: rule 12 ends the EFFECT, nothing ended the ENTITY it was aimed at, so a
+    whole class (defeat/destroy/rescue payoffs) could silently omit its outcome. The
+    rule is judgment-shaped: a later action states what BECOMES of any target acted on,
+    folded into the climax or button beat rather than earning a beat of its own."""
+    llm = FakeLLM(_script())
+    writer = POVScriptWriter(llm=llm)
+
+    writer.develop(SAMPLE_PITCH)
+
+    assert "END STATE FOR EVERY TARGET YOU ACT ON" in llm.system
+    assert "ends the ENTITY" in llm.system
+    assert "holds its last pose" in llm.system
+
+
+def test_prompt_teaches_pose_geometry_over_move_name() -> None:
+    """Pose-geometry promotion (BUG-039, 2026-07-21, /root-cause gate): two watched
+    renders rendered the beam stance wrong from the bare label "wrists cross". Corpus
+    backing (video-researcher sweep 2026-07-21): limb-by-limb quantified geometry is
+    the documented fix for a named move (cross-model-matrix.json:145 kickflip worked
+    example; Film Director Brain.md:218 "describe the geometry, not just the name"),
+    bare labels are the documented failure ("actor walks across the room",
+    03-video-prompting-techniques.md:13), and reference images bind appearance only,
+    never pose (reference-material-playbook.md:86). Binds hardest when the canonical
+    name is unusable (IP filter), because the name was the model's only retrieval path."""
+    llm = FakeLLM(_script())
+    writer = POVScriptWriter(llm=llm)
+
+    writer.develop(SAMPLE_PITCH)
+
+    assert "DESCRIBE POSE GEOMETRY, NEVER THE MOVE'S NAME" in llm.system
+    assert "canonical name you cannot use" in llm.system
+    assert "Reference images do NOT carry pose" in llm.system
+
+
 def test_prompt_teaches_beat_free_action_lines_fail() -> None:
     """The BUG-031/L9 lesson (beat-free lines render in zero frames) must
     survive relocation into this seat's prompt, uncompressed (StoryArchitect

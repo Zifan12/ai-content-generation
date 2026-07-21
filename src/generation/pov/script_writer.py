@@ -174,7 +174,30 @@ improvises the hold — and improvised holds deform the hands, the register's on
 identity surface. The end action does NOT need its own beat after the climax — let it \
 ride INSIDE the climax or button beat as one of that beat's actions, e.g. the fireball \
 blooming as the stream cuts off and both arms lower; ending the effect never competes \
-with delivering the money shot. This is an action, never a spoken line."""
+with delivering the money shot. This is an action, never a spoken line.
+13. END STATE FOR EVERY TARGET YOU ACT ON. When a beat's action lands on a target — a \
+creature struck, a door forced, a vehicle thrown, a person pulled clear — a later action \
+MUST author what BECOMES of that target ("topples backward into the water", "the door \
+tears off its hinges and drops", "she lands on the ledge and stays there"). Rule 12 ends \
+the EFFECT; this rule ends the ENTITY the effect was aimed at — they are different \
+omissions and the second one is invisible until watched. A watched render measured this: \
+the beam struck, the fireball bloomed, and the target simply kept standing, because the \
+script never said it fell. An unauthored target holds its last pose: the model has no \
+reason to invent a consequence you did not write, so the payoff reads as nothing having \
+happened. Fold the end state into the climax or button beat's actions, exactly as rule 12 \
+folds the effect's end — it never needs a beat of its own.
+14. DESCRIBE POSE GEOMETRY, NEVER THE MOVE'S NAME. When a beat needs a SPECIFIC body \
+configuration — a signature stance, a named technique, a precise grip or brace — write \
+the limb geometry and let the name go: which limb, where, at what height, facing which \
+way, and what it does next ("your right forearm rises vertical in front of your chest, \
+palm facing left; your left forearm crosses over it horizontally at the wrists"). A bare \
+label ("wrists cross", "a fighting stance", "the usual grip") is underspecified the same \
+way "walks across the room" is — the model guesses the configuration and guesses wrong. \
+This binds hardest when the move HAS a canonical name you cannot use (an IP-bound \
+technique, a trademarked stance): the name is exactly what the model would have needed to \
+retrieve the pose, so geometry is the only remaining channel. Reference images do NOT \
+carry pose — they bind appearance only; a ref showing the stance will not make the model \
+perform it. Spend the words: this is load-bearing structure under rule 9, not decoration."""
 
 
 POV_SCRIPT_SYSTEM_PROMPT = f"""You are the script stage for a POV (first-person, \

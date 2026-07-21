@@ -1279,3 +1279,100 @@ Track every shipped feature that fails, what was tried, and what fixed it.
   explicitly (~2/event, one/beat) and state both ranges. Compiled 15s total ~210 words sits at the
   corpus ~200 diminishing-returns knee.
 - Validation evidence: pending - next 15s 480p watch judges render quality at the longer prompt.
+
+### BUG-037 - Action camera register is human-scale-coded; giant POV reads as crawling
+- Date opened: 2026-07-21
+- Status: open (root cause identified, NO corpus-backed fix available)
+- Feature: `config/render_rules.yaml:571` `pov_grammar.skeleton_clauses.camera_as_eyes.action`
+- Behavior: first watched action-register render with a giant protagonist (job a78b35a1, 480p/15s,
+  45cr kept, `output/pov/20260719_235242_*/fixedscript_480p_a78b35a1.mp4`). Operator watch: the POV
+  reads as CRAWLING for roughly the first 5 seconds - camera sits low/near ground and scrambles,
+  contradicting the script's scale anchors ("rooftops at chest height, hands visible at the bottom
+  of frame"). This is the render that the clause's own `evidence:` field pre-registered as its
+  promotion gate ("promote to probe: evidence after the first action-register 480p watch passes").
+  It did not pass.
+- Root cause (video-researcher corpus sweep 2026-07-21, full-Read): the clause is a verbatim lift
+  from corpus prompt sd-067 "Electro POV" (`all-prompts.json:8173-8196`), whose protagonist is a
+  HUMAN who FIGHTS a "colossal iron titan" - the giant is the antagonist, the camera is the human's
+  eyes. The carried text literally contains "violent raw human movement" plus high-frequency jitter
+  language (micro-jitters, aggressive head swings, abrupt jerks, over-rotation). Applied to a
+  ~100m protagonist this is scale-contradictory: human-body motion vocabulary against a giant-scale
+  anchor. Same CLASS as BUG-034 (non-human scale) but one layer up - BUG-034 fixed scale anchoring
+  in the SCRIPT seat; this defect lives in a FIXED COMPILER CLAUSE the script seat cannot reach.
+- Corpus coverage: NONE. Sweep found zero first-person-as-giant camera prompts anywhere in
+  `ai_video_resources/` (every corpus giant is shot third-person: wide establishing, low hero,
+  crane - `all-prompts.json:7762-7783` sd-050, `methodology/19-seedance-masterclass-round3.md:181-184`,
+  `seedance/README.md:412`). The vendor's only first-person camera card hardcodes "human eye height"
+  as its defining parameter (`Dan Kieft Camera Movements.md:226-229`). No documented rule anywhere
+  ties camera-motion vocabulary to subject scale or mass (`video_model_system_guide.md:255-268,302-309`;
+  `methodology/05-运镜词典.md:16-33`; `02-进阶公式.md:57-61` all checked). The corpus 12-item pitfall
+  taxonomy (`methodology/08-避坑12问.md`, all 12 read) contains no camera-height or scale-collapse
+  failure class.
+- Fix: NOT AVAILABLE as a corpus-backed change. Any slow/heavy/high-inertia/low-frequency-sway
+  rewrite would be invented wording, which the project's no-self-invented-render-techniques rule
+  forbids shipping as a promoted clause. Options, both requiring an operator call: (a) treat a
+  scale-motion rewrite as an explicit PROBE - one 45cr 480p A/B against this take, promoted only on
+  a watch pass; (b) leave the clause and accept giant-scale POV as an unsupported register until a
+  practitioner source covering kaiju/mecha POV enters the corpus. Adjacent partial lever flagged by
+  the researcher as re-application (NOT prescription): "high angle"/"overhead"/"elevated vantage" is
+  corpus-attested vocabulary (`image-video-director/04-visual-vocabulary.md:47`,
+  `Dan Kieft Film Director Brain.md:326-329`) but only ever in third-person use.
+- Note on the hypothesis: "human jitter language causes low camera placement" is OUR reasoning, not
+  a corpus claim - the sweep found no source linking jitter vocabulary to camera height. The nearest
+  documented mechanism is different (vague motion words spread jitter globally,
+  `video_model_system_guide.md:178,309`). Treat the root cause as scale-contradictory wording
+  (directly evidenced by the clause text) rather than as a proven placement mechanism.
+- Validation evidence: pending - depends which option the operator picks.
+
+### BUG-038 - Script seat authors no END STATE for targets acted on (defeated enemy keeps standing)
+- Date opened: 2026-07-21
+- Status: fixed (craft rule 13 promoted via /root-cause gate); render validation pending
+- Feature: `src/generation/pov/script_writer.py` `_POV_SCRIPT_FIELD_SPEC`
+- Behavior: watched render 5670f837 (480p/15s, 45cr kept): the beam strikes, the fireball
+  blooms, and the kaiju simply keeps standing - it never falls, staggers, or reacts. Operator
+  watch: "after the kaiju got hit by spacium beam, it kinda just stood there. It did not fall
+  or anything." The payoff reads as nothing having happened.
+- Root cause (/root-cause gate 2026-07-21): rule 12 (END EVERY SUSTAINED EFFECT) correctly ended
+  the BEAM - the beam did cut off. Nothing in the contract ends the ENTITY the effect was aimed
+  at. Rule 10 stages every ENTRANCE, rule 12 ends every EFFECT, and there was no rule for a
+  target's EXIT. CLASS defect: any story whose payoff is defeating/destroying/rescuing something
+  can silently omit the consequence, and the omission is invisible until watched. An unauthored
+  target holds its last pose - the model will not invent a consequence the script did not write.
+- Fix: craft rule 13 "END STATE FOR EVERY TARGET YOU ACT ON" appended to `_POV_SCRIPT_FIELD_SPEC`
+  (shared by develop AND repair prompts - one edit, both call sites). Explicitly distinguishes
+  itself from rule 12 (effect vs entity) and folds the end state into the climax/button beat
+  rather than requiring its own beat, mirroring rule 12's structure. Regression check:
+  test_prompt_teaches_target_end_state.
+- Validation evidence: pending - next watched render judges whether the target now resolves.
+
+### BUG-039 - Script seat emits bare move LABELS; specific poses render wrong
+- Date opened: 2026-07-21
+- Status: fixed (craft rule 14 promoted via /root-cause gate); render validation pending
+- Feature: `src/generation/pov/script_writer.py` `_POV_SCRIPT_FIELD_SPEC`
+- Behavior: TWO watched renders (a78b35a1, 627d4198 - different camera clauses, identical action
+  text) both rendered the beam stance wrong. The script's beat read "your arms rise and wrists
+  cross" - a bare label. Operator watch: "Both old and new video got the hand movement wrong when
+  doing the spacium beam."
+- Root cause (/root-cause gate + video-researcher corpus sweep, 2026-07-21): three compounding
+  causes, all corpus-documented. (1) Bare labels are underspecified - the corpus names this exact
+  failure: "'Actor walks across the room' is underspecified. The model guesses pace, path, camera
+  relationship. That causes drift" (`image-video-director/03-video-prompting-techniques.md:13`).
+  "Wrists cross" never says which forearm is vertical, which horizontal, or at what height.
+  (2) The canonical name that WOULD have let the model retrieve the pose ("Ultraman", "spacium
+  beam") is unusable - it trips the ref content-protection gate - so the label channel is closed
+  by construction. (3) Reference images cannot substitute: "Poses: neutral standing beats action
+  poses for identity refs. Pose belongs to the SHOT (prompt / video-ref); identity belongs to the
+  refs" (`reference-material-playbook.md:86`) - our arms-crossed ref only ever taught limb
+  APPEARANCE. CLASS defect: any beat needing a specific body configuration hits this.
+- Fix: craft rule 14 "DESCRIBE POSE GEOMETRY, NEVER THE MOVE'S NAME" appended to
+  `_POV_SCRIPT_FIELD_SPEC`. Corpus-attested pattern: limb-by-limb quantified geometry is the
+  documented fix (`cross-model-matrix.json:145` kickflip worked example - "pops the tail with his
+  back foot, drags his front foot diagonally... one full rotation"; `Dan Kieft Film Director
+  Brain.md:218` "describe the geometry, not just the name"). Rule states the IP-name case
+  explicitly and states that refs do not carry pose. Exempted from first-cut word trimming
+  (rule 9), same treatment as rule 11's scale anchors. Regression check:
+  test_prompt_teaches_pose_geometry_over_move_name.
+- Validation evidence: pending - next watched render judges whether the stance resolves.
+  NOTE: hand-typed geometry wording rendered once (5670f837) and the stance question was
+  confounded by two other defects in the same take (BUG-037 angle break, BUG-038 standing
+  target); a clean judgment needs a pipeline-generated take.
