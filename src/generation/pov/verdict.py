@@ -275,7 +275,12 @@ def write_final(run_dir: Path, command: str, cost_line: str) -> None:
     diverge between writers (review 2026-07-22).
     """
     (run_dir / _FINAL_COMMAND_FILE).write_text(
-        f"{command}\n\n# Cost: {cost_line}\n", encoding="utf-8"
+        f"{command}\n\n# Cost: {cost_line}\n"
+        f"# After watching the final, LOG IT (the log is how lessons stick):\n"
+        f"#   uv run python scripts/pov.py verdict <run_dir> --pass --resolution 720p\n"
+        f"#   uv run python scripts/pov.py verdict <run_dir> --fail --resolution 720p "
+        f"--defect <slug>\n",
+        encoding="utf-8",
     )
 
 
