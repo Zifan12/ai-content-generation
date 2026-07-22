@@ -71,3 +71,4 @@ skills-lock.json
 
 # Git worktrees (local-only scratch workspaces)
 .worktrees/
+*.stackdump
