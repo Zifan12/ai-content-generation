@@ -676,6 +676,144 @@ pov_grammar:
         evidence: "re-derived 2026-07-21 (BUG-040) from the 120 BUG-036 set 2026-07-19. BUG-036's floor (114/121 words, Langfuse be9c65a3384dc6fd1d4a5934cdb2fa56 / 221dd15c2ce7e7aee2c660e46322b96d) predated craft rules 13 (target body-fate, BUG-038) and 14 (pose geometry, BUG-039), which add ~24 words of MANDATORY, trim-exempt content on a combat story: an explicit body-fate clause (~23 words, vs a bare 'collapses') and a spelled-out limb-geometry pose (~23 words, vs a bare 'wrists cross'). Measured floor on a 5-beat kaiju-beam pitch = ~141 body words (develop probe 2026-07-21, output/pov/20260721_150459_*): protagonist 12 + scene 15 + world 20 + 5 beats incl. geometry 23 + body-fate 23 + audio events. 120 made 15s combat pitches uncompilable (POVStructuralViolationError, 126 words after one repair). 150 = floor ~141 + ~9 words for the bounded-repair pass to converge into. COST/VALIDATION GATE: compiled total now ~230-240 words, PAST the corpus ~200 diminishing-returns knee (video_model_system_guide.md:148) — the next 15s 480p watch must judge whether the longer prompt degrades render adherence; if it does, the lever is shorter fixed clauses (esp. the ~30-word BUG-037 action camera clause), not re-tightening the mandatory craft rules"
 
 # ---------------------------------------------------------------------------
+# POV VERDICT (slice ③, .scratch/pov-slice3/PRD.md, 2026-07-22) — the verdict
+# log's defect taxonomy + spending brakes. Read by src/generation/pov/verdict.py.
+#
+# guard states what mechanically stands between this defect and a paid render:
+#   code_check   — a deterministic pre-spend check blocks it (schema/enforcer/compiler)
+#   prompt_rule  — a fixed clause or numbered craft rule in the script seat's
+#                  contract targets it (regression-tested wording, render outcome
+#                  still stochastic)
+#   watch_only   — NOTHING guards it; the operator's watch is the only detector.
+#                  Never claim a guard that doesn't exist (PRD user story 3).
+# applies: always | refs_only (class only possible when reference images ride).
+# default_tag: objective (operationally defined on screen) | taste (judgment
+# call) — the operator can override per verdict (Deming consult 2026-07-22).
+# Recurrence gate: >=2 fails across DISTINCT runs before a rule row is drafted
+# for ratification; first sighting is a data point only (Deming funnel).
+# ---------------------------------------------------------------------------
+pov_verdict:
+  spending_brakes:
+    # Grill Q1 2026-07-22: staged-director D7's proposed 150cr per-story cap
+    # CONFIRMED. Tallied from logged verdicts (duration x measured per-second
+    # rate); at/over the cap the verdict flow releases no further commands.
+    per_story_credit_cap: 150
+    # Staged-director D7: first fail + 2 failed retakes -> story PARKS with
+    # structured forensics (parked.json).
+    max_failed_retakes: 2
+  # Finals policy 2026-07-20 (RESEARCH-1080p-refs-limit.md): 720p native is the
+  # finals ceiling for ref-bound renders; upscale is a separate post step.
+  final_resolution: 720p
+  defect_taxonomy:
+    money_shot_missed:
+      description: "the pitch's stated money_shot image is not on screen or does not read at a glance"
+      guard: watch_only
+      applies: always
+      default_tag: taste
+      evidence: "ticket 07 money-shot contract; watch checklist item 1 (the one item that fails the video on its own)"
+    angle_switch:
+      description: "clip cuts to third person / shows the protagonist from outside"
+      guard: prompt_rule
+      applies: always
+      default_tag: objective
+      evidence: "anti_drift_constraint + continuous_take_constraint (second guard promoted 2026-07-17 after a watched angle switch with anti_drift alone)"
+      expectation: "stays first-person the entire clip"
+    body_leak:
+      description: "protagonist's face/head/shoulders/body visible in frame"
+      guard: prompt_rule
+      applies: always
+      default_tag: objective
+      evidence: "unseen_protagonist fixed clause (probe-frozen wording, 2026-07-17 probes)"
+      expectation: "only hands/limbs of the protagonist ever visible"
+    beat_teleport:
+      description: "a beat's action jumps start-state to end-state with no drawn motion"
+      guard: code_check
+      applies: always
+      default_tag: objective
+      evidence: "BUG-031 class; POVBeat.actions min_length=1 (beat-free lines cannot parse) + countable-beat contract; POV register measured drawing this class correctly (probe 2)"
+      expectation: "every beat's action visibly animates in order"
+    text_leak:
+      description: "watermark/logo/subtitles/on-screen text of any kind"
+      guard: prompt_rule
+      applies: always
+      default_tag: objective
+      evidence: "constraints_block fixed clause (native-quality-v2: no on-screen text)"
+      expectation: "no text anywhere in frame"
+    style_flat:
+      description: "render reads as neither realistic nor cinematic (styleless register)"
+      guard: prompt_rule
+      applies: always
+      default_tag: taste
+      evidence: "BUG-033: style_register clause per camera register, probe-verbatim; regression test_style_clause_present_per_register_and_before_audio"
+      expectation: "photoreal register present per the style_register clause"
+    wrong_scale:
+      description: "non-human protagonist renders at wrong scale (giant reads person-sized, world reads miniature)"
+      guard: prompt_rule
+      applies: always
+      default_tag: objective
+      evidence: "BUG-034: craft rule 11 (relative cues size the protagonist, never shrink the world), trim-exempt; regression test_prompt_teaches_scale_anchoring_for_nonhuman_protagonists"
+      expectation: "relative-size anchors hold (e.g. rooftops at chest height)"
+    unended_effect:
+      description: "a sustained effect never ends; unauthored hold deforms the sustaining limbs"
+      guard: prompt_rule
+      applies: always
+      default_tag: objective
+      evidence: "BUG-035: craft rule 12 (END EVERY SUSTAINED EFFECT); regression test_prompt_teaches_sustained_effect_end_beat"
+      expectation: "every released effect gets an authored end beat"
+    camera_scale_mismatch:
+      description: "giant-POV camera reads human-scale (crawling/low scramble contradicting scale anchors)"
+      guard: watch_only
+      applies: always
+      default_tag: objective
+      evidence: "BUG-037 OPEN: action camera clause is human-scale-coded (sd-067 lift); corpus sweep 2026-07-21 found ZERO giant-POV camera prompts — no corpus-backed fix exists; calm register is the proven workaround"
+    target_no_end_state:
+      description: "an acted-on target shows no consequence (defeated enemy keeps standing)"
+      guard: prompt_rule
+      applies: always
+      default_tag: objective
+      evidence: "BUG-038: craft rule 13 (END STATE FOR EVERY TARGET YOU ACT ON, body fate not ambient effect — refined 2026-07-21); regression test_prompt_teaches_target_end_state"
+      expectation: "every acted-on target's fate is visible on screen"
+    wrong_pose:
+      description: "a specific body configuration renders wrong (bare move label under-specified)"
+      guard: prompt_rule
+      applies: always
+      default_tag: objective
+      evidence: "BUG-039: craft rule 14 (DESCRIBE POSE GEOMETRY, NEVER THE MOVE'S NAME), trim-exempt; regression test_prompt_teaches_pose_geometry_over_move_name"
+      expectation: "authored limb-by-limb geometry renders as written"
+    effect_detached:
+      description: "an impact effect renders as ambient scene-effect detached from the body it should bind to (fireball floats behind the kaiju)"
+      guard: watch_only
+      applies: always
+      default_tag: objective
+      evidence: "watched 2026-07-21 (banked issue 1, obs 4413) — COUNT 1: prompt fix drafted but untested; recurrence gate holds until a second independent watch"
+    identity_mismatch:
+      description: "ref-owned appearance (limbs/suit/mask) drifts from the source art mid-clip"
+      guard: prompt_rule
+      applies: refs_only
+      default_tag: objective
+      evidence: "ticket 11 positional binding sentences (probe roll 1b watch PASS) + asset gate; ref watch item (RESEARCH-slice2 hard constraints)"
+      expectation: "ref-owned surfaces match the source art throughout"
+    style_bleed:
+      description: "the reference's art style leaks into the world's photoreal register"
+      guard: watch_only
+      applies: refs_only
+      default_tag: taste
+      evidence: "slice-2 research brief (08-避坑12问.md:52-60); no mechanical guard exists"
+    twins:
+      description: "duplicate/cloned copy of a referenced character in frame"
+      guard: watch_only
+      applies: refs_only
+      default_tag: objective
+      evidence: "slice-2 research brief (08-避坑12问.md:79-101); one-face ref discipline reduces but does not guard"
+    summoned_protagonist:
+      description: "the protagonist's referenced character appears as a separate visible figure"
+      guard: prompt_rule
+      applies: refs_only
+      default_tag: objective
+      evidence: "ticket 11 protagonist binding template (probe roll 1b: arms bound to refs, NO summoned figure)"
+      expectation: "refs bind to the camera-holder's limbs only"
+
+# ---------------------------------------------------------------------------
 # OPEN / UNVERIFIED — rules from guides not yet confirmed by our own renders.
 # Promote to the blocks above once a manual render gives evidence.
 # ---------------------------------------------------------------------------

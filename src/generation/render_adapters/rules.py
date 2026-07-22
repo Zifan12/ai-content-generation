@@ -132,6 +132,26 @@ class RenderRules:
         """
         return self.data["pov_grammar"]
 
+    def pov_verdict(self) -> dict:
+        """Return the ``pov_verdict`` block (slice ③, .scratch/pov-slice3/PRD.md).
+
+        Holds the verdict flow's defect taxonomy (every countable watch-time
+        failure class with its honest guard status — ``code_check`` /
+        ``prompt_rule`` / ``watch_only`` — applicability, default
+        objective-vs-taste tag, and evidence trail) and the spending brakes
+        (``per_story_credit_cap``, ``max_failed_retakes``) plus the
+        ``final_resolution`` the probe gate releases. Like ``pov_grammar``,
+        this is a plain passthrough — the evidence trail lives in the YAML.
+
+        ``src/generation/pov/verdict.py`` is the sole reader: it validates
+        logged defect slugs against the taxonomy, derives the prediction
+        block from guarded entries, and enforces the brakes.
+
+        Raises:
+            KeyError: if the YAML has no ``pov_verdict`` block.
+        """
+        return self.data["pov_verdict"]
+
     def retake_ladder(self) -> str:
         """Return the ``scene_lane.retake_ladder`` wording (480p -> 720p -> 1080p).
 

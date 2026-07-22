@@ -80,6 +80,8 @@ def build_render_sheet(
     compiled: CompiledPOVPrompt,
     rules: RenderRules,
     ref_paths: Sequence[str | Path] = (),
+    prediction_block: str = "",
+    probe_exempt: bool = False,
 ) -> str:
     """
     Compose the run's render sheet markdown.
@@ -99,6 +101,15 @@ def build_render_sheet(
             assets" section listing them in imageN order and the watch
             checklist gains the reference failure modes. Empty → the sheet
             is byte-identical to slice ①'s.
+        prediction_block: The verdict module's pre-watch prediction text
+            (slice ③, ``verdict.build_prediction_block``) — the ruleset's own
+            stated theory, shown above the watch checklist so the operator's
+            verdict judges expectations, not vibes. Empty → section omitted
+            (older callers/tests).
+        probe_exempt: True when this exact compiled prompt already has a
+            probe PASS on the lane log (grill Q2c) — the sheet then says so
+            and points at the already-released final command instead of
+            asking for a redundant probe.
 
     Returns:
         The full render sheet as a markdown string.
@@ -113,6 +124,32 @@ def build_render_sheet(
     watch_checklist = (
         f"{_WATCH_CHECKLIST}\n{_REF_WATCH_ITEMS}" if ref_paths else _WATCH_CHECKLIST
     )
+    prediction_section: list[str] = []
+    if prediction_block:
+        prediction_section = ["## Prediction (pre-watch)", prediction_block, ""]
+    # Probe gate (slice ③): the sheet carries ONLY the 480p probe command; the
+    # final-resolution command is released by logging the probe verdict —
+    # `pov.py verdict <run_dir> --pass` writes final_command.txt. A prompt
+    # whose exact hash already passed a probe is auto-exempt (grill Q2c).
+    if probe_exempt:
+        gate_lines = [
+            "PROBE ALREADY PASSED for this exact compiled prompt (identical hash on "
+            "the lane verdict log) — no re-probe needed; the final command is "
+            "released at final_command.txt in this run directory.",
+        ]
+    else:
+        gate_lines = [
+            "PROBE GATE: this sheet carries ONLY the 480p probe command. After "
+            "watching the probe, log your verdict — a PASS releases the final "
+            "command into final_command.txt:",
+            "```",
+            "uv run python scripts/pov.py verdict <run_dir> --pass --resolution 480p",
+            "uv run python scripts/pov.py verdict <run_dir> --fail --resolution 480p "
+            "--defect <slug> [--note \"...\"]",
+            "```",
+            "Deliberate skip (logged as a bypass): add --force-final. Brakes: "
+            "2 failed retakes park the story; 150cr per-story cap.",
+        ]
     return "\n".join(
         [
             "# POV Render Sheet",
@@ -143,6 +180,9 @@ def build_render_sheet(
             "",
             f"Cost: {compiled.cost_line}",
             "",
+            *gate_lines,
+            "",
+            *prediction_section,
             "## Watch checklist (POV failure modes)",
             watch_checklist,
             "",

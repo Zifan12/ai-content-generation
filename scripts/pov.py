@@ -82,6 +82,14 @@ from src.generation.pov.compiler import compile_pov_prompt  # noqa: E402
 from src.generation.pov.craft_enforcement import develop_valid_script  # noqa: E402
 from src.generation.pov.render_sheet import build_render_sheet  # noqa: E402
 from src.generation.pov.schemas import POVPitch, POVPitchSlate  # noqa: E402
+from src.generation.pov.verdict import (  # noqa: E402
+    build_prediction_block,
+    derive_final_command,
+    force_release_final,
+    prior_pass_for_hash,
+    prompt_hash,
+    record_verdict,
+)
 from src.generation.render_adapters.rules import RenderRules  # noqa: E402
 
 # The operator's --idea text carries the whole concept; who/where/turn exist
@@ -292,7 +300,22 @@ def run_pov_pipeline(
 
     script = develop_valid_script(script_writer, pitch, rules, ref_bound=ref_bound)
     compiled = compile_pov_prompt(script, rules, bound_characters=resolved)
-    sheet = build_render_sheet(pitch, script, compiled, rules, ref_paths=ref_paths)
+
+    # Slice ③ probe gate inputs: the ruleset's pre-watch prediction (Deming
+    # Study step) and the identical-prompt-hash probe exemption (grill Q2c) —
+    # the lane verdict log lives beside the run directories.
+    prediction = build_prediction_block(rules, has_refs=bool(ref_paths))
+    lane_log = Path(output_dir) / "verdicts.jsonl"
+    probe_exempt = prior_pass_for_hash(lane_log, prompt_hash(compiled.prompt_text))
+    sheet = build_render_sheet(
+        pitch,
+        script,
+        compiled,
+        rules,
+        ref_paths=ref_paths,
+        prediction_block=prediction,
+        probe_exempt=probe_exempt,
+    )
 
     slug_source = idea if idea is not None else topic
     assert slug_source is not None  # narrowed by the exactly-one check above
@@ -303,7 +326,19 @@ def run_pov_pipeline(
     (run_dir / "pitch.json").write_text(pitch.model_dump_json(indent=2), encoding="utf-8")
     (run_dir / "script.json").write_text(script.model_dump_json(indent=2), encoding="utf-8")
     (run_dir / "prompt.txt").write_text(compiled.prompt_text, encoding="utf-8")
+    # compiled.json (slice ③): the verdict flow re-derives the final command
+    # from the probe command here — without it a run is watchable but never
+    # releasable (pre-slice-③ dirs hit exactly that, by design).
+    (run_dir / "compiled.json").write_text(compiled.model_dump_json(indent=2), encoding="utf-8")
+    (run_dir / "prediction.txt").write_text(prediction, encoding="utf-8")
     (run_dir / "render_sheet.md").write_text(sheet, encoding="utf-8")
+    if probe_exempt:
+        command, cost_line = derive_final_command(
+            compiled.cli_command, script.duration_seconds, rules
+        )
+        (run_dir / "final_command.txt").write_text(
+            f"{command}\n\n# Cost: {cost_line}\n", encoding="utf-8"
+        )
     return run_dir
 
 
@@ -358,6 +393,95 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _build_verdict_parser() -> argparse.ArgumentParser:
+    """
+    Build the ``verdict`` subcommand's parser (slice ③).
+
+    Exactly one of ``--pass`` / ``--fail`` / ``--force-final``: the first two
+    log a watched verdict (a probe PASS releases the final command; a FAIL
+    counts its defects toward the recurrence gate), the third releases the
+    final WITHOUT a probe pass and logs the bypass (grill Q2b). ``--defect``
+    is repeatable and must name taxonomy slugs (or ``other``);
+    ``--objective``/``--taste`` override the taxonomy's default tag.
+    """
+    parser = argparse.ArgumentParser(
+        prog="pov.py verdict",
+        description="Log a watched render's verdict for a POV run directory (slice ③).",
+    )
+    parser.add_argument("run_dir", help="The pipeline run directory that was rendered/watched.")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--pass", dest="passed", action="store_true", help="Watched: keeper.")
+    group.add_argument("--fail", dest="failed", action="store_true", help="Watched: defective.")
+    group.add_argument(
+        "--force-final",
+        dest="force_final",
+        action="store_true",
+        help="Release the final command WITHOUT a probe pass (logged as a bypass).",
+    )
+    parser.add_argument(
+        "--resolution",
+        default="480p",
+        help="Resolution of the render you watched (keys the credit tally). Default 480p.",
+    )
+    parser.add_argument(
+        "--defect",
+        action="append",
+        dest="defects",
+        metavar="SLUG",
+        help=(
+            "Defect class from pov_verdict.defect_taxonomy (repeatable); use "
+            "'other' + --note for a brand-new failure mode. Required with --fail."
+        ),
+    )
+    parser.add_argument("--note", help="Free-text forensic detail, kept verbatim in the log.")
+    tag_group = parser.add_mutually_exclusive_group()
+    tag_group.add_argument(
+        "--objective", action="store_true", help="Tag: operationally defined defect."
+    )
+    tag_group.add_argument("--taste", action="store_true", help="Tag: subjective judgment call.")
+    parser.add_argument(
+        "--retro",
+        action="store_true",
+        help="Seeded record reconstructed from a documented past watch (counts toward recurrence).",
+    )
+    return parser
+
+
+def _main_verdict(argv: list[str]) -> None:
+    """Run the ``verdict`` subcommand: log the verdict / force-release and print outcomes."""
+    args = _build_verdict_parser().parse_args(argv)
+    rules = RenderRules()
+    run_dir = Path(args.run_dir)
+
+    if args.force_final:
+        command = force_release_final(run_dir, rules=rules)
+        print("Probe SKIPPED — bypass logged. Final command (also in final_command.txt):")
+        print(command)
+        return
+
+    tag = "objective" if args.objective else "taste" if args.taste else None
+    outcome = record_verdict(
+        run_dir,
+        result="pass" if args.passed else "fail",
+        resolution=args.resolution,
+        rules=rules,
+        defects=args.defects,
+        note=args.note,
+        tag=tag,
+        retro=args.retro,
+    )
+    print(f"Logged {outcome.record.result} for {run_dir.name} ({outcome.record.credits}cr).")
+    for notice in outcome.recurrence_notices:
+        print(notice)
+    for refusal in outcome.refusals:
+        print(f"REFUSED: {refusal}")
+    if outcome.parked:
+        print(f"STORY PARKED — forensics written to {run_dir / 'parked.json'}.")
+    if outcome.released_final_command:
+        print("Probe PASS — final command released (also in final_command.txt):")
+        print(outcome.released_final_command)
+
+
 def main() -> None:
     """Parse CLI args and run idea mode or topic mode with the real seats + render rules."""
     from dotenv import load_dotenv
@@ -368,6 +492,13 @@ def main() -> None:
     # smoke_content_writer.py / pitch_angles.py).
     if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+
+    # Subcommand dispatch (slice ③): `pov.py verdict <run_dir> ...` — needs no
+    # LLM seats and must work with zero API keys, hence the early exit. The
+    # flag-style invocation (`pov.py --idea/--topic ...`) stays byte-compatible.
+    if len(sys.argv) > 1 and sys.argv[1] == "verdict":
+        _main_verdict(sys.argv[2:])
+        return
 
     args = _build_parser().parse_args()
 
