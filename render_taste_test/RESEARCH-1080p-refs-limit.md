@@ -66,3 +66,43 @@ both fail identically; 1080p/5s/no-refs completes).
 If Higgsfield or ByteDance later announce 1080p reference-to-video (check
 Replicate readme's resolution table first — it tracks upstream), one 45cr
 1080p/5s/2refs probe settles it. Until then this is closed.
+
+## UPDATE 2026-07-21 — the cap DOES NOT hold when a VIDEO reference is present [measured, n=1]
+
+The verdict above was derived and measured entirely on IMAGE-reference-only jobs.
+On 2026-07-21 a render with a `--video-references` clip added (spacium-pose motion
+transfer) + 4 image refs **COMPLETED at native 1080p**, billing-verified charged
+(NOT refunded):
+
+- **Job 7af7931d** (`seedance_2_0`, 1080p, 15s, 9:16, `mode std`): 1× video_reference
+  (`refs/motion/spacium_pose_ref.mp4`) + 4× image_references (ultraman crops).
+  Status `completed`, **135cr spend, no refund** (`higgsfield account transactions`).
+  Output: `output/pov/20260719_235242_*/.../motiontransfer_native1080p_7af7931d.mp4`
+  (also saved under the 20260721_154010 run dir).
+- Contrast: image-refs-ONLY at 1080p failed **0/5+ lifetime** (jobs 09602490, 9e1ed0d5,
+  045099b7, 3483b499 + the bisect probes) — the evidence base for the cap above.
+
+**Best-fit reading (consistent with the original verdict, not a contradiction of it):**
+the original finding is that 1080p exists for **t2v / first-frame task types**, and
+the multimodal **image-ref-to-video** path is 480p/720p only. Adding a video reference
+very likely re-routes the job into a task type that DOES carry 1080p — so "1080p +
+refs" was never a flat ban, it was specifically "1080p + IMAGE-ref-to-video." The
+video-ref path is a different pipeline.
+
+**Confidence: n=1, billing-verified but unconfirmed.** Alternative explanation not
+yet excluded: the eligibility gate is non-deterministic (documented elsewhere) and
+this was one lucky pass — though a single pass on a NEW config after 0/5+ on the old
+config points to a real config difference, not variance.
+
+**Confirm step (cheap):** re-run the exact 7af7931d config once. A second completion
+promotes this to a lane rule; a failure reopens the non-determinism question. If
+confirmed: **native 1080p is available for video-ref renders** — and since our register
+(fast motion / particles) is exactly where native beats upscale
+(RESEARCH-upscale-vs-native.md), native-1080p-with-video-ref becomes the finals path
+for any POV keeper that uses a motion reference, NOT the 3cr upscale.
+
+**A/B now on disk** (the post-platform test RESEARCH-upscale-vs-native.md said was
+missing — same content, both 1080p): `motiontransfer_native1080p_7af7931d.mp4` (135cr)
+vs `motiontransfer_1080p_upscaled.mp4` (3cr pro bytedance upscale of the 480p base).
+Operator watch pending — judges whether the 132cr native premium is visible on our
+register.
