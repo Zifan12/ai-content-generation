@@ -99,8 +99,9 @@ def build_render_sheet(
         ref_paths: The asset gate's validated reference images in upload
             order (ticket 10). Non-empty → the sheet gains a "Reference
             assets" section listing them in imageN order and the watch
-            checklist gains the reference failure modes. Empty → the sheet
-            is byte-identical to slice ①'s.
+            checklist gains the reference failure modes. Empty → no
+            reference-specific content is added (the probe-gate section,
+            slice ③, appears on every sheet regardless).
         prediction_block: The verdict module's pre-watch prediction text
             (slice ③, ``verdict.build_prediction_block``) — the ruleset's own
             stated theory, shown above the watch checklist so the operator's

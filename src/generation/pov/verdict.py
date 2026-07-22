@@ -117,7 +117,7 @@ def build_prediction_block(rules: RenderRules, has_refs: bool) -> str:
 
     Mechanical, deterministic (no LLM): every guarded taxonomy entry
     (``code_check`` / ``prompt_rule``) applicable to this run contributes one
-    "expect" line stating its on-screen expectation and the guard's evidence;
+    "expect" line stating its on-screen expectation and the guard's type;
     every applicable ``watch_only`` entry is listed under UNGUARDED as an
     open risk — flagged, never promised. ``refs_only`` classes appear only
     when the run carries reference images.
@@ -185,15 +185,16 @@ def derive_final_command(
             swap, or the final resolution has no measured rate.
     """
     final_res = rules.pov_verdict()["final_resolution"]
-    sanity_flag = None
-    for token in sanity_command.split():
-        if token.endswith("p") and token[:-1].isdigit():
-            sanity_flag = token
-            break
-    if sanity_flag is None or f"--resolution {sanity_flag}" not in sanity_command:
+    # Take the token AFTER the --resolution flag itself — never pattern-scan the
+    # whole command, whose --prompt payload is free LLM prose that could carry a
+    # stray resolution-looking word (review 2026-07-22).
+    tokens = sanity_command.split()
+    try:
+        sanity_flag = tokens[tokens.index("--resolution") + 1]
+    except (ValueError, IndexError):
         raise ValueError(
             f"cannot derive final command: no --resolution flag found in {sanity_command!r}"
-        )
+        ) from None
     command = sanity_command.replace(
         f"--resolution {sanity_flag}", f"--resolution {final_res}"
     )
@@ -266,7 +267,13 @@ def _load_run_inputs(run_dir: Path) -> tuple[str, int, str | None]:
     return prompt_hash(prompt_text), script.duration_seconds, sanity_command
 
 
-def _write_final(run_dir: Path, command: str, cost_line: str) -> None:
+def write_final(run_dir: Path, command: str, cost_line: str) -> None:
+    """Write the released final command (+ its cost line) to ``final_command.txt``.
+
+    The ONE place the artifact's format lives — the verdict release paths and
+    the driver's probe-exempt path all call this, so the file can never
+    diverge between writers (review 2026-07-22).
+    """
     (run_dir / _FINAL_COMMAND_FILE).write_text(
         f"{command}\n\n# Cost: {cost_line}\n", encoding="utf-8"
     )
@@ -384,9 +391,12 @@ def record_verdict(
     # history would e.g. park a run that in reality went on to pass.
     if result == "fail" and not retro:
         # Park check: first fail + max_failed_retakes more fails on this run.
+        # Retro records are excluded from the COUNT too, not just from being
+        # the parking trigger — a seeded historical fail must never cost a
+        # story one of its live retakes (review 2026-07-22).
         run_fails = [
             r for r in _run_records(all_records, run_dir.name)
-            if r.event == "verdict" and r.result == "fail"
+            if r.event == "verdict" and r.result == "fail" and not r.retro
         ]
         if len(run_fails) >= 1 + brakes["max_failed_retakes"]:
             _park(run_dir, _run_records(all_records, run_dir.name))
@@ -432,7 +442,7 @@ def record_verdict(
             )
         else:
             command, cost_line = derive_final_command(sanity_command, duration, rules)
-            _write_final(run_dir, command, cost_line)
+            write_final(run_dir, command, cost_line)
             outcome.released_final_command = command
 
     return outcome
@@ -443,19 +453,32 @@ def force_release_final(run_dir: Path, *, rules: RenderRules) -> str:
 
     Grill Q2b: the operator's judgment call (e.g. re-rolling a proven config)
     — allowed, but the bypass lands in the log as its own event type so a
-    failed skipped-probe render is attributable. Parked stories refuse even
-    a forced release (the park exists to stop exactly this spend).
+    failed skipped-probe render is attributable. The force flag skips the
+    PROBE only, never the brakes (PRD user story 18): parked stories and
+    stories at/over the per-story credit cap refuse even a forced release —
+    both brakes exist to stop exactly this spend.
 
     Returns:
         The released final command (also written to ``final_command.txt``).
 
     Raises:
-        ValueError: if the story is parked, or the run predates compiled.json.
+        ValueError: if the story is parked, the per-story credit cap is
+            reached, or the run predates compiled.json.
     """
     if (run_dir / _PARKED_FILE).exists():
         raise ValueError(
             f"story {run_dir.name} is parked (see {_PARKED_FILE}) — no further "
             f"commands released, forced or not"
+        )
+    brakes = rules.pov_verdict()["spending_brakes"]
+    spent = sum(
+        r.credits for r in _run_records(_read_log(_log_path(run_dir)), run_dir.name)
+    )
+    if spent >= brakes["per_story_credit_cap"]:
+        raise ValueError(
+            f"per-story credit cap reached ({spent}cr >= "
+            f"{brakes['per_story_credit_cap']}cr) — no further commands released, "
+            f"forced or not (--force-final skips the probe, never the cap)"
         )
     hash_value, duration, sanity_command = _load_run_inputs(run_dir)
     if sanity_command is None:
@@ -464,7 +487,7 @@ def force_release_final(run_dir: Path, *, rules: RenderRules) -> str:
             "the final command"
         )
     command, cost_line = derive_final_command(sanity_command, duration, rules)
-    _write_final(run_dir, command, cost_line)
+    write_final(run_dir, command, cost_line)
     _append_log(
         _log_path(run_dir),
         POVVerdictRecord(

@@ -293,6 +293,34 @@ def test_credit_cap_refuses_further_release(run_dir: Path, rules: RenderRules) -
     assert any("cap" in refusal for refusal in outcome.refusals)
 
 
+def test_force_final_refuses_over_credit_cap(run_dir: Path, rules: RenderRules) -> None:
+    """Review fix 2026-07-22: --force-final skips the PROBE, never the cap
+    (PRD user story 18 vs 22) — two 1080p fails (180cr) block a forced release."""
+    record_verdict(run_dir, result="fail", resolution="1080p", rules=rules, defects=["other"])
+    record_verdict(run_dir, result="fail", resolution="1080p", rules=rules, defects=["other"])
+
+    with pytest.raises(ValueError, match="cap"):
+        force_release_final(run_dir, rules=rules)
+    assert not (run_dir / "final_command.txt").exists()
+
+
+def test_retro_fails_never_count_toward_the_park_threshold(
+    run_dir: Path, rules: RenderRules
+) -> None:
+    """Review fix 2026-07-22: a seeded historical fail must not cost the story
+    a live retake — 1 retro + 2 live fails is NOT a park (3 live would be)."""
+    record_verdict(
+        run_dir, result="fail", resolution="480p", rules=rules, defects=["other"], retro=True
+    )
+    record_verdict(run_dir, result="fail", resolution="480p", rules=rules, defects=["other"])
+    outcome = record_verdict(
+        run_dir, result="fail", resolution="480p", rules=rules, defects=["other"]
+    )
+
+    assert outcome.parked is False
+    assert not (run_dir / "parked.json").exists()
+
+
 def test_verdict_requires_defect_on_fail(run_dir: Path, rules: RenderRules) -> None:
     """A fail with no named defect is uncountable — the log's whole point."""
     with pytest.raises(ValueError, match="defect"):

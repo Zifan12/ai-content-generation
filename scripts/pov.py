@@ -37,7 +37,8 @@ a violation — ONE bounded POVScriptWriter.repair call, ticket 04) -> POVScript
 -> compile_pov_prompt (ticket 02, deterministic code) -> CompiledPOVPrompt ->
 build_render_sheet (ticket 03, deterministic code) -> files written under a
 slug-named run directory: (topic mode only) slate.json, then pitch.json,
-script.json, prompt.txt, render_sheet.md.
+script.json, prompt.txt, compiled.json, prediction.txt, render_sheet.md, and
+(probe-exempt runs only, slice ③) final_command.txt.
 
 Structural validation (per-beat action count, beat-count budget,
 dialogue-never-final-beat, duration in {10, 15}) now runs on every script via
@@ -89,6 +90,7 @@ from src.generation.pov.verdict import (  # noqa: E402
     prior_pass_for_hash,
     prompt_hash,
     record_verdict,
+    write_final,
 )
 from src.generation.render_adapters.rules import RenderRules  # noqa: E402
 
@@ -257,7 +259,9 @@ def run_pov_pipeline(
     Returns:
         The created run directory (``output_dir/<slug>/``), containing (topic
         mode only) ``slate.json``, then ``pitch.json``, ``script.json``,
-        ``prompt.txt``, ``render_sheet.md``.
+        ``prompt.txt``, ``compiled.json``, ``prediction.txt``,
+        ``render_sheet.md``, and — when the probe was auto-exempted (a prior
+        PASS on this exact prompt hash, slice ③) — ``final_command.txt``.
 
     Raises:
         ValueError: if neither or both of ``idea``/``topic`` are given, if
@@ -336,9 +340,7 @@ def run_pov_pipeline(
         command, cost_line = derive_final_command(
             compiled.cli_command, script.duration_seconds, rules
         )
-        (run_dir / "final_command.txt").write_text(
-            f"{command}\n\n# Cost: {cost_line}\n", encoding="utf-8"
-        )
+        write_final(run_dir, command, cost_line)
     return run_dir
 
 
