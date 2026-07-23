@@ -14,6 +14,7 @@ of sync with what this test actually proves.
 """
 
 import re
+from pathlib import Path
 
 import pytest
 
@@ -392,9 +393,14 @@ def test_cli_command_carries_image_flags_in_ref_order(rules: RenderRules) -> Non
     ]
     compiled = compile_pov_prompt(_script(), rules, bound_characters=bound)
 
-    first = compiled.cli_command.index('--image "refs/hero/a_arm.png"')
-    second = compiled.cli_command.index('--image "refs/hero/b_glove.png"')
+    # Paths are emitted ABSOLUTE (ticket 05: shell cwd drifts between the
+    # operator's copy-paste calls) — resolve the fixtures the same way.
+    a_arm = str(Path("refs/hero/a_arm.png").resolve())
+    b_glove = str(Path("refs/hero/b_glove.png").resolve())
+    first = compiled.cli_command.index(f'--image "{a_arm}"')
+    second = compiled.cli_command.index(f'--image "{b_glove}"')
     assert first < second
+    assert compiled.ref_paths == [a_arm, b_glove]
 
 
 def test_cli_command_without_refs_has_no_image_flag(rules: RenderRules) -> None:
@@ -486,7 +492,8 @@ def test_object_binding_sentence_and_image_numbering_after_characters(
     compiled = compile_pov_prompt(_script(), rules, bound_characters=bound)
 
     assert "The hell city is shown in image3." in compiled.prompt_text
-    assert '--image "refs/hell_city/keeper.png"' in compiled.cli_command
+    keeper = str(Path("refs/hell_city/keeper.png").resolve())
+    assert f'--image "{keeper}"' in compiled.cli_command
 
 
 def test_world_element_descriptions_never_reach_the_prompt(rules: RenderRules) -> None:

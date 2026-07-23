@@ -418,7 +418,11 @@ def _finalize_run(
     # the lane verdict log lives beside the run directories.
     prediction = build_prediction_block(rules, has_refs=bool(ref_paths))
     lane_log = run_dir.parent / "verdicts.jsonl"
-    probe_exempt = prior_pass_for_hash(lane_log, prompt_hash(compiled.prompt_text))
+    # Hash covers prompt + ordered ref names (ticket 05): a ref swap on an
+    # identical prompt is a NEW config and must re-probe.
+    probe_exempt = prior_pass_for_hash(
+        lane_log, prompt_hash(compiled.prompt_text, compiled.ref_paths)
+    )
     sheet = build_render_sheet(
         pitch,
         script,

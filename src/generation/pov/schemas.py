@@ -213,3 +213,9 @@ class CompiledPOVPrompt(BaseModel):
     prompt_text: str
     cli_command: str
     cost_line: str
+    # The bound reference images, ABSOLUTE paths in upload order (D2 ticket
+    # 05): the verdict flow reads these from compiled.json to (a) extend the
+    # probe-exemption hash with the ref file names — a ref swap invalidates a
+    # prior PASS — and (b) keep the released final command carrying exactly
+    # the validated refs. [] on text-only runs (and every pre-D2 artifact).
+    ref_paths: list[str] = []

@@ -129,15 +129,24 @@ def record_still_spend(
     return record
 
 
-def prompt_hash(prompt_text: str) -> str:
-    """Return the stable content key for a compiled prompt.
+def prompt_hash(prompt_text: str, ref_paths: list[str] | tuple[str, ...] = ()) -> str:
+    """Return the stable content key for a compiled prompt + its bound refs.
 
-    sha256 over the exact prompt text, truncated to 16 hex chars — long
+    sha256 over the exact prompt text — extended (D2 ticket 05) with the
+    ordered reference FILE NAMES when the run binds refs, so swapping a
+    reference invalidates a prior probe PASS instead of silently reusing it.
+    Names, not full paths: the same promoted keeper must hash identically
+    whether the refs root was given relative or absolute. Text-only runs
+    hash EXACTLY as before the extension, so every pre-D2 log record (incl.
+    retro seeds) keeps matching without migration — a refs run simply never
+    collides with a text-only record. Truncated to 16 hex chars — long
     enough that a collision inside one lane's lifetime of prompts is not a
-    real concern, short enough to read in a log line. Same text → same hash
-    across processes and sessions (the probe-exemption rule depends on it).
+    real concern, short enough to read in a log line.
     """
-    return hashlib.sha256(prompt_text.encode("utf-8")).hexdigest()[:16]
+    hasher = hashlib.sha256(prompt_text.encode("utf-8"))
+    for path in ref_paths:
+        hasher.update(b"\x00" + Path(path).name.encode("utf-8"))
+    return hasher.hexdigest()[:16]
 
 
 def build_prediction_block(rules: RenderRules, has_refs: bool) -> str:
@@ -276,9 +285,10 @@ def _load_run_inputs(run_dir: Path) -> tuple[str, int, str | None]:
 
     Returns (prompt_hash, duration_seconds, sanity_command). The prompt and
     script are the pipeline's committed artifacts (PRD: any run can be
-    post-mortemed from its files); the sanity command comes from
-    ``compiled.json`` when present (slice-③ runs) and is None on older run
-    dirs — retro seeding still works there, only command release needs it.
+    post-mortemed from its files); the sanity command and the bound ref list
+    (hash input, D2 ticket 05) come from ``compiled.json`` when present
+    (slice-③ runs) and default to None/[] on older run dirs — retro seeding
+    still works there, only command release needs the command.
 
     Raises:
         FileNotFoundError: if the run directory lacks prompt.txt/script.json —
@@ -289,10 +299,13 @@ def _load_run_inputs(run_dir: Path) -> tuple[str, int, str | None]:
         (run_dir / "script.json").read_text(encoding="utf-8")
     )
     sanity_command: str | None = None
+    ref_paths: list[str] = []
     compiled_path = run_dir / "compiled.json"
     if compiled_path.exists():
-        sanity_command = json.loads(compiled_path.read_text(encoding="utf-8"))["cli_command"]
-    return prompt_hash(prompt_text), script.duration_seconds, sanity_command
+        compiled = json.loads(compiled_path.read_text(encoding="utf-8"))
+        sanity_command = compiled["cli_command"]
+        ref_paths = compiled.get("ref_paths", [])
+    return prompt_hash(prompt_text, ref_paths), script.duration_seconds, sanity_command
 
 
 def write_final(

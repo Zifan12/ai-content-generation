@@ -163,3 +163,27 @@ def test_final_command_swaps_resolution_and_restates_cost(rules: RenderRules) ->
     # 15s × 9.0cr/s (measured 2026-07-22, two refunded attempts) = 135cr
     assert "135" in cost_line
     assert "1080p" in cost_line
+
+
+# --- hash over prompt + refs (D2 ticket 05) ----------------------------------
+
+
+def test_hash_without_refs_matches_the_pre_d2_form() -> None:
+    """Text-only hashes must stay byte-identical so every pre-D2 log record
+    (incl. retro seeds) keeps matching without migration."""
+    import hashlib
+
+    text = "a compiled prompt"
+    assert prompt_hash(text) == hashlib.sha256(text.encode()).hexdigest()[:16]
+    assert prompt_hash(text, ()) == prompt_hash(text)
+
+
+def test_hash_changes_when_a_ref_is_swapped_and_ignores_path_prefix() -> None:
+    text = "a compiled prompt"
+    with_a = prompt_hash(text, ["C:/abs/refs/hell_city/keeper_a.png"])
+    with_b = prompt_hash(text, ["C:/abs/refs/hell_city/keeper_b.png"])
+    relative_a = prompt_hash(text, ["refs/hell_city/keeper_a.png"])
+
+    assert with_a != prompt_hash(text)  # refs runs never collide with text-only
+    assert with_a != with_b  # ref swap = new config
+    assert with_a == relative_a  # file NAME keys the hash, not the path prefix

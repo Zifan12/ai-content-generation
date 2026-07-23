@@ -46,6 +46,7 @@ is a seam-2 assertion, and nothing else in the pipeline checks it).
 
 import re
 from collections.abc import Sequence
+from pathlib import Path
 
 from src.generation.executor import _sanitize_prompt
 from src.generation.pov.asset_check import ResolvedCharacter
@@ -387,7 +388,15 @@ def compile_pov_prompt(
     # characters the Windows .cmd-shim CreateProcess quirk can't reliably
     # escape (module docstring there) — reused here ONLY for the copy-paste
     # CLI string; prompt_text itself stays untouched/readable.
-    all_ref_paths = [path for character in bound_characters for path in character.ref_paths]
+    # ABSOLUTE paths on the CLI command (and the artifact): the shell cwd
+    # drifts between the operator's copy-paste calls, and a relative --image
+    # path silently resolves against the wrong directory (post #3 ops note,
+    # 2026-07-22).
+    all_ref_paths = [
+        str(Path(path).resolve())
+        for character in bound_characters
+        for path in character.ref_paths
+    ]
     ref_flags = "".join(f' --image "{path}"' for path in all_ref_paths)
     cli_command = (
         f'higgsfield generate create {model_id} --prompt "{_sanitize_prompt(prompt_text)}" '
@@ -402,4 +411,5 @@ def compile_pov_prompt(
         prompt_text=prompt_text,
         cli_command=cli_command,
         cost_line=cost_line,
+        ref_paths=all_ref_paths,
     )

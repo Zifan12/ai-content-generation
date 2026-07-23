@@ -354,3 +354,84 @@ def test_prediction_artifacts_written_at_run_time(run_dir: Path) -> None:
     assert "angle_switch" in prediction
     assert "UNGUARDED" in prediction
     assert "Prediction" in sheet
+
+
+# --- verdict truth: refs in the release + brakes (D2 ticket 05) --------------
+
+
+def _ref_run(tmp_path: Path, rules: RenderRules, keeper_name: str = "keeper.png") -> Path:
+    """A run with one promoted object ref (fixture PNG) through the real driver."""
+    from src.generation.pov.schemas import POVWorldElement
+    from tests.cli.test_pov import _PNG_HEADER
+
+    refs = tmp_path / "refs"
+    (refs / "hell_city").mkdir(parents=True, exist_ok=True)
+    (refs / "hell_city" / keeper_name).write_bytes(_PNG_HEADER)
+    script = _script().model_copy(
+        update={
+            "world_elements": [
+                POVWorldElement(slug="hell_city", description="black gothic towers")
+            ]
+        }
+    )
+    return run_pov_pipeline(
+        FakeObjectScriptWriter(script), rules, SAMPLE_IDEA,
+        objects=["hell_city"],
+        refs_root=refs,
+        output_dir=tmp_path / "pov",
+    )
+
+
+class FakeObjectScriptWriter:
+    def __init__(self, script: POVScript) -> None:
+        self._script = script
+
+    def develop(self, pitch, ref_bound=(), declared_objects=()) -> POVScript:
+        return self._script
+
+    def repair(
+        self, pitch, failed_script, violations, ref_bound=(), declared_objects=()
+    ) -> POVScript:
+        raise AssertionError("fixture script is structurally valid; repair must not run")
+
+
+def test_released_final_carries_the_validated_refs(tmp_path: Path, rules: RenderRules) -> None:
+    """Staleness kill: the final command IS the probe command (same refs,
+    absolute paths) at the final resolution — never a ref-less original."""
+    run_dir = _ref_run(tmp_path, rules)
+
+    outcome = record_verdict(run_dir, result="pass", resolution="480p", rules=rules)
+
+    released = outcome.released_final_command
+    assert released is not None
+    keeper_abs = str((tmp_path / "refs" / "hell_city" / "keeper.png").resolve())
+    assert f'--image "{keeper_abs}"' in released
+    assert "--resolution 1080p" in released
+
+
+def test_ref_swap_invalidates_a_prior_probe_pass(tmp_path: Path, rules: RenderRules) -> None:
+    """Same prompt + same ref -> exempt; same prompt + RENAMED ref -> re-probe."""
+    first = _ref_run(tmp_path, rules)
+    record_verdict(first, result="pass", resolution="480p", rules=rules)
+
+    same = _ref_run(tmp_path, rules)
+    assert (same / "final_command.txt").exists()  # identical config: exempt
+
+    (tmp_path / "refs" / "hell_city" / "keeper.png").unlink()
+    swapped = _ref_run(tmp_path, rules, keeper_name="different_keeper.png")
+    assert not (swapped / "final_command.txt").exists()  # new config: re-probe
+
+
+def test_credit_cap_tally_includes_recorded_still_spend(
+    run_dir: Path, rules: RenderRules
+) -> None:
+    """PRD story 23: the brake reads ALL recorded spend — still generation
+    included. 300cr of still spend blocks the release a pass would earn."""
+    from src.generation.pov.verdict import record_still_spend
+
+    record_still_spend(run_dir, count=43, credits=301.0, note="hell_city x43")
+
+    outcome = record_verdict(run_dir, result="pass", resolution="480p", rules=rules)
+
+    assert outcome.released_final_command is None
+    assert any("cap" in refusal for refusal in outcome.refusals)
