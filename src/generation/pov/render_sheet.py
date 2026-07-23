@@ -109,8 +109,9 @@ def build_render_sheet(
             the render truth.
         compiled: The compiler's output for ``script`` (prompt_text,
             cli_command, cost_line).
-        rules: The loaded render rules — read once for
-            ``scene_lane.retake_ladder``'s wording.
+        rules: The loaded render rules — read for the POV lane's own ladder
+            wording (``pov_verdict.ladder``, ticket 01 D2) and the spending
+            brake values shown on the probe-gate lines.
         ref_paths: The asset gate's validated reference images in upload
             order (ticket 10). Non-empty → the sheet gains a "Reference
             assets" section listing them in imageN order and the watch

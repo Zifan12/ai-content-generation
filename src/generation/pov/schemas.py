@@ -202,10 +202,11 @@ class CompiledPOVPrompt(BaseModel):
 
     ``prompt_text`` is the final render prompt (fixed clauses + scrubbed
     script prose). ``cli_command`` is a copy-paste Higgsfield CLI invocation
-    for the mandatory 480p sanity pass (retake_ladder,
-    ``config/render_rules.yaml``) — the 720p/1080p ladder steps are the
-    render sheet's job (ticket 03), not the compiler's. ``cost_line`` is the
-    480p credit estimate from the yaml's measured per-second rate.
+    for the mandatory 480p sanity pass (the POV ladder,
+    ``pov_verdict.ladder``) — the final-resolution step is the verdict
+    flow's release, not the compiler's. ``cost_line`` is the 480p credit
+    estimate from the yaml's measured per-second rate. ``ref_paths`` (D2
+    ticket 05) is the bound reference list — see its field comment.
     """
 
     model_config = ConfigDict(extra="forbid")

@@ -419,6 +419,11 @@ class POVScriptWriter:
                 ``craft_enforcement.check_structure``.
             violations: The violation strings from ``check_structure``,
                 named to the model so it knows exactly what to fix.
+            ref_bound: Same as ``develop`` — the appearance-ownership
+                addendum must apply on the repair call too.
+            declared_objects: Same as ``develop`` — the world_elements
+                authoring rule must apply on the repair call too (a repair
+                that drops the entries would just re-fail coverage).
 
         Returns:
             The repaired POVScript.

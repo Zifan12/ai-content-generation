@@ -907,3 +907,49 @@ def test_preexisting_object_refs_skip_generation_entirely(tmp_path) -> None:
     assert runner.calls == []
     assert (run_dir / "render_sheet.md").exists()
     assert not (out / "verdicts.jsonl").exists()  # no spend recorded
+
+
+def test_partial_batch_failure_still_records_completed_still_spend(tmp_path) -> None:
+    """Review finding 2026-07-23: a mid-batch runner failure must not lose the
+    spend record of a still that already generated (brakes read recorded
+    spend, never memory — ADR-0007)."""
+    from src.generation.pov.schemas import POVWorldElement
+
+    script = _script().model_copy(
+        update={
+            "world_elements": [
+                POVWorldElement(slug="city", description="a city"),
+                POVWorldElement(slug="statue", description="a statue"),
+            ]
+        }
+    )
+
+    class FailsOnSecond:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def __call__(self, prompt: str, dest):
+            self.calls += 1
+            if self.calls == 2:
+                raise RuntimeError("CLI network error")
+            dest.write_bytes(_PNG_HEADER)
+            return dest
+
+    out = tmp_path / "out"
+    with pytest.raises(RuntimeError, match="network"):
+        run_pov_pipeline(
+            FakeScriptWriter(script), _rules(), SAMPLE_IDEA,
+            objects=["city", "statue"],
+            refs_root=tmp_path / "refs",
+            output_dir=out,
+            still_runner=FailsOnSecond(),
+        )
+
+    records = [
+        json.loads(line)
+        for line in (out / "verdicts.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert len(records) == 1  # the completed still's spend IS on the log
+    assert records[0]["event"] == "still_gen"
+    assert records[0]["note"].endswith("city")
+    assert records[0]["credits"] == 7.0

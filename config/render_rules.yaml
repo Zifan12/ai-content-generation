@@ -843,10 +843,10 @@ pov_assets:
   # generated on it (7cr each, billing 2026-07-22). CLI id per `higgsfield
   # model list` naming convention — verify on the first live D2 run.
   still_model: gpt_image_2
-  # One candidate per object per batch (PRD): the pick gate is cheap to rerun;
-  # burst-generating variants before the first watch validates the template is
-  # speculative spend.
-  candidates_per_object: 1
+  # One candidate per object per batch is a code-level decision (asset_gen
+  # generates exactly one; PRD: burst-generating variants before the first
+  # watch validates the template is speculative spend) — deliberately NOT a
+  # config knob here: a value nothing reads is a lie waiting to be tuned.
   # Slots: {description} = the script seat's world-element identity prose;
   # {vantage_phrase} = vantage_template with the scene substituted;
   # {style_clause} = the batch-shared register clause below. The single-element

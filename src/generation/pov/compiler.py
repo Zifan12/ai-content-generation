@@ -69,9 +69,10 @@ class POVWordBudgetError(ValueError):
     scene setting, world prose, and every beat's actions/dialogue/audio —
     EXCLUDING the fixed skeleton clauses and the constraints block, per
     ``pov_grammar.world_prose_craft.body_word_target.excludes``. A script
-    this far outside the duration-keyed corpus-sourced range (60-100 @10s,
-    60-120 @15s — the ``at_<duration>s`` rows, BUG-036) is a script-stage
-    defect, not something this compiler should silently accept or pad.
+    this far outside the duration-keyed range (the ``at_<duration>s`` rows —
+    config-owned values with their own evidence trail, BUG-036/BUG-040) is a
+    script-stage defect, not something this compiler should silently accept
+    or pad.
     """
 
 

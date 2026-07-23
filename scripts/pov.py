@@ -50,8 +50,9 @@ failure at this point loses the slate that was already paid for
 writes-nothing-on-failure invariant idea mode already has) — a deliberate,
 narrow scope call: durability of a slate across a downstream crash is a
 separate feature this ticket does not ask for.
-compile_pov_prompt's own word-budget check (60-100 words) is a separate,
-unrelated failure that can still surface loud here too.
+compile_pov_prompt's own word-budget check (duration-keyed, config-owned in
+pov_grammar.world_prose_craft.body_word_target) is a separate, unrelated
+failure that can still surface loud here too.
 
 LIVE SMOKE (not run in CI — spends one real LLM call, zero render credits):
     uv run python scripts/pov.py --idea "I dive into a sunken WWII wreck and \
@@ -373,18 +374,23 @@ def run_pov_pipeline(
             ),
             encoding="utf-8",
         )
-        total, cost_line = still_cost_line(len(missing_objects), rules)
+        _, cost_line = still_cost_line(len(missing_objects), rules)
         print(cost_line)  # cost stated BEFORE spend (ADR-0007)
         runner = still_runner if still_runner is not None else higgsfield_still_runner
-        candidates = generate_candidates(
-            script, missing_objects, refs_root, rules, runner
-        )
-        record_still_spend(
-            run_dir,
-            count=len(candidates),
-            credits=total,
-            note=", ".join(d.slug for d in missing_objects),
-        )
+        # One object per generate call, spend recorded IMMEDIATELY after each:
+        # a mid-batch runner failure must never lose the record of a still
+        # that already spent credits — the brakes read recorded spend, never
+        # memory (review finding 2026-07-23; per-still rate from the measured
+        # row, same source as still_cost_line).
+        per_still_rate = rules.pov_verdict()["still_generation_credits"]
+        candidates: list[Path] = []
+        for declared_object in missing_objects:
+            candidates.extend(
+                generate_candidates(script, [declared_object], refs_root, rules, runner)
+            )
+            record_still_spend(
+                run_dir, count=1, credits=per_still_rate, note=declared_object.slug
+            )
         sheet_text = pick_sheet(run_dir, candidates, refs_root)
         (run_dir / "assets_pick.md").write_text(sheet_text, encoding="utf-8")
         raise POVAssetPickNeeded(run_dir, sheet_text)

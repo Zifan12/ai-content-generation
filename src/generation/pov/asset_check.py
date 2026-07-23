@@ -10,21 +10,29 @@ only, mirroring the lane's compiler/render-sheet doctrine:
   <slug>[:role]`` values into :class:`DeclaredCharacter` records (roles:
   ``protagonist`` — you ARE the subject, only limbs on screen — and
   ``in_frame`` — the subject stands in front of the camera).
-- ``check_assets`` looks for ``<refs_root>/<slug>/``. A MISSING/EMPTY
-  directory is the operator-hasn't-supplied-yet state: it raises
-  :class:`POVAssetRequestNeeded` carrying a role-specific REQUEST SHEET (what
-  images to drop, in the research-locked format — RESEARCH-slice2.md §4). A
-  PRESENT-but-invalid directory (count out of bounds, non-image file) is a
-  defect: plain loud ``ValueError``. On success it returns every reference
-  path in DETERMINISTIC UPLOAD ORDER — protagonist characters' refs first
-  (declaration order), then in_frame characters' (declaration order), each
-  character's files sorted by filename. Upload order defines the ``imageN``
-  numbering ticket 11's binding clause uses (the scene lane's
-  ``_ordered_refs_by_character`` convention, adapter.py), so this order is a
-  CONTRACT, not cosmetics.
+- ``parse_object_args`` (D2, .scratch/pov-d2-assets/PRD.md) does the same for
+  repeated ``--object <slug>`` values — invented world elements, always role
+  ``object``, dup-checked against the character slugs.
+- ``check_assets`` looks for PROMOTED files directly in
+  ``<refs_root>/<slug>/`` (subdirectories — the ticket-04 ``candidates/``
+  area — never count). A MISSING/EMPTY directory is the not-yet-supplied
+  state: it raises :class:`POVAssetRequestNeeded` carrying a role-specific
+  REQUEST SHEET (what images to drop, in the research-locked format —
+  RESEARCH-slice2.md §4). A PRESENT-but-invalid directory (count out of
+  bounds, non-image file) is a defect: plain loud ``ValueError``. On success
+  it returns every reference path in DETERMINISTIC UPLOAD ORDER —
+  protagonist characters first (declaration order), then in_frame characters
+  (declaration order), then objects (declaration order), each entry's files
+  sorted by filename. Upload order defines the ``imageN`` numbering ticket
+  11's binding clause uses (the scene lane's ``_ordered_refs_by_character``
+  convention, adapter.py), so this order is a CONTRACT, not cosmetics.
 
-The gate runs BEFORE the pitcher/script seats (scripts/pov.py) so a missing
-asset never costs an LLM call. Validation is code checks only — no LLM judge
+For CHARACTERS the gate runs BEFORE the pitcher/script seats (scripts/pov.py)
+so a missing canon asset never costs an LLM call — canon must be
+operator-sourced, there is nothing to generate. Declared OBJECTS with missing
+refs deliberately run the seats first (their candidate stills are briefed
+from the script seat's world-element descriptions) and halt at the ticket-04
+pick gate instead. Validation is code checks only — no LLM judge
 until a real failure proves code checks blind (house rule, PRD-slice2
 Implementation Decisions). Role bounds and the image-extension set are module
 constants rather than yaml: they are validation plumbing, not prompt grammar
@@ -47,9 +55,9 @@ _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
 # Unpicked generation candidates live in refs/<slug>/candidates/ (ticket 04);
 # only files directly in refs/<slug>/ are PROMOTED references. The gate reads
-# promoted files exclusively — a candidates-only directory is the
-# not-yet-promoted state, indistinguishable from missing.
-_CANDIDATES_DIR = "candidates"
+# promoted files exclusively (the is_file() filters in check_assets) — a
+# candidates-only directory is the not-yet-promoted state, indistinguishable
+# from missing.
 _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
 # Per-role (min, max) reference counts — STARTING bounds, revisited on ticket

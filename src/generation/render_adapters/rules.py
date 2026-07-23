@@ -156,8 +156,8 @@ class RenderRules:
         """Return the ``pov_assets`` block (D2, .scratch/pov-d2-assets/PRD.md).
 
         Candidate-still generation config for declared ``--object`` world
-        elements: the image model, candidates-per-object count, and the
-        still-prompt template with its shared style clause and vantage
+        elements: the image model and the still-prompt template with its
+        shared style clause and vantage
         template. Plain passthrough like ``pov_verdict`` — the template is
         prompt DATA, tuned per watched evidence, so it lives in the YAML
         with its evidence trail. ``src/generation/pov/asset_gen.py`` is the

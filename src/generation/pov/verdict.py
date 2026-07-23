@@ -15,9 +15,13 @@ of the first-try-success package:
   slugs against the taxonomy, writes the run's verdict record + appends the
   lane-wide log, counts recurrence across DISTINCT runs (first sighting =
   data point, >=2 = draft-a-rule notice; rules are NEVER auto-written — the
-  notice asks the operator to ratify), enforces the spending brakes (150cr
-  per-story cap, 2-failed-retakes park), and — on a probe PASS — releases the
+  notice asks the operator to ratify), enforces the spending brakes
+  (per-story credit cap + failed-retakes park, values config-owned in
+  ``pov_verdict.spending_brakes``), and — on a probe PASS — releases the
   final-resolution command.
+- :func:`record_still_spend` — D2 ticket 04: logs candidate-still generation
+  spend as a ``still_gen`` event so the credit brake tallies it; never counts
+  as a watch.
 - :func:`force_release_final` — grill Q2b: the deliberate probe skip. Releases
   the final but records the bypass as its own event type, so a failed
   skipped-probe render is attributable to the bypass, not the gate.
