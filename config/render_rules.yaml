@@ -668,12 +668,12 @@ pov_grammar:
       excludes: "the fixed skeleton_clauses and constraints_block text — the target applies only to the script-specific body (Subject/Action/Scene/Light/Style/Audio prose)"
       at_10s:
         min_words: 60
-        max_words: 100
-        evidence: "corpus video_model_system_guide.md:138-148 ('Prompt length' table: 'Official Volcengine guide | 60-100 words' — Volcengine is Seedance's vendor cloud, i.e. the model's own official guidance). NOTE (BUG-036 audit): the vendor figure is whole-prompt, duration-agnostic guidance applied here to the authored body only; the 2026-07-19 arithmetic audit showed it fits the at_10s beat budget but not at_15s's"
+        max_words: 150
+        evidence: "EXPERIMENT 2026-07-22 (operator-directed): raised 100->150 to render an over-vendor-budget probe and watch whether adherence actually degrades — the BUG-040 pending validation. Revert to 100 if the watch shows beat compression/teleport. Base evidence: corpus video_model_system_guide.md:138-148 ('Prompt length' table: 'Official Volcengine guide | 60-100 words' — Volcengine is Seedance's vendor cloud, i.e. the model's own official guidance). NOTE (BUG-036 audit): the vendor figure is whole-prompt, duration-agnostic guidance applied here to the authored body only; the 2026-07-19 arithmetic audit showed it fits the at_10s beat budget but not at_15s's"
       at_15s:
         min_words: 60
-        max_words: 150
-        evidence: "re-derived 2026-07-21 (BUG-040) from the 120 BUG-036 set 2026-07-19. BUG-036's floor (114/121 words, Langfuse be9c65a3384dc6fd1d4a5934cdb2fa56 / 221dd15c2ce7e7aee2c660e46322b96d) predated craft rules 13 (target body-fate, BUG-038) and 14 (pose geometry, BUG-039), which add ~24 words of MANDATORY, trim-exempt content on a combat story: an explicit body-fate clause (~23 words, vs a bare 'collapses') and a spelled-out limb-geometry pose (~23 words, vs a bare 'wrists cross'). Measured floor on a 5-beat kaiju-beam pitch = ~141 body words (develop probe 2026-07-21, output/pov/20260721_150459_*): protagonist 12 + scene 15 + world 20 + 5 beats incl. geometry 23 + body-fate 23 + audio events. 120 made 15s combat pitches uncompilable (POVStructuralViolationError, 126 words after one repair). 150 = floor ~141 + ~9 words for the bounded-repair pass to converge into. COST/VALIDATION GATE: compiled total now ~230-240 words, PAST the corpus ~200 diminishing-returns knee (video_model_system_guide.md:148) — the next 15s 480p watch must judge whether the longer prompt degrades render adherence; if it does, the lever is shorter fixed clauses (esp. the ~30-word BUG-037 action camera clause), not re-tightening the mandatory craft rules"
+        max_words: 220
+        evidence: "EXPERIMENT 2026-07-22 (operator-directed): raised 150->220 to render an over-vendor-budget probe and watch whether adherence actually degrades — the BUG-040 pending validation. Revert to 150 if the watch shows beat compression/teleport. Base evidence: re-derived 2026-07-21 (BUG-040) from the 120 BUG-036 set 2026-07-19. BUG-036's floor (114/121 words, Langfuse be9c65a3384dc6fd1d4a5934cdb2fa56 / 221dd15c2ce7e7aee2c660e46322b96d) predated craft rules 13 (target body-fate, BUG-038) and 14 (pose geometry, BUG-039), which add ~24 words of MANDATORY, trim-exempt content on a combat story: an explicit body-fate clause (~23 words, vs a bare 'collapses') and a spelled-out limb-geometry pose (~23 words, vs a bare 'wrists cross'). Measured floor on a 5-beat kaiju-beam pitch = ~141 body words (develop probe 2026-07-21, output/pov/20260721_150459_*): protagonist 12 + scene 15 + world 20 + 5 beats incl. geometry 23 + body-fate 23 + audio events. 120 made 15s combat pitches uncompilable (POVStructuralViolationError, 126 words after one repair). 150 = floor ~141 + ~9 words for the bounded-repair pass to converge into. COST/VALIDATION GATE: compiled total now ~230-240 words, PAST the corpus ~200 diminishing-returns knee (video_model_system_guide.md:148) — the next 15s 480p watch must judge whether the longer prompt degrades render adherence; if it does, the lever is shorter fixed clauses (esp. the ~30-word BUG-037 action camera clause), not re-tightening the mandatory craft rules"
 
 # ---------------------------------------------------------------------------
 # POV VERDICT (slice ③, .scratch/pov-slice3/PRD.md, 2026-07-22) — the verdict
@@ -694,16 +694,32 @@ pov_grammar:
 # ---------------------------------------------------------------------------
 pov_verdict:
   spending_brakes:
-    # Grill Q1 2026-07-22: staged-director D7's proposed 150cr per-story cap
-    # CONFIRMED. Tallied from logged verdicts (duration x measured per-second
-    # rate); at/over the cap the verdict flow releases no further commands.
-    per_story_credit_cap: 150
+    # D2 grilling 2026-07-23: 150 -> 300. The 150 cap predated the native-1080p
+    # finals doctrine (blur lesson 2026-07-22) — a normal keeper story now runs
+    # probe 45 + stills ~21 + 1080p final 135 ≈ 200cr, and post #3 needed an
+    # operator override at 262cr. 300 fits normal + one failed probe retake; a
+    # second 1080p take still goes through the logged --force-final override
+    # (rare spend should look rare). Tallied from logged verdicts (duration x
+    # measured per-second rate) plus recorded still spend.
+    per_story_credit_cap: 300
     # Staged-director D7: first fail + 2 failed retakes -> story PARKS with
     # structured forensics (parked.json).
     max_failed_retakes: 2
-  # Finals policy 2026-07-20 (RESEARCH-1080p-refs-limit.md): 720p native is the
-  # finals ceiling for ref-bound renders; upscale is a separate post step.
-  final_resolution: 720p
+  # Finals policy 2026-07-22 (post #3 blur forensics, D2 PRD): finals are NATIVE
+  # resolution generations — the posted upscaled-480p final was blurry/pixelated
+  # (upscalers cannot add detail; worst on fast motion + low light + particles,
+  # all three in this register). 1080p+image-refs is attempt-first (n=1 old fail
+  # evidence, but failed jobs are uncharged); the released final carries a
+  # native-720p fallback line for a rejected job. Supersedes the 2026-07-20
+  # "720p ceiling" row (RESEARCH-1080p-refs-limit.md).
+  final_resolution: 1080p
+  # POV render ladder (ticket 01, D2 PRD): shown VERBATIM on every render sheet.
+  # One 1080p take by default — operator ruling 2026-07-23 ("don't run the same
+  # prompt twice at 1080p unless I have to"); re-rolls go through --force-final.
+  ladder: "480p probe (cheapest possible failure) -> operator WATCHES + logs verdict -> PASS releases ONE native 1080p final. Upscalers are draft salvage ONLY (0.1cr bytedance preview) — a keeper is NEVER an upscaled probe (post #3 blur lesson, 2026-07-22). Second 1080p take = deliberate --force-final override, logged."
+  # Measured GPT Image 2 still cost (2 stills x 7cr, billing 2026-07-22) — the
+  # D2 asset stage's spend tally reads this row; never invent a rate (ADR-0007).
+  still_generation_credits: 7.0
   defect_taxonomy:
     money_shot_missed:
       description: "the pitch's stated money_shot image is not on screen or does not read at a glance"

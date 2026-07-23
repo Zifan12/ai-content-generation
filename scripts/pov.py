@@ -340,7 +340,7 @@ def run_pov_pipeline(
         command, cost_line = derive_final_command(
             compiled.cli_command, script.duration_seconds, rules
         )
-        write_final(run_dir, command, cost_line)
+        write_final(run_dir, command, cost_line, rules.pov_verdict()["final_resolution"])
     return run_dir
 
 

@@ -274,7 +274,12 @@ def test_word_budget_too_short_raises(rules: RenderRules) -> None:
 
 
 def test_word_budget_too_long_raises(rules: RenderRules) -> None:
-    filler = " ".join(["word"] * 40)
+    """Sized off the CONFIGURED cap, not a literal — the caps are live config
+    (loosened to 150/220 as the 2026-07-22 BUG-040 experiment; revert pending
+    an operator adherence verdict), and this test asserts the over-cap
+    behavior, not the cap's value."""
+    cap = rules.pov_grammar()["world_prose_craft"]["body_word_target"]["at_10s"]["max_words"]
+    filler = " ".join(["word"] * (cap + 10))
     script = _script(
         world_prose=(
             "Foreground rubble glistens with damp moss, midground crystal spires pulse a "

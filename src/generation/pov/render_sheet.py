@@ -149,7 +149,10 @@ def build_render_sheet(
             "--defect <slug> [--note \"...\"]",
             "```",
             "Deliberate skip (logged as a bypass): add --force-final. Brakes: "
-            "2 failed retakes park the story; 150cr per-story cap.",
+            f"{rules.pov_verdict()['spending_brakes']['max_failed_retakes']} failed "
+            f"retakes park the story; "
+            f"{rules.pov_verdict()['spending_brakes']['per_story_credit_cap']}cr "
+            "per-story cap.",
         ]
     return "\n".join(
         [
@@ -172,7 +175,10 @@ def build_render_sheet(
             "",
             *ref_section,
             "## MANDATORY render ladder",
-            f"**{rules.retake_ladder()}**",
+            # POV carries its OWN ladder (pov_verdict.ladder, ticket 01 D2):
+            # native-1080p x1 finals, upscaler demoted — not the scene lane's
+            # x2-3 retake_ladder wording.
+            f"**{rules.pov_verdict()['ladder']}**",
             "",
             "480p sanity-pass CLI (copy-paste):",
             "```",

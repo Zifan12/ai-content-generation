@@ -75,13 +75,19 @@ def test_sheet_contains_verbatim_prompt_cli_and_cost(rules: RenderRules) -> None
 
 
 def test_sheet_contains_mandatory_ladder_wording(rules: RenderRules) -> None:
+    """Ticket 01 (D2): the POV lane carries its OWN ladder (probe -> watch ->
+    native 1080p x1; upscaler = draft salvage), not the scene lane's x2-3
+    wording — the blur lesson 2026-07-22."""
     script = _script()
     compiled = compile_pov_prompt(script, rules)
 
     sheet = build_render_sheet(SAMPLE_PITCH, script, compiled, rules)
 
     assert "MANDATORY" in sheet
-    assert rules.retake_ladder() in sheet
+    assert rules.pov_verdict()["ladder"] in sheet
+    ladder = rules.pov_verdict()["ladder"]
+    assert "1080p" in ladder
+    assert "upscal" in ladder.lower()  # upscaler explicitly demoted
 
 
 def test_sheet_contains_pov_watch_checklist_failure_modes(rules: RenderRules) -> None:

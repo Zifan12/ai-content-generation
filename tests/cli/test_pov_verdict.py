@@ -156,10 +156,18 @@ def test_probe_pass_releases_final_command(run_dir: Path, rules: RenderRules) ->
     outcome = record_verdict(run_dir, result="pass", resolution="480p", rules=rules)
 
     assert outcome.released_final_command is not None
-    assert "--resolution 720p" in outcome.released_final_command
+    # Ticket 01: finals are native 1080p x1 (upscaled probes are never keepers).
+    assert "--resolution 1080p" in outcome.released_final_command
     final_file = run_dir / "final_command.txt"
     assert final_file.exists()
-    assert outcome.released_final_command in final_file.read_text(encoding="utf-8")
+    text = final_file.read_text(encoding="utf-8")
+    assert outcome.released_final_command in text
+    # The release carries its own operating notes: the 720p-native fallback for
+    # a rejected 1080p+refs job, the second-take override route, and a verdict
+    # reminder naming the ACTUAL final resolution (was hardcoded 720p).
+    assert "720p" in text  # fallback guidance
+    assert "force-final" in text  # second take = logged override
+    assert "--resolution 1080p" in text.split("LOG IT")[1]
 
 
 def test_run_sheet_withholds_final_until_verdict(run_dir: Path) -> None:
@@ -168,7 +176,7 @@ def test_run_sheet_withholds_final_until_verdict(run_dir: Path) -> None:
     sheet = (run_dir / "render_sheet.md").read_text(encoding="utf-8")
 
     assert "--resolution 480p" in sheet
-    assert "--resolution 720p" not in sheet
+    assert "--resolution 1080p" not in sheet
     assert "verdict" in sheet  # tells the operator how the final is released
 
 
@@ -191,7 +199,7 @@ def test_prior_pass_on_same_prompt_hash_auto_exempts_probe(
 def test_force_final_releases_and_records_bypass(run_dir: Path, rules: RenderRules) -> None:
     command = force_release_final(run_dir, rules=rules)
 
-    assert "--resolution 720p" in command
+    assert "--resolution 1080p" in command
     assert (run_dir / "final_command.txt").exists()
     records = _log_records(run_dir)
     assert records[0]["event"] == "force_final"
@@ -283,10 +291,15 @@ def test_second_failed_retake_parks_story_with_forensics(
 
 
 def test_credit_cap_refuses_further_release(run_dir: Path, rules: RenderRules) -> None:
-    """150cr cap (grill Q1): logged spend at/over the cap blocks release even
-    for a passing take."""
-    # Two watched 1080p takes at 10s = 2 × 90cr = 180cr ≥ the 150cr cap.
-    record_verdict(run_dir, result="fail", resolution="1080p", rules=rules, defects=["other"])
+    """300cr cap (D2 grilling 2026-07-23): logged spend at/over the cap blocks
+    release even for a passing take. Retro records carry REAL historical spend,
+    so they count toward the tally (PRD story 23) while never parking."""
+    # 3 retro 1080p fails (3 × 90cr) + this pass's own 90cr = 360cr ≥ 300.
+    for _ in range(3):
+        record_verdict(
+            run_dir, result="fail", resolution="1080p", rules=rules,
+            defects=["other"], retro=True,
+        )
     outcome = record_verdict(run_dir, result="pass", resolution="1080p", rules=rules)
 
     assert outcome.released_final_command is None
@@ -295,9 +308,13 @@ def test_credit_cap_refuses_further_release(run_dir: Path, rules: RenderRules) -
 
 def test_force_final_refuses_over_credit_cap(run_dir: Path, rules: RenderRules) -> None:
     """Review fix 2026-07-22: --force-final skips the PROBE, never the cap
-    (PRD user story 18 vs 22) — two 1080p fails (180cr) block a forced release."""
-    record_verdict(run_dir, result="fail", resolution="1080p", rules=rules, defects=["other"])
-    record_verdict(run_dir, result="fail", resolution="1080p", rules=rules, defects=["other"])
+    (PRD user story 18 vs 22) — 360cr of logged 1080p spend blocks a forced
+    release at the 300cr cap."""
+    for _ in range(4):
+        record_verdict(
+            run_dir, result="fail", resolution="1080p", rules=rules,
+            defects=["other"], retro=True,
+        )
 
     with pytest.raises(ValueError, match="cap"):
         force_release_final(run_dir, rules=rules)

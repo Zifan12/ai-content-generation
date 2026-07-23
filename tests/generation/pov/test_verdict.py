@@ -93,11 +93,20 @@ def test_open_unguarded_defects_are_marked_watch_only(rules: RenderRules) -> Non
 
 
 def test_spending_brakes_are_the_ratified_values(rules: RenderRules) -> None:
-    """Grill Q1 (150cr cap confirmed) + staged-director D7 (2 retakes)."""
+    """D2 grilling 2026-07-23: cap 150->300 (fits the native-1080p ladder:
+    probe 45 + stills + 135cr final; second take stays an override).
+    Staged-director D7 (2 retakes) unchanged."""
     brakes = rules.pov_verdict()["spending_brakes"]
 
-    assert brakes["per_story_credit_cap"] == 150
+    assert brakes["per_story_credit_cap"] == 300
     assert brakes["max_failed_retakes"] == 2
+
+
+def test_still_generation_cost_is_the_measured_rate(rules: RenderRules) -> None:
+    """Ticket 01: the rate table carries the measured GPT Image 2 still cost
+    (2 stills x 7cr, 2026-07-22) so the spend tally never invents a rate
+    (ADR-0007)."""
+    assert rules.pov_verdict()["still_generation_credits"] == 7.0
 
 
 # --- prediction block -------------------------------------------------------
@@ -146,9 +155,11 @@ def test_final_command_swaps_resolution_and_restates_cost(rules: RenderRules) ->
 
     command, cost_line = derive_final_command(sanity_cmd, duration_seconds=15, rules=rules)
 
-    assert "--resolution 720p" in command
+    # Finals are native 1080p x1 (blur lesson 2026-07-22: upscaled probes are
+    # never keepers; ticket 01).
+    assert "--resolution 1080p" in command
     assert "480p" not in command
-    assert command.replace("--resolution 720p", "--resolution 480p") == sanity_cmd
-    # 15s × 4.5cr/s (measured 2026-07-06) = 67.5cr
-    assert "67.5" in cost_line
-    assert "720p" in cost_line
+    assert command.replace("--resolution 1080p", "--resolution 480p") == sanity_cmd
+    # 15s × 9.0cr/s (measured 2026-07-22, two refunded attempts) = 135cr
+    assert "135" in cost_line
+    assert "1080p" in cost_line

@@ -267,19 +267,33 @@ def _load_run_inputs(run_dir: Path) -> tuple[str, int, str | None]:
     return prompt_hash(prompt_text), script.duration_seconds, sanity_command
 
 
-def write_final(run_dir: Path, command: str, cost_line: str) -> None:
+def write_final(
+    run_dir: Path, command: str, cost_line: str, final_resolution: str
+) -> None:
     """Write the released final command (+ its cost line) to ``final_command.txt``.
 
     The ONE place the artifact's format lives — the verdict release paths and
     the driver's probe-exempt path all call this, so the file can never
-    diverge between writers (review 2026-07-22).
+    diverge between writers (review 2026-07-22). ``final_resolution`` names
+    the released tier in the operating notes (the verdict-log reminder must
+    match the command it sits under — it was hardcoded 720p before ticket 01)
+    and drives the fallback guidance: a 1080p+refs job can be rejected by the
+    model (n=1, RESEARCH-1080p-refs-limit.md) but failed jobs are uncharged,
+    so the note says attempt first, fall back to NATIVE 720p — never an
+    upscaled probe (post #3 blur lesson).
     """
     (run_dir / _FINAL_COMMAND_FILE).write_text(
         f"{command}\n\n# Cost: {cost_line}\n"
+        f"# If this {final_resolution} job is REJECTED (refs at high res are "
+        f"attempt-first; failed jobs are uncharged): re-run with --resolution "
+        f"720p — native, NEVER an upscaled probe.\n"
+        f"# Second take of this passed prompt = deliberate re-roll: use "
+        f"--force-final (logged override).\n"
         f"# After watching the final, LOG IT (the log is how lessons stick):\n"
-        f"#   uv run python scripts/pov.py verdict <run_dir> --pass --resolution 720p\n"
-        f"#   uv run python scripts/pov.py verdict <run_dir> --fail --resolution 720p "
-        f"--defect <slug>\n",
+        f"#   uv run python scripts/pov.py verdict <run_dir> --pass "
+        f"--resolution {final_resolution}\n"
+        f"#   uv run python scripts/pov.py verdict <run_dir> --fail "
+        f"--resolution {final_resolution} --defect <slug>\n",
         encoding="utf-8",
     )
 
@@ -447,7 +461,9 @@ def record_verdict(
             )
         else:
             command, cost_line = derive_final_command(sanity_command, duration, rules)
-            write_final(run_dir, command, cost_line)
+            write_final(
+                run_dir, command, cost_line, rules.pov_verdict()["final_resolution"]
+            )
             outcome.released_final_command = command
 
     return outcome
@@ -492,7 +508,7 @@ def force_release_final(run_dir: Path, *, rules: RenderRules) -> str:
             "the final command"
         )
     command, cost_line = derive_final_command(sanity_command, duration, rules)
-    write_final(run_dir, command, cost_line)
+    write_final(run_dir, command, cost_line, rules.pov_verdict()["final_resolution"])
     _append_log(
         _log_path(run_dir),
         POVVerdictRecord(
