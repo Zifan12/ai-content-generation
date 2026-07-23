@@ -312,3 +312,43 @@ def test_repair_injects_pitch_failed_script_and_violations_into_the_prompt() -> 
     assert failed.model_dump_json(indent=2) in llm.prompt
     assert "<violations>" in llm.prompt
     assert violation in llm.prompt
+
+
+def test_declared_objects_activate_world_elements_addendum_and_data_block() -> None:
+    """D2 ticket 03: --object slugs reach the seat as a tagged data block plus
+    the declared-objects addendum; without them, neither appears (byte-identical
+    pre-D2 call)."""
+    llm = FakeLLM(_script())
+    writer = POVScriptWriter(llm=llm)
+
+    writer.develop(SAMPLE_PITCH, declared_objects=("hell_city", "heaven_city"))
+
+    assert "<declared_objects>" in llm.prompt
+    assert "- hell_city" in llm.prompt
+    assert "DECLARED WORLD OBJECTS" in llm.system
+    assert "world_elements" in llm.system
+
+    plain_llm = FakeLLM(_script())
+    POVScriptWriter(llm=plain_llm).develop(SAMPLE_PITCH)
+    assert "<declared_objects>" not in plain_llm.prompt
+    assert plain_llm.system == POV_SCRIPT_SYSTEM_PROMPT
+
+
+def test_repair_carries_declared_objects_too() -> None:
+    llm = FakeLLM(_script())
+    writer = POVScriptWriter(llm=llm)
+
+    writer.repair(SAMPLE_PITCH, _script(), ["a violation"], declared_objects=("hell_city",))
+
+    assert "<declared_objects>" in llm.prompt
+    assert "DECLARED WORLD OBJECTS" in llm.system
+
+
+def test_field_spec_teaches_world_elements_rules() -> None:
+    """The shared field spec (develop + repair) must teach: one entry per
+    declared slug, description feeds still generation not the render prompt,
+    excluded from the word budget, role-noun-only elsewhere in prose."""
+    for prompt_text in (POV_SCRIPT_SYSTEM_PROMPT, POV_SCRIPT_REPAIR_SYSTEM_PROMPT):
+        assert "world_elements" in prompt_text
+        assert "do NOT count toward the" in prompt_text
+        assert "role noun" in prompt_text

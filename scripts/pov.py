@@ -78,6 +78,7 @@ from src.generation.pov.asset_check import (  # noqa: E402
     POVAssetRequestNeeded,
     check_assets,
     parse_character_args,
+    parse_object_args,
 )
 from src.generation.pov.compiler import compile_pov_prompt  # noqa: E402
 from src.generation.pov.craft_enforcement import develop_valid_script  # noqa: E402
@@ -204,6 +205,7 @@ def run_pov_pipeline(
     choice_provider: Callable[[], str] | None = None,
     money_shot: str | None = None,
     characters: list[str] | None = None,
+    objects: list[str] | None = None,
     refs_root: str | Path = "refs",
     output_dir: str | Path = "output/pov",
 ) -> Path:
@@ -251,6 +253,12 @@ def run_pov_pipeline(
             with a request sheet and costs zero LLM calls. Validated
             reference paths flow to the compiler (``--image`` flags, upload
             order = imageN) and the render sheet.
+        objects: Optional ``--object <slug>`` declarations (D2 ticket 03):
+            invented world elements the operator flags as generic-prior
+            risks. Gated with the characters (missing promoted refs halt the
+            run); the script seat authors one world_elements entry per slug;
+            each binds positionally in the compiled prompt and its look is
+            never re-described in prose.
         refs_root: Root directory holding per-character reference libraries
             (``<refs_root>/<slug>/``). The repo convention is ``refs/``.
         output_dir: Parent directory the run's slug-named subdirectory is
@@ -283,13 +291,23 @@ def run_pov_pipeline(
             "money_shot from the pitcher (ticket 07)"
         )
 
-    # Asset gate FIRST (tickets 10+11): a declared character with no references
-    # halts here — before the pitcher or script seat can spend an LLM call.
+    # Asset gate FIRST (tickets 10+11 + D2): a declared character or object
+    # with no promoted references halts here — before the pitcher or script
+    # seat can spend an LLM call.
+    declared_characters = parse_character_args(characters or [])
+    declared_objects = parse_object_args(
+        objects or [], taken={c.slug for c in declared_characters}
+    )
     resolved: list = []
-    if characters:
-        resolved = check_assets(parse_character_args(characters), Path(refs_root))
+    if declared_characters or declared_objects:
+        resolved = check_assets(
+            [*declared_characters, *declared_objects], Path(refs_root)
+        )
     ref_paths = [path for character in resolved for path in character.ref_paths]
-    ref_bound = tuple(character.slug for character in resolved)
+    # ref_bound feeds the seat's appearance-ownership rule for CHARACTERS;
+    # objects ride their own declared_objects channel (world_elements rule).
+    ref_bound = tuple(r.slug for r in resolved if r.role != "object")
+    object_slugs = tuple(d.slug for d in declared_objects)
 
     slate: POVPitchSlate | None = None
     if topic is not None:
@@ -302,7 +320,9 @@ def run_pov_pipeline(
         assert idea is not None  # narrowed by the exactly-one check above
         pitch = _pitch_from_idea(idea, money_shot)
 
-    script = develop_valid_script(script_writer, pitch, rules, ref_bound=ref_bound)
+    script = develop_valid_script(
+        script_writer, pitch, rules, ref_bound=ref_bound, declared_objects=object_slugs
+    )
     compiled = compile_pov_prompt(script, rules, bound_characters=resolved)
 
     # Slice ③ probe gate inputs: the ruleset's pre-watch prediction (Deming
@@ -319,6 +339,7 @@ def run_pov_pipeline(
         ref_paths=ref_paths,
         prediction_block=prediction,
         probe_exempt=probe_exempt,
+        object_slugs=object_slugs,
     )
 
     slug_source = idea if idea is not None else topic
@@ -385,6 +406,18 @@ def _build_parser() -> argparse.ArgumentParser:
             "'protagonist' (default — you ARE the character, limbs only) or "
             "'in_frame' (the character stands in front of the camera). Missing "
             "refs/<slug>/ halts the run with a request sheet before any LLM spend."
+        ),
+    )
+    parser.add_argument(
+        "--object",
+        action="append",
+        dest="objects",
+        metavar="SLUG",
+        help=(
+            "Invented world element that would hit the model's generic prior "
+            "(repeatable, D2). The script seat authors its identity in a "
+            "structured world_elements entry; promoted refs/<slug>/ stills bind "
+            "it positionally and its look is never re-described in prose."
         ),
     )
     parser.add_argument(
@@ -529,6 +562,7 @@ def main() -> None:
             choice_provider=choice_provider,
             money_shot=args.money_shot,
             characters=args.character,
+            objects=args.objects,
             output_dir=args.output_dir,
         )
     except POVAssetRequestNeeded as exc:

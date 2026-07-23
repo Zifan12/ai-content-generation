@@ -180,7 +180,12 @@ class FakeScriptWriter:
         self.develop_calls: list[POVPitch] = []
         self.repair_calls: list[tuple[POVPitch, POVScript, list[str]]] = []
 
-    def develop(self, pitch: POVPitch, ref_bound: tuple[str, ...] = ()) -> POVScript:
+    def develop(
+        self,
+        pitch: POVPitch,
+        ref_bound: tuple[str, ...] = (),
+        declared_objects: tuple[str, ...] = (),
+    ) -> POVScript:
         self.develop_calls.append(pitch)
         return self._first
 
@@ -190,6 +195,7 @@ class FakeScriptWriter:
         failed_script: POVScript,
         violations: list[str],
         ref_bound: tuple[str, ...] = (),
+        declared_objects: tuple[str, ...] = (),
     ) -> POVScript:
         self.repair_calls.append((pitch, failed_script, violations))
         assert self._repaired is not None, "test did not configure a repaired script"
@@ -297,3 +303,51 @@ def test_word_budget_breach_is_a_repairable_violation(rules: RenderRules) -> Non
     )
     violations = check_structure(script, rules)
     assert any("word budget" in v for v in violations)
+
+
+# --- world-element coverage (D2 ticket 03) -----------------------------------
+
+
+def _with_elements(script: POVScript, entries: list[tuple[str, str]]) -> POVScript:
+    from src.generation.pov.schemas import POVWorldElement
+
+    return script.model_copy(
+        update={
+            "world_elements": [
+                POVWorldElement(slug=s, description=d) for s, d in entries
+            ]
+        }
+    )
+
+
+def test_world_elements_matching_declared_objects_pass(rules: RenderRules) -> None:
+    script = _with_elements(
+        _valid_script(10), [("hell_city", "black gothic towers, lava streets")]
+    )
+    assert check_structure(script, rules, declared_objects=("hell_city",)) == []
+
+
+def test_missing_world_element_for_declared_object_is_a_violation(
+    rules: RenderRules,
+) -> None:
+    violations = check_structure(
+        _valid_script(10), rules, declared_objects=("hell_city",)
+    )
+    assert any("hell_city" in v and "missing" in v for v in violations)
+
+
+def test_undeclared_and_duplicate_world_elements_are_violations(
+    rules: RenderRules,
+) -> None:
+    script = _with_elements(
+        _valid_script(10),
+        [("rogue_tower", "a tower"), ("rogue_tower", "the same tower again")],
+    )
+    violations = check_structure(script, rules)
+    assert any("duplicate" in v for v in violations)
+    assert any("undeclared" in v for v in violations)
+
+
+def test_no_objects_declared_and_no_elements_stays_clean(rules: RenderRules) -> None:
+    """Regression: the pre-D2 path (no --object, world_elements=[]) is untouched."""
+    assert check_structure(_valid_script(10), rules) == []

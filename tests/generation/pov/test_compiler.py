@@ -463,3 +463,73 @@ def test_cost_line_matches_measured_rate(rules: RenderRules, duration: int) -> N
     expected_cost = duration * rate
     assert str(expected_cost) in compiled.cost_line
     assert "480p" in compiled.cost_line
+
+
+# --- object bindings (D2 ticket 03) ------------------------------------------
+
+
+def test_object_binding_sentence_and_image_numbering_after_characters(
+    rules: RenderRules,
+) -> None:
+    """D2: a bound object compiles to ONE positional binding sentence (config
+    ip_binding.object, probe-C evidence) with imageN continuing after the
+    character refs, and its ref path rides the CLI --image flags."""
+    bound = [
+        ResolvedCharacter(
+            slug="silverhero", role="protagonist",
+            ref_paths=["refs/silverhero/a.png", "refs/silverhero/b.png"],
+        ),
+        ResolvedCharacter(
+            slug="hell_city", role="object", ref_paths=["refs/hell_city/keeper.png"],
+        ),
+    ]
+    compiled = compile_pov_prompt(_script(), rules, bound_characters=bound)
+
+    assert "The hell city is shown in image3." in compiled.prompt_text
+    assert '--image "refs/hell_city/keeper.png"' in compiled.cli_command
+
+
+def test_world_element_descriptions_never_reach_the_prompt(rules: RenderRules) -> None:
+    """The grill-Q1 field-drop contract: a bound object's seat-authored
+    description feeds still generation only — the compiled prompt carries the
+    binding sentence, never the description prose (two descriptions of one
+    thing fighting on screen = pitch-51 camera-hijack class)."""
+    from src.generation.pov.schemas import POVWorldElement
+
+    script = _script()
+    script = script.model_copy(
+        update={
+            "world_elements": [
+                POVWorldElement(
+                    slug="hell_city",
+                    description="dense black gothic towers with streets of molten lava",
+                )
+            ]
+        }
+    )
+    bound = [
+        ResolvedCharacter(
+            slug="hell_city", role="object", ref_paths=["refs/hell_city/keeper.png"],
+        )
+    ]
+    compiled = compile_pov_prompt(script, rules, bound_characters=bound)
+
+    assert "gothic towers" not in compiled.prompt_text
+    assert "The hell city is shown in image1." in compiled.prompt_text
+
+
+def test_world_elements_do_not_count_toward_the_word_budget(rules: RenderRules) -> None:
+    """Descriptions are still-generation data, not authored render body — a
+    script exactly at the cap must not be pushed over by world_elements."""
+    from src.generation.pov.compiler import count_body_words
+    from src.generation.pov.schemas import POVWorldElement
+
+    script = _script()
+    with_elements = script.model_copy(
+        update={
+            "world_elements": [
+                POVWorldElement(slug="hell_city", description="a " * 500)
+            ]
+        }
+    )
+    assert count_body_words(with_elements) == count_body_words(script)

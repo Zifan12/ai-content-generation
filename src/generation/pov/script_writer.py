@@ -98,6 +98,15 @@ lighting" alone), (2) the space staged in foreground/midground/background with c
 named objects assigned to each layer (never a flat single-plane description), (3) \
 particulates the air can render — dust, damp haze, drifting motes, breath fog — rather \
 than an empty-feeling space.
+- world_elements: ONLY when a <declared_objects> tag lists invented world elements: \
+author EXACTLY one entry per listed slug — {slug, description}. The description is the \
+object's visual identity in concrete nouns (form, materials, distinctive features), \
+written to brief an image generator producing a reference still of the object ALONE. \
+These words feed still generation, NOT the render prompt, and do NOT count toward the \
+word budget. Everywhere else in your prose (scene_setting, world_prose, beats), name a \
+declared object by its plain role noun only — its look lives in the description field \
+and its reference images; visual identity written twice fights itself on screen. When \
+no <declared_objects> tag is present, world_elements MUST be an empty list.
 
 Craft rules:
 1. DEVELOP THE PITCH YOU WERE GIVEN. The pitch's turn is the payoff — your script exists \
@@ -271,6 +280,24 @@ description that contradicts a reference image causes the render to blend or
 alternate between the two; the images always win."""
 
 
+# Appended when the run declares --object world elements (D2 ticket 03). The
+# world_elements authoring rule lives in the field spec (shared develop/repair);
+# this addendum only activates it by naming WHICH slugs are declared, via the
+# same tagged-data convention as _ref_bound_block.
+_DECLARED_OBJECTS_SYSTEM_ADDENDUM = """
+
+DECLARED WORLD OBJECTS (this run only): the slugs in the <declared_objects> tag
+are operator-declared invented world elements. Author one world_elements entry
+per slug (see the world_elements field rule). Their visual identity lives ONLY
+in those entries — in all other prose, the plain role noun alone."""
+
+
+def _declared_objects_block(declared_objects: "tuple[str, ...] | list[str]") -> str:
+    """Render the declared object slugs as a tagged <declared_objects> data block."""
+    lines = "\n".join(f"- {slug}" for slug in declared_objects)
+    return f"<declared_objects>\n{lines}\n</declared_objects>"
+
+
 def _ref_bound_block(ref_bound: "tuple[str, ...] | list[str]") -> str:
     """Render the ref-bound subject slugs as a tagged data block (ticket 11).
 
@@ -319,7 +346,12 @@ class POVScriptWriter:
         self.llm = llm
 
     @traced(name="pov_script_writer")
-    def develop(self, pitch: POVPitch, ref_bound: tuple[str, ...] = ()) -> POVScript:
+    def develop(
+        self,
+        pitch: POVPitch,
+        ref_bound: tuple[str, ...] = (),
+        declared_objects: tuple[str, ...] = (),
+    ) -> POVScript:
         """
         Develop the picked pitch into a full POVScript via ONE structured-output call.
 
@@ -335,6 +367,11 @@ class POVScriptWriter:
                 (ticket 11). Non-empty → the appearance-ownership addendum
                 joins the system prompt and the slugs ride along as a tagged
                 data block; empty → the call is byte-identical to slice ①'s.
+            declared_objects: The run's ``--object`` slugs (D2 ticket 03).
+                Non-empty → the declared-objects addendum joins the system
+                prompt and the slugs ride along as a tagged data block, so
+                the seat authors one world_elements entry per slug; empty →
+                no addendum, and the field spec requires world_elements=[].
 
         Returns:
             The authored POVScript.
@@ -344,6 +381,9 @@ class POVScriptWriter:
         if ref_bound:
             system += _REF_BOUND_SYSTEM_ADDENDUM
             prompt = f"{prompt}\n\n{_ref_bound_block(ref_bound)}"
+        if declared_objects:
+            system += _DECLARED_OBJECTS_SYSTEM_ADDENDUM
+            prompt = f"{prompt}\n\n{_declared_objects_block(declared_objects)}"
         return self.llm.parse(
             prompt=prompt,
             response_model=POVScript,
@@ -358,6 +398,7 @@ class POVScriptWriter:
         failed_script: POVScript,
         violations: list[str],
         ref_bound: tuple[str, ...] = (),
+        declared_objects: tuple[str, ...] = (),
     ) -> POVScript:
         """
         Produce a single repaired script for one that failed structural validation.
@@ -391,6 +432,9 @@ class POVScriptWriter:
         if ref_bound:
             system += _REF_BOUND_SYSTEM_ADDENDUM
             prompt = f"{prompt}\n\n{_ref_bound_block(ref_bound)}"
+        if declared_objects:
+            system += _DECLARED_OBJECTS_SYSTEM_ADDENDUM
+            prompt = f"{prompt}\n\n{_declared_objects_block(declared_objects)}"
         return self.llm.parse(
             prompt=prompt,
             response_model=POVScript,

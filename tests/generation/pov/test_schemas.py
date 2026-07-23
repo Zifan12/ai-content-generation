@@ -115,3 +115,30 @@ def test_pov_beat_rejects_empty_actions() -> None:
     reach the compiler or a paid render. Spec-axis review finding 2026-07-17."""
     with pytest.raises(ValidationError):
         POVBeat(actions=[])
+
+
+def test_world_elements_default_empty_and_parse_roundtrip() -> None:
+    """D2 ticket 03: pre-D2 scripts (no world_elements key) parse unchanged;
+    entries roundtrip through JSON like every other artifact."""
+    from src.generation.pov.schemas import POVBeat, POVScript, POVWorldElement
+
+    base = POVScript(
+        scene_setting="a cavern",
+        protagonist_role="explorer",
+        protagonist_detail="gloved hands visible",
+        duration_seconds=10,
+        camera_register="calm",
+        beats=[POVBeat(actions=["the hand reaches"])],
+        world_prose="Foreground rubble, midground crystals.",
+    )
+    assert base.world_elements == []
+
+    with_element = base.model_copy(
+        update={
+            "world_elements": [
+                POVWorldElement(slug="hell_city", description="black gothic towers")
+            ]
+        }
+    )
+    parsed = POVScript.model_validate_json(with_element.model_dump_json())
+    assert parsed.world_elements[0].slug == "hell_city"

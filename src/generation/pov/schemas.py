@@ -127,6 +127,26 @@ class POVBeat(BaseModel):
         return self
 
 
+class POVWorldElement(BaseModel):
+    """One declared invented world object's seat-authored identity (D2 ticket 03).
+
+    ``slug`` matches an operator ``--object`` declaration (and its
+    ``refs/<slug>/`` directory). ``description`` is the object's visual
+    identity in concrete nouns — it is NEVER compiled into the render prompt
+    (a bound object's look lives in its reference images; the binding
+    sentence substitutes). It exists to feed candidate still generation
+    (ticket 04's template prompt) and the run's forensics. Keeping the
+    description in a structured field is the grill-Q1 decision: replacing it
+    is a field drop, never prose surgery — a lexical strip of world prose
+    cannot tell a synonym from a violation (spine-check lesson, 2026-07-15).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    slug: str  # matches the --object declaration / refs/<slug>/ directory
+    description: str  # concrete visual identity; feeds still generation, never the prompt
+
+
 class POVScript(BaseModel):
     """The script stage's output for one picked pitch — the compiler's sole input.
 
@@ -170,6 +190,11 @@ class POVScript(BaseModel):
     camera_register: Literal["calm", "action"]
     beats: list[POVBeat]
     world_prose: str  # light/depth-layered nouns/particulates prose (world_prose_craft)
+    # One entry per operator-declared --object (D2 ticket 03); [] on runs with
+    # no declared objects (every pre-D2 script parses unchanged). Coverage
+    # against the declared list is a structural check (craft_enforcement),
+    # not a schema validator — the schema can't see the declaration list.
+    world_elements: list[POVWorldElement] = []
 
 
 class CompiledPOVPrompt(BaseModel):

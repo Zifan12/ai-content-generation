@@ -84,11 +84,18 @@ class FakeScriptWriter:
         self._repaired = repaired
         self.pitches: list[POVPitch] = []
         self.ref_bound_calls: list[tuple[str, ...]] = []
+        self.declared_object_calls: list[tuple[str, ...]] = []
         self.repair_calls: list[tuple[POVPitch, POVScript, list[str]]] = []
 
-    def develop(self, pitch: POVPitch, ref_bound: tuple[str, ...] = ()) -> POVScript:
+    def develop(
+        self,
+        pitch: POVPitch,
+        ref_bound: tuple[str, ...] = (),
+        declared_objects: tuple[str, ...] = (),
+    ) -> POVScript:
         self.pitches.append(pitch)
         self.ref_bound_calls.append(tuple(ref_bound))
+        self.declared_object_calls.append(tuple(declared_objects))
         return self._result
 
     def repair(
@@ -97,6 +104,7 @@ class FakeScriptWriter:
         failed_script: POVScript,
         violations: list[str],
         ref_bound: tuple[str, ...] = (),
+        declared_objects: tuple[str, ...] = (),
     ) -> POVScript:
         self.repair_calls.append((pitch, failed_script, violations))
         assert self._repaired is not None, "test did not configure a repaired script"
@@ -675,3 +683,67 @@ def test_topic_or_idea_is_required_on_the_cli() -> None:
     parser = pov_module._build_parser()
     with pytest.raises(SystemExit):
         parser.parse_args([])
+
+
+# --- object declarations (D2 ticket 03) --------------------------------------
+
+
+def test_object_run_binds_ref_and_never_redescribes_in_prompt(tmp_path) -> None:
+    """D2 end-to-end (hand-promoted refs): a --object run's compiled prompt
+    carries the positional object binding, the CLI carries the ref as an
+    --image flag, the sheet gains the object watch items, and the seat was
+    told which objects were declared."""
+    from src.generation.pov.schemas import POVWorldElement
+
+    refs = tmp_path / "refs"
+    (refs / "hell_city").mkdir(parents=True)
+    (refs / "hell_city" / "keeper.png").write_bytes(_PNG_HEADER)
+
+    script = _script().model_copy(
+        update={
+            "world_elements": [
+                POVWorldElement(
+                    slug="hell_city",
+                    description="dense black gothic towers with streets of molten lava",
+                )
+            ]
+        }
+    )
+    writer = FakeScriptWriter(script)
+    run_dir = run_pov_pipeline(
+        writer, _rules(), SAMPLE_IDEA,
+        objects=["hell_city"],
+        refs_root=refs,
+        output_dir=tmp_path / "out",
+    )
+
+    prompt_text = (run_dir / "prompt.txt").read_text(encoding="utf-8")
+    assert "The hell city is shown in image1." in prompt_text
+    assert "gothic towers" not in prompt_text  # description = still-gen data only
+    sheet = (run_dir / "render_sheet.md").read_text(encoding="utf-8")
+    assert '--image "' in sheet
+    assert "MOTION PRESENT" in sheet
+    assert writer.declared_object_calls == [("hell_city",)]
+    # Objects are NOT characters: the character appearance-ownership channel
+    # stays empty; objects ride declared_objects.
+    assert writer.ref_bound_calls == [()]
+
+
+def test_object_with_only_candidates_halts_before_llm_spend(tmp_path) -> None:
+    """Unpromoted candidates are not references: the gate halts the run with
+    zero seat calls (ticket 02 contract at the driver seam)."""
+    from src.generation.pov.asset_check import POVAssetRequestNeeded
+
+    refs = tmp_path / "refs"
+    (refs / "hell_city" / "candidates").mkdir(parents=True)
+    (refs / "hell_city" / "candidates" / "c1.png").write_bytes(_PNG_HEADER)
+
+    writer = FakeScriptWriter(_script())
+    with pytest.raises(POVAssetRequestNeeded):
+        run_pov_pipeline(
+            writer, _rules(), SAMPLE_IDEA,
+            objects=["hell_city"],
+            refs_root=refs,
+            output_dir=tmp_path / "out",
+        )
+    assert writer.pitches == []

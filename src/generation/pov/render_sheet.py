@@ -58,6 +58,20 @@ render sheen) does not leak into the world's photoreal register.
 as a separate visible figure; refs bind to YOUR limbs only, the camera-holder stays \
 unseen."""
 
+# Object-reference watch items (D2 ticket 03): appended only when the run
+# binds --object element refs. MOTION PRESENT is the probe-B lesson (a
+# full-composition ref identity-locked the frame into a "barely animated
+# painting"); STYLE COHERENCE is the first-use gate for per-object stills
+# (grilling Q2: generated separately, they may clash — the documented
+# fallback is ONE composed still + element crops, the validated post #3 path).
+_OBJECT_WATCH_ITEMS = """- [ ] MOTION PRESENT — the clip MOVES; it does not read as a \
+barely-animated painting of the reference (the probe-B static-hijack class: if motion \
+died, a ref is carrying composition it must not carry).
+- [ ] STYLE COHERENCE ACROSS OBJECTS — separately-generated object stills read as ONE \
+world (same register, light logic, palette). If objects clash, fall back to the \
+validated composed-still + element-crop path for this world and note it in the \
+corrections log."""
+
 # PRD user story 23 / Implementation Decisions "Assets verdict" paragraph — no
 # pov_grammar config entry exists for this (ticket 01's scope was the fixed
 # prompt clauses + kill list + beat/dialogue/world rules, not this separate
@@ -82,6 +96,7 @@ def build_render_sheet(
     ref_paths: Sequence[str | Path] = (),
     prediction_block: str = "",
     probe_exempt: bool = False,
+    object_slugs: Sequence[str] = (),
 ) -> str:
     """
     Compose the run's render sheet markdown.
@@ -111,6 +126,10 @@ def build_render_sheet(
             probe PASS on the lane log (grill Q2c) — the sheet then says so
             and points at the already-released final command instead of
             asking for a redundant probe.
+        object_slugs: Slugs of the run's bound ``--object`` world elements
+            (D2 ticket 03). Non-empty → the watch checklist gains the
+            object-reference items (static-hijack + first-use style
+            coherence). Empty → no object-specific content.
 
     Returns:
         The full render sheet as a markdown string.
@@ -125,6 +144,8 @@ def build_render_sheet(
     watch_checklist = (
         f"{_WATCH_CHECKLIST}\n{_REF_WATCH_ITEMS}" if ref_paths else _WATCH_CHECKLIST
     )
+    if object_slugs:
+        watch_checklist = f"{watch_checklist}\n{_OBJECT_WATCH_ITEMS}"
     prediction_section: list[str] = []
     if prediction_block:
         prediction_section = ["## Prediction (pre-watch)", prediction_block, ""]

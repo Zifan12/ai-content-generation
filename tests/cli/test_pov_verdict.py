@@ -67,11 +67,13 @@ class FakeScriptWriter:
     def __init__(self) -> None:
         self.develop_calls = 0
 
-    def develop(self, pitch, ref_bound=()) -> POVScript:
+    def develop(self, pitch, ref_bound=(), declared_objects=()) -> POVScript:
         self.develop_calls += 1
         return _script()
 
-    def repair(self, pitch, failed_script, violations, ref_bound=()) -> POVScript:
+    def repair(
+        self, pitch, failed_script, violations, ref_bound=(), declared_objects=()
+    ) -> POVScript:
         raise AssertionError("fixture script is structurally valid; repair must not run")
 
 

@@ -42,9 +42,13 @@ class POVStructuralViolationError(ValueError):
     """
 
 
-def check_structure(script: POVScript, rules: RenderRules) -> list[str]:
+def check_structure(
+    script: POVScript,
+    rules: RenderRules,
+    declared_objects: tuple[str, ...] = (),
+) -> list[str]:
     """
-    Check ``script`` against the four structural rules and return every violation found.
+    Check ``script`` against the structural rules and return every violation found.
 
     Pure function: no LLM call, no I/O. An empty list means the script is
     structurally valid. Each violation is a human- and LLM-readable sentence
@@ -55,12 +59,18 @@ def check_structure(script: POVScript, rules: RenderRules) -> list[str]:
         script: The script to check.
         rules: A loaded RenderRules instance — read once for
             ``pov_grammar()["beat_budget"]``.
+        declared_objects: The run's ``--object`` slugs (D2 ticket 03). The
+            script's ``world_elements`` must cover exactly this set — one
+            entry per declared object, no extras, no duplicates. Slug-set
+            equality is honestly deterministic (unlike prose checks); the
+            DESCRIPTION's quality stays a seat-prompt concern.
 
     Returns:
         A list of violation strings, in the order: duration, beat-count
         budget (only checked when duration is valid — an invalid duration
-        has no budget to check against), per-beat action count (one entry
-        per offending beat), final-beat dialogue.
+        has no budget to check against), word budget, per-beat action count
+        (one entry per offending beat), final-beat dialogue, world-element
+        coverage.
     """
     beat_budget = rules.pov_grammar()["beat_budget"]
     violations: list[str] = []
@@ -112,6 +122,28 @@ def check_structure(script: POVScript, rules: RenderRules) -> list[str]:
             "the last beat carries a dialogue_line; dialogue must never land on the final beat"
         )
 
+    # World-element coverage (D2 ticket 03): exactly one entry per declared
+    # object. A missing entry starves still generation of its description; an
+    # undeclared or duplicate entry is dead data pretending to be a binding.
+    element_slugs = [e.slug for e in script.world_elements]
+    duplicates = {s for s in element_slugs if element_slugs.count(s) > 1}
+    if duplicates:
+        violations.append(
+            f"world_elements carries duplicate slug(s): {', '.join(sorted(duplicates))}"
+        )
+    missing = set(declared_objects) - set(element_slugs)
+    if missing:
+        violations.append(
+            f"world_elements is missing entries for declared object(s): "
+            f"{', '.join(sorted(missing))} — one slug+description entry per declared object"
+        )
+    extra = set(element_slugs) - set(declared_objects)
+    if extra:
+        violations.append(
+            f"world_elements carries entries for undeclared slug(s): "
+            f"{', '.join(sorted(extra))} — only the run's declared --object slugs belong here"
+        )
+
     return violations
 
 
@@ -120,6 +152,7 @@ def develop_valid_script(
     pitch: POVPitch,
     rules: RenderRules,
     ref_bound: tuple[str, ...] = (),
+    declared_objects: tuple[str, ...] = (),
 ) -> POVScript:
     """
     Develop ``pitch`` into a structurally valid POVScript, with one bounded repair.
@@ -147,6 +180,9 @@ def develop_valid_script(
         ref_bound: Slugs of ref-bound canon subjects (ticket 11), passed
             through unchanged to both ``develop`` and ``repair`` so the
             appearance-ownership rule applies on the repair call too.
+        declared_objects: The run's ``--object`` slugs (D2 ticket 03), passed
+            through to both seat calls (the world_elements authoring rule)
+            and to :func:`check_structure` (coverage validation).
 
     Returns:
         A structurally valid POVScript.
@@ -155,13 +191,17 @@ def develop_valid_script(
         POVStructuralViolationError: if a violation survives the one bounded
             repair attempt.
     """
-    script = script_writer.develop(pitch, ref_bound=ref_bound)
-    violations = check_structure(script, rules)
+    script = script_writer.develop(
+        pitch, ref_bound=ref_bound, declared_objects=declared_objects
+    )
+    violations = check_structure(script, rules, declared_objects=declared_objects)
     if not violations:
         return script
 
-    script = script_writer.repair(pitch, script, violations, ref_bound=ref_bound)
-    violations = check_structure(script, rules)
+    script = script_writer.repair(
+        pitch, script, violations, ref_bound=ref_bound, declared_objects=declared_objects
+    )
+    violations = check_structure(script, rules, declared_objects=declared_objects)
     if violations:
         raise POVStructuralViolationError(
             "POV script failed structural validation after one bounded repair: "

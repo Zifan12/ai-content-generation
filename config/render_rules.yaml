@@ -603,6 +603,9 @@ pov_grammar:
     in_frame:
       text: "[NAME] is the character shown in {image_list}."
       evidence: "scene-lane MEASURED form (seedance_2_0.dialect.ref_binding this file, FINDINGS.md; adapter.py _identity_block composes it live) — Tier-1 for VISIBLE characters on this CLI. The POV in-frame RENDER itself is unprobed (probe deferred until a story needs the role, PRD-slice2 decision 3) — first in-frame watch promotes or amends this row"
+    object:
+      text: "The [NAME] is shown in {image_list}."
+      evidence: "probe C (post #3, 2026-07-22, output/pov/20260722_143328_* corrections log): element crops + positional binding ('the burning city shown in image2') + motion-only prompt restored motion after probe B's full-composition ref static hijack — operator verdict 'best video so far'. This row generalizes that binding to slug-role naming; the object's look is NEVER re-described in prose once bound (world_elements field drop, D2 ticket 03) — two descriptions of one thing fighting on screen is the pitch-51 camera-hijack class. First D2 watch promotes or amends this wording"
   protagonist_detail_craft:
     hands_visible:
       rule: "The script stage's protagonist_detail MUST express hands-visibility inline in the Subject: sentence, in story-specific wording (e.g. 'gloved hands occasionally visible at the bottom of frame' / 'bare hands visible in frame') — it is NOT a fixed clause the compiler injects. Enforced at the script-writer prompt level only; no lexical code check (a synonym like 'gauntleted fingers' is valid — lexical checks can't read prose, see memory project_spine_check_rejected_lexical)."

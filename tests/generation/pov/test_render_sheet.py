@@ -150,3 +150,22 @@ def test_pitch_fields_byte_identical_in_sheet(rules: RenderRules) -> None:
     assert SAMPLE_PITCH.where in sheet
     assert SAMPLE_PITCH.what_happens in sheet
     assert SAMPLE_PITCH.turn in sheet
+
+
+def test_sheet_object_watch_items_appear_only_with_objects(rules: RenderRules) -> None:
+    """D2 ticket 03: object-bound runs gain the static-hijack + style-coherence
+    watch items; runs without objects don't."""
+    script = _script()
+    compiled = compile_pov_prompt(script, rules)
+
+    plain = build_render_sheet(SAMPLE_PITCH, script, compiled, rules)
+    with_objects = build_render_sheet(
+        SAMPLE_PITCH, script, compiled, rules,
+        ref_paths=["refs/hell_city/keeper.png"],
+        object_slugs=("hell_city",),
+    )
+
+    assert "MOTION PRESENT" not in plain
+    assert "MOTION PRESENT" in with_objects
+    assert "STYLE COHERENCE" in with_objects
+    assert "composed-still" in with_objects  # documented fallback path named
