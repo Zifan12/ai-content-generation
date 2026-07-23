@@ -36,8 +36,20 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-_ALLOWED_ROLES = ("protagonist", "in_frame")
+# Character roles come in through --character <slug>[:role]; the object role
+# (D2 asset stage, .scratch/pov-d2-assets/PRD.md) comes in ONLY through
+# --object <slug> — parse_character_args refuses it. The combined tuple's
+# order is the upload-order contract: characters first, then objects.
+_CHARACTER_ROLES = ("protagonist", "in_frame")
+_OBJECT_ROLE = "object"
+_ALLOWED_ROLES = (*_CHARACTER_ROLES, _OBJECT_ROLE)
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+
+# Unpicked generation candidates live in refs/<slug>/candidates/ (ticket 04);
+# only files directly in refs/<slug>/ are PROMOTED references. The gate reads
+# promoted files exclusively — a candidates-only directory is the
+# not-yet-promoted state, indistinguishable from missing.
+_CANDIDATES_DIR = "candidates"
 _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
 # Per-role (min, max) reference counts — STARTING bounds, revisited on ticket
@@ -47,7 +59,15 @@ _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 # (mask close-up + full-body + optional 3/4); the corpus's ~3-5 identity-ref
 # target (reference-material-playbook.md:118-133) sits inside diminishing
 # returns past 3, so 4 is the cap until a watched render argues otherwise.
-_ROLE_BOUNDS: dict[str, tuple[int, int]] = {"protagonist": (2, 4), "in_frame": (2, 4)}
+# Object role (D2): element refs carry ONE object's look — probe C (post #3,
+# 2026-07-22) used exactly one crop per object and restored motion; a second
+# angle is allowed, a character-style multi-panel sheet is not (multi-view
+# refs worsen drift, vendor guidance 2026-07-15).
+_ROLE_BOUNDS: dict[str, tuple[int, int]] = {
+    "protagonist": (2, 4),
+    "in_frame": (2, 4),
+    _OBJECT_ROLE: (1, 2),
+}
 
 # Magic-byte signatures for the allowed extensions — "readable image files"
 # (PRD-slice2 asset-gate validation) means the bytes actually open as an
@@ -94,6 +114,14 @@ _REQUEST_BY_ROLE = {
   - mask/head close-up, front (the ONE identity panel)
   - full-body front (proportions + costume)
   - optional: 3/4 view with the head region de-emphasized""",
+    _OBJECT_ROLE: """\
+  role: object (an invented world element the model's generic prior can't draw)
+  Supply 1-2 ELEMENT stills of the object ALONE — the object's look only,
+  NEVER the composed target frame (no basket/hands/staging: a composed ref
+  identity-locks the whole frame and kills motion — probe B, post #3).
+  The pipeline can also GENERATE candidates for you (D2 asset stage): leave
+  this directory absent and the run will offer GPT Image 2 candidates to pick
+  from.""",
 }
 
 
@@ -163,15 +191,63 @@ def parse_character_args(values: list[str]) -> list[DeclaredCharacter]:
                 f"invalid character slug {slug!r} — use lowercase letters, digits, "
                 f"underscores, hyphens (it names the refs/<slug>/ directory)"
             )
-        if role not in _ALLOWED_ROLES:
+        if role not in _CHARACTER_ROLES:
             raise ValueError(
                 f"unknown role {role!r} for character {slug!r} — allowed roles: "
-                f"{', '.join(_ALLOWED_ROLES)}"
+                f"{', '.join(_CHARACTER_ROLES)} (world elements go through "
+                f"--object, not a --character role)"
             )
         if slug in seen:
             raise ValueError(f"character {slug!r} declared more than once")
         seen.add(slug)
         declared.append(DeclaredCharacter(slug=slug, role=role))
+    return declared
+
+
+def parse_object_args(
+    values: list[str], taken: set[str] | frozenset[str] = frozenset()
+) -> list[DeclaredCharacter]:
+    """Parse repeated ``--object <slug>`` values (D2 asset stage).
+
+    Objects are invented world elements the operator flags as generic-prior
+    risks (the call is the operator's, made pre-render — D2 PRD). They have
+    exactly one role, so the ``--character``-style ``:role`` suffix is refused
+    rather than ignored. Slug rules match :func:`parse_character_args`
+    (lowercased, ``[a-z0-9_-]``, names the ``refs/<slug>/`` directory).
+
+    Args:
+        values: The raw ``--object`` argument values, in declaration order
+            (load-bearing: upload order within objects follows it).
+        taken: Slugs already claimed by ``--character`` declarations — one
+            slug means one refs directory, so a slug appearing in both lists
+            is refused as a duplicate.
+
+    Returns:
+        One object-role :class:`DeclaredCharacter` per value, declaration
+        order preserved.
+
+    Raises:
+        ValueError: on a ``:role`` suffix, a malformed slug, or a duplicate
+            slug (within objects or against ``taken``).
+    """
+    declared: list[DeclaredCharacter] = []
+    seen: set[str] = set(taken)
+    for value in values:
+        if ":" in value:
+            raise ValueError(
+                f"--object takes a bare slug, got {value!r} — objects have exactly "
+                f"one role; the :role suffix belongs to --character"
+            )
+        slug = value.strip().lower()
+        if not _SLUG_RE.match(slug):
+            raise ValueError(
+                f"invalid object slug {slug!r} — use lowercase letters, digits, "
+                f"underscores, hyphens (it names the refs/<slug>/ directory)"
+            )
+        if slug in seen:
+            raise ValueError(f"object {slug!r} declared more than once")
+        seen.add(slug)
+        declared.append(DeclaredCharacter(slug=slug, role=_OBJECT_ROLE))
     return declared
 
 
@@ -216,9 +292,13 @@ def check_assets(
             characters exceeding the measured CLI cap.
     """
     root = Path(refs_root)
+    # PROMOTED files only: subdirectories (the ticket-04 candidates/ area) never
+    # count, so a directory holding only unpicked candidates is the same
+    # not-yet-supplied state as no directory at all.
     missing = [
         c for c in characters
-        if not (root / c.slug).is_dir() or not any((root / c.slug).iterdir())
+        if not (root / c.slug).is_dir()
+        or not any(p.is_file() for p in (root / c.slug).iterdir())
     ]
     if missing:
         raise POVAssetRequestNeeded(_request_sheet(missing, root))
@@ -251,6 +331,9 @@ def check_assets(
             )
         per_character[character.slug] = files
 
+    # Upload order = the imageN contract: protagonist, then in_frame, then
+    # object (D2 PRD: characters first, then objects), declaration order
+    # within each role group.
     ordered = [
         ResolvedCharacter(
             slug=character.slug,
