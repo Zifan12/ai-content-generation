@@ -61,6 +61,7 @@ MANDATORY 480p sanity pass before any 720p/1080p spend.
 """
 
 import argparse
+import json
 import re
 import sys
 import uuid
@@ -80,16 +81,25 @@ from src.generation.pov.asset_check import (  # noqa: E402
     parse_character_args,
     parse_object_args,
 )
+from src.generation.pov.asset_gen import (  # noqa: E402
+    POVAssetPickNeeded,
+    generate_candidates,
+    higgsfield_still_runner,
+    missing_promoted_refs,
+    pick_sheet,
+    still_cost_line,
+)
 from src.generation.pov.compiler import compile_pov_prompt  # noqa: E402
 from src.generation.pov.craft_enforcement import develop_valid_script  # noqa: E402
 from src.generation.pov.render_sheet import build_render_sheet  # noqa: E402
-from src.generation.pov.schemas import POVPitch, POVPitchSlate  # noqa: E402
+from src.generation.pov.schemas import POVPitch, POVPitchSlate, POVScript  # noqa: E402
 from src.generation.pov.verdict import (  # noqa: E402
     build_prediction_block,
     derive_final_command,
     force_release_final,
     prior_pass_for_hash,
     prompt_hash,
+    record_still_spend,
     record_verdict,
     write_final,
 )
@@ -208,6 +218,7 @@ def run_pov_pipeline(
     objects: list[str] | None = None,
     refs_root: str | Path = "refs",
     output_dir: str | Path = "output/pov",
+    still_runner=None,
 ) -> Path:
     """
     Run idea mode OR topic mode end-to-end and write its run directory.
@@ -263,6 +274,10 @@ def run_pov_pipeline(
             (``<refs_root>/<slug>/``). The repo convention is ``refs/``.
         output_dir: Parent directory the run's slug-named subdirectory is
             created under.
+        still_runner: Candidate-still runner ``(prompt, dest) -> Path``
+            (ticket 04). None → the real Higgsfield GPT Image 2 runner;
+            tests inject a fake writing fixture bytes. Only called on the
+            generation path (a declared object with no promoted refs).
 
     Returns:
         The created run directory (``output_dir/<slug>/``), containing (topic
@@ -279,6 +294,10 @@ def run_pov_pipeline(
         POVAssetRequestNeeded: if a declared character has no references on
             disk yet — carries the printable request sheet; zero LLM calls
             were made.
+        POVAssetPickNeeded: after candidate stills were generated for
+            declared objects with no promoted refs (ticket 04) — the run
+            directory holds pitch/script/assets_state; the operator promotes
+            keepers then runs ``pov.py assets <run_dir>``.
         POVStructuralViolationError: if the script still violates a
             structural rule after its one bounded repair (ticket 04) —
             surfaces loud, no run directory is written.
@@ -291,22 +310,27 @@ def run_pov_pipeline(
             "money_shot from the pitcher (ticket 07)"
         )
 
-    # Asset gate FIRST (tickets 10+11 + D2): a declared character or object
-    # with no promoted references halts here — before the pitcher or script
-    # seat can spend an LLM call.
+    # Asset gate FIRST (tickets 10+11 + D2): a declared CHARACTER with no
+    # promoted references halts here — before the pitcher or script seat can
+    # spend an LLM call (canon must be operator-sourced; there is nothing to
+    # generate). Declared OBJECTS with missing refs do NOT halt yet: their
+    # candidate stills are generated FROM the script seat's world-element
+    # descriptions, so the seats must run first (ticket 04).
     declared_characters = parse_character_args(characters or [])
     declared_objects = parse_object_args(
         objects or [], taken={c.slug for c in declared_characters}
     )
+    missing_objects = missing_promoted_refs(declared_objects, refs_root)
+    if declared_characters:
+        check_assets(declared_characters, Path(refs_root))
     resolved: list = []
-    if declared_characters or declared_objects:
+    if not missing_objects and (declared_characters or declared_objects):
         resolved = check_assets(
             [*declared_characters, *declared_objects], Path(refs_root)
         )
-    ref_paths = [path for character in resolved for path in character.ref_paths]
     # ref_bound feeds the seat's appearance-ownership rule for CHARACTERS;
     # objects ride their own declared_objects channel (world_elements rule).
-    ref_bound = tuple(r.slug for r in resolved if r.role != "object")
+    ref_bound = tuple(c.slug for c in declared_characters)
     object_slugs = tuple(d.slug for d in declared_objects)
 
     slate: POVPitchSlate | None = None
@@ -323,13 +347,77 @@ def run_pov_pipeline(
     script = develop_valid_script(
         script_writer, pitch, rules, ref_bound=ref_bound, declared_objects=object_slugs
     )
+
+    slug_source = idea if idea is not None else topic
+    assert slug_source is not None  # narrowed by the exactly-one check above
+    run_dir = Path(output_dir) / _run_slug(slug_source)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    if slate is not None:
+        (run_dir / "slate.json").write_text(slate.model_dump_json(indent=2), encoding="utf-8")
+    (run_dir / "pitch.json").write_text(pitch.model_dump_json(indent=2), encoding="utf-8")
+    (run_dir / "script.json").write_text(script.model_dump_json(indent=2), encoding="utf-8")
+
+    if missing_objects:
+        # D2 generation path: no compile yet (imageN numbering needs the
+        # PROMOTED ref count) — generate candidates, record the spend on the
+        # lane log, persist the declarations for `pov.py assets <run_dir>`,
+        # and halt for the operator's pick.
+        (run_dir / "assets_state.json").write_text(
+            json.dumps(
+                {
+                    "characters": list(characters or []),
+                    "objects": list(objects or []),
+                    "refs_root": str(refs_root),
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        total, cost_line = still_cost_line(len(missing_objects), rules)
+        print(cost_line)  # cost stated BEFORE spend (ADR-0007)
+        runner = still_runner if still_runner is not None else higgsfield_still_runner
+        candidates = generate_candidates(
+            script, missing_objects, refs_root, rules, runner
+        )
+        record_still_spend(
+            run_dir,
+            count=len(candidates),
+            credits=total,
+            note=", ".join(d.slug for d in missing_objects),
+        )
+        sheet_text = pick_sheet(run_dir, candidates, refs_root)
+        (run_dir / "assets_pick.md").write_text(sheet_text, encoding="utf-8")
+        raise POVAssetPickNeeded(run_dir, sheet_text)
+
+    _finalize_run(run_dir, pitch, script, resolved, object_slugs, rules)
+    return run_dir
+
+
+def _finalize_run(
+    run_dir: Path,
+    pitch: POVPitch,
+    script,
+    resolved: list,
+    object_slugs: tuple[str, ...],
+    rules: RenderRules,
+) -> None:
+    """Compile + write the render-ready artifacts for a run with validated refs.
+
+    The shared tail of ``run_pov_pipeline`` (all-refs-present path) and the
+    ``assets`` subcommand (post-promotion release): compile against the
+    promoted refs, derive the prediction block, apply the identical-hash
+    probe exemption, and write prompt/compiled/prediction/sheet (+ the final
+    command when exempt). One writer means the two paths can never diverge
+    on artifact format (the write_final precedent).
+    """
     compiled = compile_pov_prompt(script, rules, bound_characters=resolved)
+    ref_paths = [path for character in resolved for path in character.ref_paths]
 
     # Slice ③ probe gate inputs: the ruleset's pre-watch prediction (Deming
     # Study step) and the identical-prompt-hash probe exemption (grill Q2c) —
     # the lane verdict log lives beside the run directories.
     prediction = build_prediction_block(rules, has_refs=bool(ref_paths))
-    lane_log = Path(output_dir) / "verdicts.jsonl"
+    lane_log = run_dir.parent / "verdicts.jsonl"
     probe_exempt = prior_pass_for_hash(lane_log, prompt_hash(compiled.prompt_text))
     sheet = build_render_sheet(
         pitch,
@@ -342,14 +430,6 @@ def run_pov_pipeline(
         object_slugs=object_slugs,
     )
 
-    slug_source = idea if idea is not None else topic
-    assert slug_source is not None  # narrowed by the exactly-one check above
-    run_dir = Path(output_dir) / _run_slug(slug_source)
-    run_dir.mkdir(parents=True, exist_ok=True)
-    if slate is not None:
-        (run_dir / "slate.json").write_text(slate.model_dump_json(indent=2), encoding="utf-8")
-    (run_dir / "pitch.json").write_text(pitch.model_dump_json(indent=2), encoding="utf-8")
-    (run_dir / "script.json").write_text(script.model_dump_json(indent=2), encoding="utf-8")
     (run_dir / "prompt.txt").write_text(compiled.prompt_text, encoding="utf-8")
     # compiled.json (slice ③): the verdict flow re-derives the final command
     # from the probe command here — without it a run is watchable but never
@@ -362,7 +442,6 @@ def run_pov_pipeline(
             compiled.cli_command, script.duration_seconds, rules
         )
         write_final(run_dir, command, cost_line, rules.pov_verdict()["final_resolution"])
-    return run_dir
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -517,6 +596,59 @@ def _main_verdict(argv: list[str]) -> None:
         print(outcome.released_final_command)
 
 
+def _main_assets(argv: list[str]) -> None:
+    """Run the ``assets`` subcommand: release the probe against promoted refs.
+
+    The resume half of the ticket-04 pick gate: reads the run's persisted
+    declarations (``assets_state.json``) and committed pitch/script, gate-
+    validates the NOW-promoted references, and finalizes the run (compile,
+    prediction, sheet, probe-exempt check) — zero LLM calls, so a promotion
+    never re-spends a seat. Fails loud if promotion hasn't happened yet
+    (the gate re-raises the request/halt) or the refs are invalid.
+    """
+    parser = argparse.ArgumentParser(
+        prog="pov.py assets",
+        description="Validate promoted refs and release the probe command for a halted run.",
+    )
+    parser.add_argument("run_dir", help="The run directory the pick halt named.")
+    args = parser.parse_args(argv)
+    run_dir = Path(args.run_dir)
+
+    state_path = run_dir / "assets_state.json"
+    if not state_path.exists():
+        raise SystemExit(
+            f"{state_path} not found — this run was not halted for an asset pick "
+            f"(the assets subcommand only resumes ticket-04 generation halts)"
+        )
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    declared_characters = parse_character_args(state["characters"])
+    declared_objects = parse_object_args(
+        state["objects"], taken={c.slug for c in declared_characters}
+    )
+    try:
+        resolved = check_assets(
+            [*declared_characters, *declared_objects], Path(state["refs_root"])
+        )
+    except POVAssetRequestNeeded:
+        raise SystemExit(
+            "References still not promoted — move a keeper out of candidates/ up "
+            f"into its refs/<slug>/ directory (see {run_dir / 'assets_pick.md'})"
+        ) from None
+
+    rules = RenderRules()
+    pitch = POVPitch.model_validate_json(
+        (run_dir / "pitch.json").read_text(encoding="utf-8")
+    )
+    script = POVScript.model_validate_json(
+        (run_dir / "script.json").read_text(encoding="utf-8")
+    )
+    _finalize_run(
+        run_dir, pitch, script, resolved, tuple(d.slug for d in declared_objects), rules
+    )
+    print(f"Refs validated — probe command released on {run_dir / 'render_sheet.md'}.")
+    print("Follow the MANDATORY 480p probe, then log your verdict.")
+
+
 def main() -> None:
     """Parse CLI args and run idea mode or topic mode with the real seats + render rules."""
     from dotenv import load_dotenv
@@ -533,6 +665,11 @@ def main() -> None:
     # flag-style invocation (`pov.py --idea/--topic ...`) stays byte-compatible.
     if len(sys.argv) > 1 and sys.argv[1] == "verdict":
         _main_verdict(sys.argv[2:])
+        return
+    # `pov.py assets <run_dir>` (D2 ticket 04): resumes a pick-halted run —
+    # also LLM-free (reads the run's committed artifacts).
+    if len(sys.argv) > 1 and sys.argv[1] == "assets":
+        _main_assets(sys.argv[2:])
         return
 
     args = _build_parser().parse_args()
@@ -570,6 +707,11 @@ def main() -> None:
         # Print the request sheet and exit nonzero (nothing was run or spent).
         print(f"\n{exc.sheet_text}")
         sys.exit(1)
+    except POVAssetPickNeeded as exc:
+        # Expected mid-flow halt (ticket 04): candidates generated, operator
+        # picks keepers, then `pov.py assets <run_dir>` releases the probe.
+        print(f"\n{exc.sheet_text}")
+        return
     print(f"\nRun directory: {run_dir}")
     print(f"Next: open {run_dir / 'render_sheet.md'} and follow the MANDATORY 480p pass.")
 

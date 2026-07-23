@@ -833,6 +833,38 @@ pov_verdict:
       expectation: "refs bind to the camera-holder's limbs only"
 
 # ---------------------------------------------------------------------------
+# POV ASSET STAGE (D2, .scratch/pov-d2-assets/PRD.md, 2026-07-23) — candidate
+# still generation for operator-declared invented objects. The template is
+# PROMPT DATA (tuned per watched evidence), not code constants.
+# ---------------------------------------------------------------------------
+pov_assets:
+  # Image model locked 2026-07-13 (photoreal pivot memory: GPT Image 2, bad
+  # output = fix the prompt not the model); post #3's two location stills were
+  # generated on it (7cr each, billing 2026-07-22). CLI id per `higgsfield
+  # model list` naming convention — verify on the first live D2 run.
+  still_model: gpt_image_2
+  # One candidate per object per batch (PRD): the pick gate is cheap to rerun;
+  # burst-generating variants before the first watch validates the template is
+  # speculative spend.
+  candidates_per_object: 1
+  # Slots: {description} = the script seat's world-element identity prose;
+  # {vantage_phrase} = vantage_template with the scene substituted;
+  # {style_clause} = the batch-shared register clause below. The single-element
+  # / no-staging constraints ARE the element-ref discipline (probe B: a
+  # composed ref identity-locks the frame and kills motion). Evidence: post #3
+  # validated recipe (element refs + motion-only prompt = probe C PASS);
+  # template wording itself is first-live-run PENDING ratification.
+  still_prompt_template: "{description}. {vantage_phrase} A single isolated establishing view of this one element only — no people, no hands, no vehicles, no foreground props, no other scene elements. {style_clause} No text, no watermark, no logo."
+  # Verbatim from the lane's photoreal style_register clause family (skeleton
+  # clauses above) minus the video-only terms — shared verbatim across a
+  # batch so separately-generated objects land in ONE register (first-use
+  # style-coherence gate, grilling Q2).
+  style_clause: "Cinematic lighting, photorealistic, grounded realism, 35mm film look, ARRI ALEXA aesthetic."
+  # The object is pictured as seen from the story's vantage, never a floating
+  # product shot (asset-routing rule: eye-vantage discipline).
+  vantage_template: "Seen from the vantage of {scene_setting}."
+
+# ---------------------------------------------------------------------------
 # OPEN / UNVERIFIED — rules from guides not yet confirmed by our own renders.
 # Promote to the blocks above once a manual render gives evidence.
 # ---------------------------------------------------------------------------

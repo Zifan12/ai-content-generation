@@ -55,18 +55,21 @@ class POVVerdictRecord(BaseModel):
     """One logged event on the lane-wide verdict log (one JSONL line).
 
     ``event`` distinguishes a watched verdict from a deliberate probe bypass
-    (``force_final``) — both share the record shape so the log stays one
-    schema. ``retro`` marks seeded records reconstructed from documented
-    watched verdicts (PRD user story 14): they count toward recurrence but
-    stay distinguishable if we ever distrust them. ``credits`` is this
-    event's OWN render spend (duration x measured rate; 0 for force_final,
-    which spends nothing itself), so a story's total is a plain sum over its
-    records.
+    (``force_final``) and from candidate-still spend (``still_gen``, D2
+    ticket 04) — all share the record shape so the log stays one schema.
+    ``retro`` marks seeded records reconstructed from documented watched
+    verdicts (PRD user story 14): they count toward recurrence but stay
+    distinguishable if we ever distrust them. ``credits`` is this event's
+    OWN spend (duration x measured rate for renders; count x measured still
+    rate for still_gen; 0 for force_final, which spends nothing itself), so
+    a story's total — the credit brake's tally — is a plain sum over its
+    records. Every gate/recurrence consumer filters ``event == "verdict"``,
+    so still_gen records add spend without ever counting as a watch.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    event: Literal["verdict", "force_final"]
+    event: Literal["verdict", "force_final", "still_gen"]
     run: str  # run directory name — the story/run identity in the log
     result: Literal["pass", "fail"] | None  # None for force_final events
     resolution: str | None  # the watched render's resolution; None for force_final
@@ -99,6 +102,31 @@ class VerdictOutcome(BaseModel):
     recurrence_notices: list[str] = []
     refusals: list[str] = []
     parked: bool = False
+
+
+def record_still_spend(
+    run_dir: Path, *, count: int, credits: float, note: str
+) -> POVVerdictRecord:
+    """Append a ``still_gen`` spend record for this run to the lane log.
+
+    D2 ticket 04: candidate-still generation is real credit spend, so it
+    lands on the SAME append-only log the credit brake tallies (PRD story
+    23 — brakes read recorded spend, never memory). Never counts as a watch:
+    every verdict/recurrence/park consumer filters ``event == "verdict"``.
+    """
+    record = POVVerdictRecord(
+        event="still_gen",
+        run=run_dir.name,
+        result=None,
+        resolution=None,
+        duration_seconds=0,
+        prompt_hash="",
+        note=f"{count} candidate still(s): {note}",
+        credits=credits,
+        timestamp=datetime.now(timezone.utc).isoformat(),
+    )
+    _append_log(_log_path(run_dir), record)
+    return record
 
 
 def prompt_hash(prompt_text: str) -> str:

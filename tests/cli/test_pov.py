@@ -729,21 +729,181 @@ def test_object_run_binds_ref_and_never_redescribes_in_prompt(tmp_path) -> None:
     assert writer.ref_bound_calls == [()]
 
 
-def test_object_with_only_candidates_halts_before_llm_spend(tmp_path) -> None:
-    """Unpromoted candidates are not references: the gate halts the run with
-    zero seat calls (ticket 02 contract at the driver seam)."""
-    from src.generation.pov.asset_check import POVAssetRequestNeeded
+def test_object_with_only_candidates_is_still_unpromoted(tmp_path) -> None:
+    """Unpromoted candidates are not references (ticket 02): at the driver
+    seam that now means the ticket-04 generation path fires (seats run, a
+    fresh candidate is generated, pick halt) — never a silent pass of the
+    unpicked candidate into a render."""
+    from src.generation.pov.asset_gen import POVAssetPickNeeded
 
     refs = tmp_path / "refs"
     (refs / "hell_city" / "candidates").mkdir(parents=True)
     (refs / "hell_city" / "candidates" / "c1.png").write_bytes(_PNG_HEADER)
 
-    writer = FakeScriptWriter(_script())
-    with pytest.raises(POVAssetRequestNeeded):
+    writer = FakeScriptWriter(_object_script())
+    with pytest.raises(POVAssetPickNeeded) as exc_info:
         run_pov_pipeline(
             writer, _rules(), SAMPLE_IDEA,
             objects=["hell_city"],
             refs_root=refs,
             output_dir=tmp_path / "out",
+            still_runner=FakeStillRunner(),
         )
-    assert writer.pitches == []
+    # No compiled artifacts — the unpicked candidate never reached a render.
+    assert not (exc_info.value.run_dir / "compiled.json").exists()
+
+
+# --- candidate generation + pick flow (D2 ticket 04) --------------------------
+
+
+def _object_script() -> POVScript:
+    from src.generation.pov.schemas import POVWorldElement
+
+    return _script().model_copy(
+        update={
+            "world_elements": [
+                POVWorldElement(
+                    slug="hell_city",
+                    description="dense black gothic towers with streets of molten lava",
+                )
+            ]
+        }
+    )
+
+
+class FakeStillRunner:
+    """Records (prompt, dest) calls; writes a valid PNG at dest."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, object]] = []
+
+    def __call__(self, prompt: str, dest):
+        self.calls.append((prompt, dest))
+        dest.write_bytes(_PNG_HEADER)
+        return dest
+
+
+def test_missing_object_generates_candidates_and_halts_for_pick(tmp_path, capsys) -> None:
+    """Ticket 04 first half: no promoted refs -> seats run, cost stated BEFORE
+    generation, one candidate per object lands in candidates/, spend recorded
+    on the lane log, run halts with a pick sheet naming the assets command."""
+    from src.generation.pov.asset_gen import POVAssetPickNeeded
+
+    refs = tmp_path / "refs"
+    out = tmp_path / "out"
+    writer = FakeScriptWriter(_object_script())
+    runner = FakeStillRunner()
+
+    with pytest.raises(POVAssetPickNeeded) as exc_info:
+        run_pov_pipeline(
+            writer, _rules(), SAMPLE_IDEA,
+            objects=["hell_city"],
+            refs_root=refs,
+            output_dir=out,
+            still_runner=runner,
+        )
+
+    run_dir = exc_info.value.run_dir
+    # Seats ran exactly once (descriptions are the still brief).
+    assert len(writer.pitches) == 1
+    # The candidate landed in the candidates/ area, not as a promoted ref.
+    candidate = refs / "hell_city" / "candidates" / "hell_city_candidate_1.png"
+    assert candidate.exists()
+    # The still prompt was briefed from the seat's description + the shared
+    # style clause, never the composed target frame.
+    prompt = runner.calls[0][0]
+    assert "gothic towers" in prompt
+    assert "no hands" in prompt
+    # Cost was stated before spend.
+    assert "7.0cr" in capsys.readouterr().out
+    # Spend recorded on the lane log as a still_gen event.
+    records = [
+        json.loads(line)
+        for line in (out / "verdicts.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert records[0]["event"] == "still_gen"
+    assert records[0]["credits"] == 7.0
+    # No render commands released: neither compiled prompt nor sheet exist yet.
+    assert not (run_dir / "render_sheet.md").exists()
+    assert not (run_dir / "compiled.json").exists()
+    # The pick sheet names the resume command.
+    assert "assets" in exc_info.value.sheet_text
+    assert (run_dir / "assets_pick.md").exists()
+
+
+def test_assets_subcommand_releases_probe_after_promotion(tmp_path) -> None:
+    """Ticket 04 second half: promote the candidate, run the assets release —
+    the run compiles against the promoted ref (binding + --image + watch
+    items) with ZERO further seat calls."""
+    from scripts.pov import _main_assets
+    from src.generation.pov.asset_gen import POVAssetPickNeeded
+
+    refs = tmp_path / "refs"
+    out = tmp_path / "out"
+    writer = FakeScriptWriter(_object_script())
+    runner = FakeStillRunner()
+    with pytest.raises(POVAssetPickNeeded) as exc_info:
+        run_pov_pipeline(
+            writer, _rules(), SAMPLE_IDEA,
+            objects=["hell_city"],
+            refs_root=refs,
+            output_dir=out,
+            still_runner=runner,
+        )
+    run_dir = exc_info.value.run_dir
+
+    # Operator gesture: move the candidate up one directory.
+    candidate = refs / "hell_city" / "candidates" / "hell_city_candidate_1.png"
+    keeper = refs / "hell_city" / "keeper.png"
+    candidate.rename(keeper)
+
+    _main_assets([str(run_dir)])
+
+    assert len(writer.pitches) == 1  # no seat re-run
+    prompt_text = (run_dir / "prompt.txt").read_text(encoding="utf-8")
+    assert "The hell city is shown in image1." in prompt_text
+    sheet = (run_dir / "render_sheet.md").read_text(encoding="utf-8")
+    assert f'--image "{keeper}"' in sheet
+    assert "MOTION PRESENT" in sheet
+    assert not (run_dir / "final_command.txt").exists()  # probe gate intact
+
+
+def test_assets_subcommand_refuses_when_nothing_promoted(tmp_path) -> None:
+    from scripts.pov import _main_assets
+    from src.generation.pov.asset_gen import POVAssetPickNeeded
+
+    refs = tmp_path / "refs"
+    writer = FakeScriptWriter(_object_script())
+    with pytest.raises(POVAssetPickNeeded) as exc_info:
+        run_pov_pipeline(
+            writer, _rules(), SAMPLE_IDEA,
+            objects=["hell_city"],
+            refs_root=refs,
+            output_dir=tmp_path / "out",
+            still_runner=FakeStillRunner(),
+        )
+
+    with pytest.raises(SystemExit, match="not promoted"):
+        _main_assets([str(exc_info.value.run_dir)])
+
+
+def test_preexisting_object_refs_skip_generation_entirely(tmp_path) -> None:
+    """Cache hit: promoted refs on disk -> no runner call, no halt, no spend —
+    the run flows straight through (repeat-topic economy)."""
+    refs = tmp_path / "refs"
+    (refs / "hell_city").mkdir(parents=True)
+    (refs / "hell_city" / "keeper.png").write_bytes(_PNG_HEADER)
+    out = tmp_path / "out"
+    runner = FakeStillRunner()
+
+    run_dir = run_pov_pipeline(
+        FakeScriptWriter(_object_script()), _rules(), SAMPLE_IDEA,
+        objects=["hell_city"],
+        refs_root=refs,
+        output_dir=out,
+        still_runner=runner,
+    )
+
+    assert runner.calls == []
+    assert (run_dir / "render_sheet.md").exists()
+    assert not (out / "verdicts.jsonl").exists()  # no spend recorded

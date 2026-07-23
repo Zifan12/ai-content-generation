@@ -152,6 +152,22 @@ class RenderRules:
         """
         return self.data["pov_verdict"]
 
+    def pov_assets(self) -> dict:
+        """Return the ``pov_assets`` block (D2, .scratch/pov-d2-assets/PRD.md).
+
+        Candidate-still generation config for declared ``--object`` world
+        elements: the image model, candidates-per-object count, and the
+        still-prompt template with its shared style clause and vantage
+        template. Plain passthrough like ``pov_verdict`` — the template is
+        prompt DATA, tuned per watched evidence, so it lives in the YAML
+        with its evidence trail. ``src/generation/pov/asset_gen.py`` is the
+        sole reader.
+
+        Raises:
+            KeyError: if the YAML has no ``pov_assets`` block.
+        """
+        return self.data["pov_assets"]
+
     def retake_ladder(self) -> str:
         """Return the ``scene_lane.retake_ladder`` wording (480p -> 720p -> 1080p).
 
