@@ -68,7 +68,8 @@ schema violation surfaces as a typed error rather than a downstream mystery. (A 
 Anthropic `messages.parse` wrapper also exists but is currently dormant — every seat routes
 through OpenRouter today.)
 
-**Evals + observability.** A harness with golden fixtures (`src/evals/`), a groundedness
+**Evals + observability.** A harness that scores against golden fixtures (`src/evals/`; the
+fixtures themselves live under `data/`, which is local-only and not in this repo), a groundedness
 judge that gates pitches, and Langfuse tracing on every seat. Prompt changes get measured
 rather than eyeballed — a regression from a worked example that was biasing output got
 caught by a 4-run ablation. There is no CI in this repo; the harness is run by hand.
@@ -85,7 +86,7 @@ caught by a 4-run ablation. There is no CI in this repo; the harness is run by h
 | POV first-person lane + reference binding (character/costume consistency) | `src/generation/pov/` (`script_writer`, `compiler`, `asset_check`, `craft_enforcement`), driver `scripts/pov.py` | **In progress** — the current work stream. |
 | Reference-image harvesting (search → download → judge → rank YouTube frames) | `src/reference/`, `scripts/harvest_refs.py` | **Built, parked.** Not wired into the current binding path; reference crops are hand-curated locally for now (kept out of the repo — they derive from third-party art). |
 | Publish loop (post → views → percentile labels) | `scripts/record_post.py`, `enter_views.py`, `compute_percentiles.py` | **Built.** Posting is manual; TikTok has no API for it. |
-| Fridge — per-topic raw-material store with semantic retrieve (BGE-M3 → pgvector cosine/HNSW) | `src/monitor/fridge.py`, `src/rag/embedder.py` | **Built, live** in the Exilus lane: research text is chunked and embedded once, then retrieved instead of re-scraped. |
+| Fridge — per-topic raw-material store with semantic retrieve (BGE-M3 → pgvector cosine/HNSW) | `src/monitor/fridge.py`, `src/rag/embedder.py` | **Built, fakes-verified.** Wired into the Exilus lane: research text is chunked and embedded once, then retrieved instead of re-scraped. |
 | Eval harness + golden fixtures | `src/evals/` | **Built**, run manually. |
 | Agent orchestration (LangGraph) | — | **Planned.** |
 | Web dashboard | — | **Planned.** `src/api/app.py` is a bare FastAPI app with no routes yet. |
@@ -102,6 +103,10 @@ the code that processed it is gone.
 ## Quick start
 
 Requires Python 3.13+, [uv](https://docs.astral.sh/uv/), and Docker (for Postgres + Redis).
+The render and assembly stages additionally need `ffmpeg`/`ffprobe` and `yt-dlp` on `PATH`,
+plus the Higgsfield CLI (`npm install -g @higgsfield/cli`, then `higgsfield auth login`).
+`torch` is pinned to a CUDA 12.4 wheel index with no CPU-only fallback, so `uv sync`
+expects a Linux or Windows host.
 
 ```bash
 docker compose -f infra/docker-compose.yml up -d   # Postgres (pgvector) + Redis
@@ -118,8 +123,8 @@ unset ([ADR-0006](docs/adr/0006-drop-sqlite-postgres-only.md)).
 Run the front-end on any subject:
 
 ```bash
-uv run python scripts/exilus.py --topic "<subject>"              # brief → faction map → idea slate
-uv run python scripts/exilus.py --topic "<subject>" --refresh    # re-research, replace artifacts
+uv run python -m scripts.exilus --topic "<subject>"              # brief → faction map → idea slate
+uv run python -m scripts.exilus --topic "<subject>" --refresh    # re-research, replace artifacts
 ```
 
 Artifacts are pinned per topic, so re-running is free; `--refresh` is the only thing that
