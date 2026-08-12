@@ -83,7 +83,7 @@ caught by a 4-run ablation. There is no CI in this repo; the harness is run by h
 | Writer → render prompt | `src/generation/content_writer.py` | **Built**, exercised via the smoke script. |
 | Render executor + adapters | `src/generation/executor.py`, `render_adapters/` | **Built.** Renders are driven through the Higgsfield CLI. |
 | POV first-person lane + reference binding (character/costume consistency) | `src/generation/pov/` (`script_writer`, `compiler`, `asset_check`, `craft_enforcement`), driver `scripts/pov.py` | **In progress** — the current work stream. |
-| Reference-image harvesting (search → download → judge → rank YouTube frames) | `src/reference/`, `scripts/harvest_refs.py` | **Built, parked.** Not wired into the current binding path; reference crops are hand-curated under `refs/` for now. |
+| Reference-image harvesting (search → download → judge → rank YouTube frames) | `src/reference/`, `scripts/harvest_refs.py` | **Built, parked.** Not wired into the current binding path; reference crops are hand-curated locally for now (kept out of the repo — they derive from third-party art). |
 | Publish loop (post → views → percentile labels) | `scripts/record_post.py`, `enter_views.py`, `compute_percentiles.py` | **Built.** Posting is manual; TikTok has no API for it. |
 | Fridge — per-topic raw-material store with semantic retrieve (BGE-M3 → pgvector cosine/HNSW) | `src/monitor/fridge.py`, `src/rag/embedder.py` | **Built, live** in the Exilus lane: research text is chunked and embedded once, then retrieved instead of re-scraped. |
 | Eval harness + golden fixtures | `src/evals/` | **Built**, run manually. |

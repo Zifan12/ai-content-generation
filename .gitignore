@@ -70,6 +70,9 @@ render_taste_test/*
 .openpackage/
 skills-lock.json
 
+# Reference images/clips (third-party IP — local-only, purged from history 2026-08-11)
+refs/
+
 # Git worktrees (local-only scratch workspaces)
 .worktrees/
 *.stackdump
