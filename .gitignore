@@ -44,8 +44,9 @@ ai_video_resources/
 CLAUDE.md
 PLAN.md
 
-# Docs (local-only — may go public selectively later)
-docs/
+# Docs (local-only, except docs/adr/ — ADRs are public, README links them)
+docs/*
+!docs/adr/
 
 # OS
 .DS_Store

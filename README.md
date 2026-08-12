@@ -10,8 +10,9 @@ artifact contracts between stages, LLM-as-judge gates that can send work backwar
 repair, swappable model "seats" defined in YAML, cost governance before every paid call,
 and an eval harness with golden fixtures.
 
-> **Status: in development.** Individual stages are built and tested against fakes. The
-> full loop has **not** yet run live end-to-end on the current specification. See
+> **Status: in development.** The POV first-person lane has run live end-to-end —
+> clips generated, posted, and measured through the publish loop. The Exilus research
+> front-end is built and fakes-verified but has not yet run live. See
 > [Component status](#component-status) — every claim below is labelled.
 
 ---
@@ -140,7 +141,7 @@ uv run python scripts/pov.py --idea "<concept>" --character <slug>:protagonist
 Checks:
 
 ```bash
-uv run pytest          # 699 tests
+uv run pytest          # 763 tests
 uv run ruff check .
 uv run mypy src/
 ```
@@ -154,7 +155,6 @@ uv run mypy src/
 | `OPENROUTER_API_KEY` | **every** LLM seat — all of `config/providers.yaml` routes through OpenRouter |
 | `TAVILY_API_KEY`, `FIRECRAWL_API_KEY` | context-agent web research |
 | `APIFY_API_TOKEN` | Apify actors — Reddit audience evidence for the Faction Map |
-| `YOUTUBE_API_KEY` | YouTube Data API — reference-frame harvesting (`src/reference/`, parked) |
 | `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` / `LANGFUSE_HOST` | tracing |
 | `ANTHROPIC_API_KEY` | dormant — the Anthropic provider is wired but no seat selects it today |
 
@@ -184,7 +184,7 @@ src/
 config/          providers.yaml (model seats), render_rules.yaml, settings.yaml
 docs/adr/        architecture decision records
 scripts/         operator entry points for every stage
-tests/           699 tests
+tests/           763 tests
 ```
 
 ## Design decisions worth reading
